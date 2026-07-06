@@ -1,0 +1,102 @@
+import { NextResponse } from "next/server";
+import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
+import { getMe, ownsStream, canManageStream } from "@/lib/auth";
+import { getSettings } from "@/lib/settings";
+import { toLine, isHitLine } from "@/lib/calc";
+
+export async function GET(_: Request, { params }: { params: { id: string } }) {
+  const me = await getMe();
+  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!isRecId(params.id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
+  const stream = await atGet(T.streams, params.id);
+  if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
+  const isComplete = (stream.fields["Status"] || "Planned") === "Complete";
+  const [lineRows, timeRows, settings, allLines, completedStreams] = await Promise.all([
+    atList(T.lines, { filterByFormula: `{Stream Rec Id} = '${params.id}'` }),
+    atList(T.time, { filterByFormula: `{Stream Rec Id} = '${params.id}'`, "sort[0][field]": "Start" }),
+    getSettings(),
+    isComplete ? Promise.resolve([]) : atList(T.lines),
+    isComplete ? Promise.resolve([]) : atList(T.streams, { filterByFormula: "{Status} = 'Complete'" }),
+  ]);
+  const lines = lineRows.map(toLine);
+
+  // historical pool-delivery rate: across completed streams (excluding this one),
+  // what % of the hit pool actually went out
+  const completedIds = new Set(completedStreams.map((r) => r.id).filter((cid) => cid !== params.id));
+  let histPool = 0, histDelivered = 0;
+  for (const l of allLines) {
+    const sid = l.fields["Stream Rec Id"];
+    if (!sid || !completedIds.has(sid)) continue;
+    const line = toLine(l);
+    if (isHitLine(line, settings)) {
+      histPool += line.qty;
+      histDelivered += line.qtyHit;
+    }
+  }
+  const histDeliveryRate = histPool > 0 ? histDelivered / histPool : null;
+
+  let managerName = "";
+  const managerId = stream.fields["Manager Rec Id"];
+  if (managerId) {
+    try { managerName = (await atGet(T.streamers, managerId)).fields["Name"] || ""; } catch {}
+  }
+
+  const timeEntries = timeRows.map((t) => ({
+    id: t.id,
+    type: t.fields["Type"],
+    person: t.fields["Person Name"] || "",
+    start: t.fields["Start"] || "",
+    end: t.fields["End"] || "",
+    hours: t.fields["Hours"] || 0,
+    label: t.fields["Entry"] || "",
+  }));
+
+  return NextResponse.json({
+    canManage: canManageStream(me, stream),
+    timeEntries,
+    stream: {
+      id: stream.id,
+      title: stream.fields["Title"],
+      date: stream.fields["Stream Date"],
+      status: stream.fields["Status"] || "Planned",
+      afterFees: stream.fields["After Fees"] ?? null,
+      promotion: stream.fields["Promotion"] ?? null,
+      tips: stream.fields["Tips"] ?? null,
+      hours: stream.fields["Hours Streamed"] ?? null,
+      packingHours: stream.fields["Packing Hours"] ?? null,
+      spotsSold: stream.fields["Spots Sold"] ?? null,
+      managerPackingHours: stream.fields["Manager Packing Hours"] ?? null,
+      managerName,
+      notes: stream.fields["Notes"] || "",
+    },
+    lines: lines.map((l) => ({
+      id: l.id, name: l.name.replace(/^\d+x\s+/, ""), qty: l.qty, qtyHit: l.qtyHit,
+      market: l.market, isGiveaway: l.isGiveaway, isHit: isHitLine(l, settings),
+      ...(me.isAdmin ? { buy: l.buy } : {}),
+    })),
+    config: {
+      hitThreshold: settings.hit_threshold,
+      breakevenMult: settings.breakeven_mult,
+      histDeliveryRate,
+    },
+  });
+}
+
+export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const me = await getMe();
+  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const stream = await atGet(T.streams, params.id);
+  if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const b = await req.json();
+  const fields: Record<string, any> = {};
+  if (b.afterFees !== undefined) fields["After Fees"] = b.afterFees;
+  if (b.promotion !== undefined) fields["Promotion"] = b.promotion;
+  if (b.tips !== undefined) fields["Tips"] = b.tips;
+  if (b.spotsSold !== undefined) fields["Spots Sold"] = b.spotsSold;
+  // hours come from the timeclock (/api/time), not direct edits
+  if (b.status !== undefined) fields["Status"] = b.status;
+  if (b.notes !== undefined) fields["Notes"] = b.notes;
+  await atUpdate(T.streams, params.id, fields);
+  return NextResponse.json({ ok: true });
+}
