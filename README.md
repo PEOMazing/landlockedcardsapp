@@ -45,19 +45,24 @@ Show set builder, inventory management, and streamer pay - the web app version o
 ## Pay logic (identical to the workbook)
 
 Weeks run Sunday-Saturday. Only streams marked Complete count.
-1. Week net profit = sum of (after fees - promo - product cost - tips) across the week. Tips are paid
+1. Week net profit for pay = sum of (after fees - promo - product market value - tips) across the week.
+   Streamer commission runs on profit over MARKET price; buy price never touches streamer numbers. Tips are paid
    through 100% to the streamer, so they come out of profit before any commission or override. Losses offset gains.
 2. Packing pay = packing hours x packing rate, deducted to get commissionable profit.
 3. Option A = week hours x hourly rate. Option B = progressive tiers (15% / 20% / 25%) on commissionable.
 4. Stream pay = the higher. Total pay = stream pay + packing pay + tips (tips ride on top of pay).
 5. Support = support % x max(commissionable - stream pay, 0).
-6. Manager override: for the streams a manager runs, packing (streamer's and manager's) comes out of
+6. Company profit runs on REAL cost: profit over buy (after fees - promo - buy cost - tips) minus all
+   pay, packing, support, and overrides. The admin dashboard shows profit over market and over buy side by side.
+7. Manager override: for the streams a manager runs, packing (streamer's and manager's) comes out of
    profit first, the streamer's pay (higher of hourly or commission) is removed next, and the override %
    applies to what remains: override = override % x max(commissionable - streamer pay, 0). Manager also
    earns their packing hours x packing rate. Both come out of the company side; the streamer's pay is
    never reduced by the override. Company profit = what remains after all of the above.
 
-Product cost per stream = sum of buy-price snapshots x qty on the show set (giveaways included, since they come out of profit). Prices snapshot at the moment a product is added to a show, so later price edits never change past pay.
+Product cost per stream is snapshotted two ways when a product is added to a show set: market-price snapshots x qty drive streamer pay, buy-price snapshots x qty drive company profit (giveaways included in both, since they come out of profit). Later price edits never change past pay, with one exception: products quick-added by a streamer mid-stream have no buy price yet, so when admin fills it in, the $0 buy snapshots on streams not yet marked Complete are backfilled. Completed streams are always frozen.
+
+Streamers and managers can quick-add a product from the stream builder search ("+ Add ... as a new product") when something is missing from inventory - name, category, and market price only. It lands on the admin Inventory tab with a "needs buy price" tag.
 
 ## Setup
 

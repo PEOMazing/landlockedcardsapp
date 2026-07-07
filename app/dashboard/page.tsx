@@ -41,11 +41,13 @@ export default async function Dashboard() {
   ]);
 
   const costByStream: Record<string, number> = {};
+  const marketCostByStream: Record<string, number> = {};
   for (const l of lineRows) {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
     costByStream[sid] = (costByStream[sid] || 0) + line.qty * line.buy;
+    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qty * line.market;
   }
 
   const rows: StreamRow[] = streamRows.map((r) => ({
@@ -61,6 +63,7 @@ export default async function Dashboard() {
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     managerId: r.fields["Manager Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
+    productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
   }));
 

@@ -89,7 +89,8 @@ export type StreamRow = {
   packingHours: number;
   managerPackingHours: number;
   managerId: string | null;
-  productCost: number;
+  productCost: number;        // buy-price snapshots x qty: the company's real cost
+  productMarketCost: number;  // market-price snapshots x qty: what streamer pay is measured against
   status: string;
 };
 
@@ -99,9 +100,10 @@ export type WeekPay = {
   streamerId: string;
   streamerName: string;
   streams: StreamRow[];
-  profit: number;           // sum of (afterFees - promotion - productCost), losses net against gains
+  profit: number;           // OVER MARKET: sum of (afterFees - promotion - productMarketCost - tips); drives all pay
+  buyProfit: number;        // OVER BUY: sum of (afterFees - promotion - productCost - tips); the company's real profit
   packingPay: number;
-  commissionable: number;   // profit - packingPay
+  commissionable: number;   // profit - packing (market basis)
   hours: number;
   hourlyRate: number;
   optionA: number;          // hours x rate
@@ -129,8 +131,10 @@ export function buildWeekPay(
   const out: WeekPay[] = [];
   for (const [key, rows] of groups) {
     const [weekStart, streamerId] = key.split("|");
-    // tips are paid through to the streamer, so they come out of profit before commission
-    const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - r.productCost - r.tips), 0);
+    // tips are paid through to the streamer, so they come out of profit before commission.
+    // Streamer pay is commissioned on profit over MARKET price; buy price never touches their numbers.
+    const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - r.productMarketCost - r.tips), 0);
+    const buyProfit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - r.productCost - r.tips), 0);
     const packingHours = rows.reduce((a, r) => a + r.packingHours, 0);
     const managerPackingHours = rows.reduce((a, r) => a + (r.managerPackingHours || 0), 0);
     const hours = rows.reduce((a, r) => a + r.hours, 0);
@@ -149,13 +153,14 @@ export function buildWeekPay(
       streamerId,
       streamerName: rows[0].streamerName,
       streams: rows.sort((a, b) => a.date.localeCompare(b.date)),
-      profit, packingPay, commissionable, hours, hourlyRate,
+      profit, buyProfit, packingPay, commissionable, hours, hourlyRate,
       optionA, optionB, streamPay,
       winner: optionA >= optionB ? "hourly" : "commission",
       tips,
       totalPay: streamPay + packingPay + tips,
       supportPay,
-      companyProfit: commissionable - streamPay - supportPay, // before manager override
+      // company profit runs on REAL cost (buy): what actually remains after paying everyone
+      companyProfit: (buyProfit - packingPay - managerPackingPay) - streamPay - supportPay, // before manager override
     });
   }
   return out.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
@@ -209,11 +214,12 @@ export function buildManagerPay(
 
   for (const [key, rows] of groups) {
     const [weekStart, managerId, streamerId] = key.split("|");
-    // commissionable of this streamer's managed streams: profit minus ALL packing on them
+    // commissionable of this streamer's managed streams (market basis, same as streamer pay):
+    // profit minus ALL packing on them
     const commissionable = rows.reduce(
       (a, r) =>
         a +
-        (r.afterFees - r.promotion - r.productCost - r.tips) -
+        (r.afterFees - r.promotion - r.productMarketCost - r.tips) -
         (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
       0
     );

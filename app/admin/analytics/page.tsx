@@ -32,6 +32,7 @@ export default async function AnalyticsPage() {
     if (typeof s.fields["Override %"] === "number") overrideById[s.id] = s.fields["Override %"];
   }
   const costByStream: Record<string, number> = {};
+  const marketCostByStream: Record<string, number> = {};
   const spotsByStream: Record<string, number> = {};
   const hitsByStream: Record<string, number> = {};
   const hitPoolByStream: Record<string, number> = {};
@@ -45,6 +46,7 @@ export default async function AnalyticsPage() {
     const line = toLine(l);
     const isHit = isHitLine(line, settings);
     costByStream[sid] = (costByStream[sid] || 0) + line.qty * line.buy;
+    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qty * line.market;
     if (!line.isGiveaway) spotsByStream[sid] = (spotsByStream[sid] || 0) + line.qty;
     // hits = higher-value non-pack items only (market > hit_threshold)
     if (isHit) {
@@ -88,6 +90,7 @@ export default async function AnalyticsPage() {
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     managerId: r.fields["Manager Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
+    productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
   }));
 
@@ -272,7 +275,7 @@ export default async function AnalyticsPage() {
               <thead>
                 <tr>
                   <th>Date</th><th>Streamer</th><th>Revenue</th><th>Tips</th><th>Promo</th>
-                  <th>Product cost</th><th>Packing</th><th>Contribution</th><th>Spots</th><th>Sold</th><th>Hits</th><th>Pool %</th><th>Hit / spin</th><th>Hours</th><th>Rev / hr</th>
+                  <th>Cost (buy)</th><th>Cost (mkt)</th><th>Packing</th><th>Contribution</th><th>Spots</th><th>Sold</th><th>Hits</th><th>Pool %</th><th>Hit / spin</th><th>Hours</th><th>Rev / hr</th>
                 </tr>
               </thead>
               <tbody>
@@ -284,6 +287,7 @@ export default async function AnalyticsPage() {
                     <td>{money(r.tips)}</td>
                     <td>{money(r.promotion)}</td>
                     <td>{money(r.productCost)}</td>
+                    <td>{money(r.productMarketCost)}</td>
                     <td>{money(r.packingCost)}</td>
                     <td className={r.contribution < 0 ? "text-bad !font-semibold" : "text-win !font-semibold"}>
                       {money(r.contribution)}

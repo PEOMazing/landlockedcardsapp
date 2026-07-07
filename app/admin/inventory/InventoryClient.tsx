@@ -6,7 +6,7 @@ type Item = {
   marketPrice: number; qtyOnHand: number; tcgUrl: string; priceChecked: string | null;
 };
 
-const CATS = ["Elite Trainer Box", "Booster Box", "Booster Bundle", "Booster Pack", "Premium Collection", "Super Premium Collection", "Blister", "Graded Card", "Giveaway", "Other"];
+import { CATEGORIES as CATS } from "@/lib/categories";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function InventoryClient() {
@@ -137,7 +137,12 @@ export default function InventoryClient() {
               const margin = (i.marketPrice || 0) - (i.buyPrice || 0);
               return (
                 <tr key={i.id}>
-                  <td className="!font-medium">{i.name}</td>
+                  <td className="!font-medium">
+                    {i.name}
+                    {!(i.buyPrice > 0) && (
+                      <span className="ml-2 text-xs text-givvy border border-givvy/40 rounded px-1.5 py-0.5 whitespace-nowrap">needs buy price</span>
+                    )}
+                  </td>
                   <td className="text-dim">{i.category}</td>
                   <td>{num(i.id, "buyPrice", i.buyPrice)}</td>
                   <td>{num(i.id, "marketPrice", i.marketPrice)}</td>

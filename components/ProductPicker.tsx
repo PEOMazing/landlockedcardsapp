@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CATEGORIES } from "@/lib/categories";
 
 export type PickerItem = {
   id: string;
@@ -22,6 +23,10 @@ export default function ProductPicker({
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const [selected, setSelected] = useState<PickerItem | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [addErr, setAddErr] = useState("");
+  const [draft, setDraft] = useState({ name: "", category: "Other", marketPrice: "", qtyOnHand: "" });
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,66 +69,156 @@ export default function ProductPicker({
     setQty(1);
   }
 
+  function startQuickAdd() {
+    setDraft({ name: q.trim(), category: "Other", marketPrice: "", qtyOnHand: "" });
+    setAddErr("");
+    setAdding(true);
+    setOpen(false);
+  }
+
+  async function saveQuickAdd() {
+    const name = draft.name.trim();
+    if (!name || saving) return;
+    setSaving(true);
+    setAddErr("");
+    try {
+      const res = await fetch("/api/inventory/quick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          category: draft.category,
+          marketPrice: parseFloat(draft.marketPrice) || 0,
+          qtyOnHand: parseInt(draft.qtyOnHand) || 0,
+        }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.item) throw new Error(d.error || "Could not add product");
+      setItems((prev) =>
+        prev.some((p) => p.id === d.item.id) ? prev : [...prev, d.item].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      choose(d.item);
+      setAdding(false);
+    } catch (e: any) {
+      setAddErr(e.message || "Could not add product");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col sm:flex-row gap-2 items-stretch">
-      <div className="relative flex-1" ref={boxRef}>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col sm:flex-row gap-2 items-stretch">
+        <div className="relative flex-1" ref={boxRef}>
+          <input
+            className="input"
+            placeholder='Search inventory - try "ETB" or "151"'
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setSelected(null);
+              setOpen(true);
+              setHi(0);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, filtered.length - 1)); }
+              if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (open && filtered[hi]) choose(filtered[hi]);
+                else if (open && q.trim() && filtered.length === 0) startQuickAdd();
+                else submit();
+              }
+              if (e.key === "Escape") setOpen(false);
+            }}
+          />
+          {open && (filtered.length > 0 || q.trim().length > 0) && (
+            <div className="absolute z-30 mt-1 w-full card overflow-hidden shadow-2xl">
+              {filtered.map((i, idx) => (
+                <button
+                  key={i.id}
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
+                    idx === hi ? "bg-foil/15" : "hover:bg-edge/40"
+                  }`}
+                  onMouseEnter={() => setHi(idx)}
+                  onClick={() => choose(i)}
+                >
+                  <span>
+                    {i.name}
+                    {i.category && <span className="text-dim text-xs ml-2">{i.category}</span>}
+                  </span>
+                  <span className="text-dim text-xs num whitespace-nowrap">
+                    {typeof i.marketPrice === "number" && `$${i.marketPrice.toFixed(2)}`}
+                    {typeof i.qtyOnHand === "number" && ` - ${i.qtyOnHand} on hand`}
+                  </span>
+                </button>
+              ))}
+              {q.trim().length > 0 &&
+                !items.some((i) => i.name.toLowerCase() === q.trim().toLowerCase()) && (
+                <button
+                  className="w-full text-left px-3 py-2 text-sm text-foil hover:bg-edge/40 border-t border-edge"
+                  onClick={startQuickAdd}
+                >
+                  + Add &quot;{q.trim()}&quot; as a new product
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <input
-          className="input"
-          placeholder='Search inventory - try "ETB" or "151"'
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setSelected(null);
-            setOpen(true);
-            setHi(0);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, filtered.length - 1)); }
-            if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (open && filtered[hi]) choose(filtered[hi]);
-              else submit();
-            }
-            if (e.key === "Escape") setOpen(false);
-          }}
+          type="number"
+          min={1}
+          className="input sm:w-24"
+          value={qty}
+          onChange={(e) => setQty(parseInt(e.target.value) || 1)}
+          aria-label="Quantity"
         />
-        {open && filtered.length > 0 && (
-          <div className="absolute z-30 mt-1 w-full card overflow-hidden shadow-2xl">
-            {filtered.map((i, idx) => (
-              <button
-                key={i.id}
-                className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
-                  idx === hi ? "bg-foil/15" : "hover:bg-edge/40"
-                }`}
-                onMouseEnter={() => setHi(idx)}
-                onClick={() => choose(i)}
-              >
-                <span>
-                  {i.name}
-                  {i.category && <span className="text-dim text-xs ml-2">{i.category}</span>}
-                </span>
-                <span className="text-dim text-xs num whitespace-nowrap">
-                  {typeof i.marketPrice === "number" && `$${i.marketPrice.toFixed(2)}`}
-                  {typeof i.qtyOnHand === "number" && ` - ${i.qtyOnHand} on hand`}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+        <button className="btn-foil disabled:opacity-40" disabled={!selected || busy} onClick={submit}>
+          Add to show
+        </button>
       </div>
-      <input
-        type="number"
-        min={1}
-        className="input sm:w-24"
-        value={qty}
-        onChange={(e) => setQty(parseInt(e.target.value) || 1)}
-        aria-label="Quantity"
-      />
-      <button className="btn-foil disabled:opacity-40" disabled={!selected || busy} onClick={submit}>
-        Add to show
-      </button>
+
+      {adding && (
+        <div className="card p-3 flex flex-col gap-2">
+          <div className="text-sm font-medium">New product</div>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <input
+              className="input sm:col-span-2"
+              placeholder="Product name"
+              value={draft.name}
+              onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+              autoFocus
+            />
+            <select
+              className="input"
+              value={draft.category}
+              onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+            >
+              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <input
+              type="number"
+              step="0.01"
+              min={0}
+              className="input"
+              placeholder="Market price (optional)"
+              value={draft.marketPrice}
+              onChange={(e) => setDraft({ ...draft, marketPrice: e.target.value })}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="btn-foil disabled:opacity-40" disabled={!draft.name.trim() || saving} onClick={saveQuickAdd}>
+              {saving ? "Saving..." : "Save product"}
+            </button>
+            <button className="text-dim text-sm hover:text-body" onClick={() => setAdding(false)}>Cancel</button>
+            {addErr && <span className="text-bad text-sm">{addErr}</span>}
+          </div>
+          <div className="text-dim text-xs">
+            Saved without a buy price - admin fills that in on the Inventory tab. P&amp;L for this stream updates automatically once they do.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

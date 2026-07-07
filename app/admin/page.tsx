@@ -28,11 +28,13 @@ export default async function AdminDashboard() {
     if (typeof s.fields["Override %"] === "number") overrideById[s.id] = s.fields["Override %"];
   }
   const costByStream: Record<string, number> = {};
+  const marketCostByStream: Record<string, number> = {};
   for (const l of lineRows) {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
     costByStream[sid] = (costByStream[sid] || 0) + line.qty * line.buy;
+    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qty * line.market;
   }
   const rows: StreamRow[] = streamRows.map((r) => ({
     id: r.id,
@@ -47,6 +49,7 @@ export default async function AdminDashboard() {
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     managerId: r.fields["Manager Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
+    productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
   }));
 
@@ -56,11 +59,12 @@ export default async function AdminDashboard() {
   const life = weeks.reduce(
     (a, w) => ({
       profit: a.profit + w.profit,
+      buyProfit: a.buyProfit + w.buyProfit,
       pay: a.pay + w.totalPay,
       support: a.support + w.supportPay,
       company: a.company + w.companyProfit,
     }),
-    { profit: 0, pay: 0, support: 0, company: 0 }
+    { profit: 0, buyProfit: 0, pay: 0, support: 0, company: 0 }
   );
   life.company -= totalOverrides; // manager packing is already netted inside commissionable
   const mgrByWeek = new Map<string, typeof managerWeeks>();
@@ -81,8 +85,9 @@ export default async function AdminDashboard() {
       <main className="max-w-6xl mx-auto p-6 space-y-8">
         <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display, sans-serif)" }}>Pay dashboard</h1>
 
-        <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <Big label="Lifetime net profit" v={money(life.profit)} />
+        <section className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <Big label="Profit over market" v={money(life.profit)} />
+          <Big label="Profit over buy" v={money(life.buyProfit)} />
           <Big label="Streamer pay" v={money(life.pay)} />
           <Big label="Manager overrides" v={money(totalOverrides)} />
           <Big label="Stream support" v={money(life.support)} />
@@ -96,7 +101,7 @@ export default async function AdminDashboard() {
               <table className="w-full">
                 <thead>
                   <tr>
-                    <th>Streamer</th><th>Streams</th><th>Net profit</th><th>Packing</th>
+                    <th>Streamer</th><th>Streams</th><th>Profit (mkt)</th><th>Profit (buy)</th><th>Packing</th>
                     <th>Commissionable</th><th>Hourly (A)</th><th>Commission (B)</th>
                     <th>Stream pay</th><th>Total pay</th><th>Support</th><th>Company</th>
                   </tr>
@@ -107,6 +112,7 @@ export default async function AdminDashboard() {
                       <td className="!font-medium">{w.streamerName}</td>
                       <td>{w.streams.length}</td>
                       <td>{money(w.profit)}</td>
+                      <td>{money(w.buyProfit)}</td>
                       <td>{money(w.packingPay)}</td>
                       <td>{money(w.commissionable)}</td>
                       <td className={w.winner === "hourly" ? "text-win font-semibold" : ""}>{money(w.optionA)}</td>
