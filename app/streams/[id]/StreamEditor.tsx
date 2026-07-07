@@ -349,6 +349,14 @@ export default function StreamEditor({ id }: { id: string }) {
                   </td>
                   <td>
                     <div className="flex items-center gap-1">
+                      <button
+                        className="rounded-md border border-edge text-dim px-2 py-1 text-xs font-bold hover:bg-edge/40 hover:text-body disabled:opacity-30"
+                        disabled={l.qtyHit <= 0}
+                        onClick={() => setHit(l.id, l.qtyHit - 1)}
+                        aria-label={`Undo one ${l.name} hit`}
+                      >
+                        -1
+                      </button>
                       <input
                         type="number" min={0} max={l.qty}
                         className="input !w-16 !py-1"
