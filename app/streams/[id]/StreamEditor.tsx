@@ -60,8 +60,10 @@ export default function StreamEditor({ id }: { id: string }) {
     const hitCostDelivered = hitLines.reduce((a, l) => a + l.qtyHit * (l.buy ?? 0), 0);
     const hitValueRemaining = hitLines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0) * l.market, 0);
     const showBuy = lines.some((l) => typeof l.buy === "number"); // admin only
+    const buyCost = lines.reduce((a, l) => a + l.qty * (l.buy ?? 0), 0);
     return {
-      cfg, spots, givvyQty, givvyValue, totalValue,
+      cfg, spots, givvyQty, givvyValue, totalValue, showBuy,
+      buyCost: showBuy ? buyCost : null,
       valuePerSpot: spots > 0 ? totalValue / spots : 0,
       breakEven: spots > 0 ? (totalValue / spots) * cfg.breakevenMult : 0,
       hitPoolQty, hitPoolValue, hitsDelivered, hitValueDelivered,
@@ -215,6 +217,13 @@ export default function StreamEditor({ id }: { id: string }) {
   );
 
   const spotsSoldNum = parseInt(form.spotsSold) || 0;
+  const afterFeesNum = parseFloat(form.afterFees) || 0;
+  const promoNum = parseFloat(form.promotion) || 0;
+  const tipsNum = parseFloat(form.tips) || 0;
+  // profit per spin on the same basis as streamer pay: after fees - promo - market value of the set - tips
+  const profitPerSpin = spotsSoldNum > 0 ? (afterFeesNum - promoNum - m.totalValue - tipsNum) / spotsSoldNum : 0;
+  // admin only: same thing over real buy cost
+  const buyProfitPerSpin = spotsSoldNum > 0 && m.buyCost !== null ? (afterFeesNum - promoNum - m.buyCost - tipsNum) / spotsSoldNum : 0;
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-8">
@@ -259,6 +268,24 @@ export default function StreamEditor({ id }: { id: string }) {
             <div className="label">Hit rate per spin sold</div>
             <div className="text-xl font-bold num text-win">{((m.hitsDelivered / spotsSoldNum) * 100).toFixed(1)}%</div>
           </div>
+        )}
+        {spotsSoldNum > 0 && afterFeesNum > 0 && (
+          <>
+            <div>
+              <div className="label">Avg spin value</div>
+              <div className="text-xl font-bold num text-foil">{$(afterFeesNum / spotsSoldNum)}</div>
+            </div>
+            <div>
+              <div className="label">Avg profit per spin</div>
+              <div className={`text-xl font-bold num ${profitPerSpin >= 0 ? "text-win" : "text-bad"}`}>{$(profitPerSpin)}</div>
+            </div>
+            {m.buyCost !== null && (
+              <div>
+                <div className="label">Profit per spin over buy (admin)</div>
+                <div className={`text-xl font-bold num ${buyProfitPerSpin >= 0 ? "text-win" : "text-bad"}`}>{$(buyProfitPerSpin)}</div>
+              </div>
+            )}
+          </>
         )}
       </section>
 

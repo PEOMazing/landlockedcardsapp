@@ -275,7 +275,7 @@ export default async function AnalyticsPage() {
               <thead>
                 <tr>
                   <th>Date</th><th>Streamer</th><th>Revenue</th><th>Tips</th><th>Promo</th>
-                  <th>Cost (buy)</th><th>Cost (mkt)</th><th>Packing</th><th>Contribution</th><th>Spots</th><th>Sold</th><th>Hits</th><th>Pool %</th><th>Hit / spin</th><th>Hours</th><th>Rev / hr</th>
+                  <th>Cost (buy)</th><th>Cost (mkt)</th><th>Packing</th><th>Contribution</th><th>Spots</th><th>Sold</th><th>$ / spin</th><th>Profit / spin</th><th>Hits</th><th>Pool %</th><th>Hit / spin</th><th>Hours</th><th>Rev / hr</th>
                 </tr>
               </thead>
               <tbody>
@@ -294,6 +294,8 @@ export default async function AnalyticsPage() {
                     </td>
                     <td>{r.spots}</td>
                     <td>{r.sold || "-"}</td>
+                    <td>{r.sold > 0 ? money(r.afterFees / r.sold) : "-"}</td>
+                    <td className={r.sold > 0 && r.contribution < 0 ? "text-bad" : ""}>{r.sold > 0 ? money(r.contribution / r.sold) : "-"}</td>
                     <td>{r.hits}</td>
                     <td>{r.hitPool > 0 ? ((r.hits / r.hitPool) * 100).toFixed(0) + "%" : "-"}</td>
                     <td>{r.sold > 0 ? ((r.hits / r.sold) * 100).toFixed(1) + "%" : "-"}</td>
