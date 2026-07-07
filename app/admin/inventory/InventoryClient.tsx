@@ -6,7 +6,7 @@ type Item = {
   marketPrice: number; qtyOnHand: number; tcgUrl: string; priceChecked: string | null;
 };
 
-const CATS = ["Elite Trainer Box", "Booster Box", "Booster Pack", "Premium Collection", "Super Premium Collection", "Blister", "Graded Card", "Giveaway", "Other"];
+const CATS = ["Elite Trainer Box", "Booster Box", "Booster Bundle", "Booster Pack", "Premium Collection", "Super Premium Collection", "Blister", "Graded Card", "Giveaway", "Other"];
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function InventoryClient() {
