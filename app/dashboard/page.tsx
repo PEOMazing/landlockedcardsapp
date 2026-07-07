@@ -195,9 +195,15 @@ export default async function Dashboard() {
               <tbody>
                 {streamRows.map((r) => (
                   <tr key={r.id}>
-                    <td>{r.fields["Stream Date"]}</td>
+                    <td>
+                      <Link className="text-foil hover:underline num" href={`/streams/${r.id}`}>
+                        {r.fields["Stream Date"]}
+                      </Link>
+                    </td>
                     <td className="!font-medium">
-                      {r.fields["Title"]}
+                      <Link className="hover:text-foil hover:underline" href={`/streams/${r.id}`}>
+                        {r.fields["Title"]}
+                      </Link>
                       {r.fields["Manager Rec Id"] === me.streamer!.id && (
                         <span className="text-foil text-xs ml-2">managing</span>
                       )}
