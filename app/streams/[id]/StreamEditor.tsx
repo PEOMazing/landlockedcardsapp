@@ -95,6 +95,22 @@ export default function StreamEditor({ id }: { id: string }) {
     setBusy(false);
   }
 
+  // pricing (admin/manager): updates the line snapshot and the inventory master
+  function setMarket(lineId: string, market: number) {
+    const cfg = data?.config || { hitThreshold: 10 };
+    const mkt = Math.max(0, market);
+    setLines((prev) =>
+      prev.map((l) =>
+        l.id === lineId ? { ...l, market: mkt, isHit: !l.isGiveaway && mkt > cfg.hitThreshold } : l
+      )
+    );
+    fetch(`/api/lines/${lineId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ market: mkt }),
+    });
+  }
+
   // optimistic hit updates: instant on screen, saved in the background
   function setHit(lineId: string, qtyHit: number) {
     const clamped = Math.max(0, qtyHit);
@@ -202,7 +218,27 @@ export default function StreamEditor({ id }: { id: string }) {
                     {l.isHit && <span className="text-foil text-xs ml-2 font-bold">HIT</span>}
                   </td>
                   <td>{l.qty}</td>
-                  <td>{$(l.market)}</td>
+                  <td>
+                    {canManage ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number" step="0.01" min={0}
+                          className="input !w-24 !py-1"
+                          value={l.market}
+                          onChange={(e) => setMarket(l.id, parseFloat(e.target.value) || 0)}
+                        />
+                        <a
+                          className="text-foil text-xs hover:underline whitespace-nowrap"
+                          target="_blank" rel="noreferrer"
+                          href={`https://www.google.com/search?q=${encodeURIComponent(l.name)}+site:tcgplayer.com`}
+                        >
+                          TCG
+                        </a>
+                      </div>
+                    ) : (
+                      $(l.market)
+                    )}
+                  </td>
                   <td>
                     <div className="flex items-center gap-1">
                       <input

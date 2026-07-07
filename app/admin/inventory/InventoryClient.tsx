@@ -150,7 +150,7 @@ export default function InventoryClient() {
                     <a
                       className="text-foil text-xs hover:underline"
                       target="_blank" rel="noreferrer"
-                      href={i.tcgUrl || `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(i.name)}`}
+                      href={i.tcgUrl || `https://www.google.com/search?q=${encodeURIComponent(i.name)}+site:tcgplayer.com`}
                     >
                       TCGplayer
                     </a>

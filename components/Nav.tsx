@@ -13,6 +13,7 @@ export default function Nav({ isAdmin, name }: { isAdmin: boolean; name?: string
           {isAdmin && (
             <>
               <Link className="hover:text-body" href="/admin">Pay Dashboard</Link>
+              <Link className="hover:text-body" href="/admin/streams">All Streams</Link>
               <Link className="hover:text-body" href="/admin/analytics">Analytics</Link>
               <Link className="hover:text-body" href="/admin/inventory">Inventory</Link>
               <Link className="hover:text-body" href="/admin/settings">Settings</Link>

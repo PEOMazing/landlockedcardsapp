@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
-import { getMe, ownsStream } from "@/lib/auth";
+import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 
 async function guard(lineId: string) {
   const me = await getMe();
@@ -10,7 +10,7 @@ async function guard(lineId: string) {
   const streamId = line.fields["Stream Rec Id"];
   const stream = await atGet(T.streams, streamId);
   if (!ownsStream(me, stream)) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
-  return { me, line };
+  return { me, line, stream };
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -19,6 +19,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const b = await req.json();
   const fields: Record<string, any> = {};
   if (b.qtyHit !== undefined) fields["Qty Hit"] = Math.max(0, parseInt(b.qtyHit) || 0);
+  if (b.market !== undefined) {
+    // pricing is admin/manager territory
+    if (!canManageStream(g.me, g.stream)) {
+      return NextResponse.json({ error: "only admin or the stream manager can set prices" }, { status: 403 });
+    }
+    const mkt = Math.max(0, parseFloat(b.market) || 0);
+    fields["Market Price Snapshot"] = mkt;
+    // keep the inventory master in sync and stamp the price check
+    const productId = g.line.fields["Product"]?.[0];
+    if (productId) {
+      await atUpdate(T.inventory, productId, {
+        "Market Price": mkt,
+        "Price Checked": new Date().toISOString().slice(0, 10),
+      });
+    }
+  }
   if (b.qty !== undefined) {
     const newQty = Math.max(1, parseInt(b.qty) || 1);
     const oldQty = g.line.fields["Qty"] || 0;
