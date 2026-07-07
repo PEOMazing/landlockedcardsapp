@@ -12,13 +12,18 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const isComplete = (stream.fields["Status"] || "Planned") === "Complete";
-  const [lineRows, timeRows, settings, allLines, completedStreams] = await Promise.all([
+  const [lineRows, timeRows, settings, allLines, completedStreams, inventoryRows] = await Promise.all([
     atList(T.lines, { filterByFormula: `{Stream Rec Id} = '${params.id}'` }),
     atList(T.time, { filterByFormula: `{Stream Rec Id} = '${params.id}'`, "sort[0][field]": "Start" }),
     getSettings(),
     isComplete ? Promise.resolve([]) : atList(T.lines),
     isComplete ? Promise.resolve([]) : atList(T.streams, { filterByFormula: "{Status} = 'Complete'" }),
+    atList(T.inventory),
   ]);
+  const categoryByProduct: Record<string, string> = {};
+  for (const inv of inventoryRows) {
+    categoryByProduct[inv.id] = inv.fields["Category"]?.name || inv.fields["Category"] || "";
+  }
   const lines = lineRows.map(toLine);
 
   // historical pool-delivery rate: across completed streams (excluding this one),
@@ -66,13 +71,15 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       hours: stream.fields["Hours Streamed"] ?? null,
       packingHours: stream.fields["Packing Hours"] ?? null,
       spotsSold: stream.fields["Spots Sold"] ?? null,
+      itemsReturned: !!stream.fields["Items Returned"],
       managerPackingHours: stream.fields["Manager Packing Hours"] ?? null,
       managerName,
       notes: stream.fields["Notes"] || "",
     },
-    lines: lines.map((l) => ({
+    lines: lines.map((l, i) => ({
       id: l.id, name: l.name.replace(/^\d+x\s+/, ""), qty: l.qty, qtyHit: l.qtyHit,
       market: l.market, isGiveaway: l.isGiveaway, isHit: isHitLine(l, settings),
+      isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
       ...(me.isAdmin ? { buy: l.buy } : {}),
     })),
     config: {

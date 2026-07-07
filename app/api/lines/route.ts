@@ -9,6 +9,7 @@ export async function POST(req: Request) {
   const b = await req.json(); // { streamId, productId, qty }
   const stream = await atGet(T.streams, b.streamId);
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (stream.fields["Items Returned"]) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
   const product = await atGet(T.inventory, b.productId);
   const qty = Math.max(1, parseInt(b.qty) || 1);
   const name = product.fields["Product Name"];

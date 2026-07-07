@@ -10,7 +10,7 @@ const $ = (n: number) =>
 
 type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
-  market: number; isGiveaway: boolean; isHit: boolean; buy?: number;
+  market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; buy?: number;
 };
 
 export default function StreamEditor({ id }: { id: string }) {
@@ -20,6 +20,11 @@ export default function StreamEditor({ id }: { id: string }) {
   const [form, setForm] = useState<any>({});
   const [saved, setSaved] = useState(false);
   const [loadErr, setLoadErr] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteMsg, setPasteMsg] = useState("");
+  const [returnArmed, setReturnArmed] = useState(false);
+  const [returnMsg, setReturnMsg] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/streams/${id}`);
@@ -88,6 +93,52 @@ export default function StreamEditor({ id }: { id: string }) {
     setBusy(false);
   }
 
+  // Parse pasted rows from Excel/Sheets: "Name<TAB>Qty", "Qty<TAB>Name", "4x Name", "Name x4", or just "Name"
+  function parsePaste(text: string): { name: string; qty: number }[] {
+    const out: { name: string; qty: number }[] = [];
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      let name = line, qty = 1, m;
+      if (line.includes("\t")) {
+        const parts = line.split("\t").map((p) => p.trim()).filter(Boolean);
+        const numIdx = parts.findIndex((p) => /^\d+$/.test(p));
+        if (numIdx >= 0) {
+          qty = parseInt(parts[numIdx]);
+          name = parts.filter((_, i) => i !== numIdx).join(" ");
+        } else name = parts.join(" ");
+      } else if ((m = line.match(/^(\d+)\s*[xX]\s+(.+)$/))) {
+        qty = parseInt(m[1]); name = m[2];
+      } else if ((m = line.match(/^(.+?)\s+[xX]\s*(\d+)$/))) {
+        name = m[1]; qty = parseInt(m[2]);
+      }
+      if (name) out.push({ name: name.trim(), qty: Math.max(1, qty) });
+    }
+    return out;
+  }
+
+  async function bulkAdd() {
+    const items = parsePaste(pasteText);
+    if (items.length === 0) return;
+    setBusy(true); setPasteMsg("Adding " + items.length + " items...");
+    const res = await fetch("/api/lines/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ streamId: id, items }),
+    });
+    const d = await res.json();
+    if (!res.ok) setPasteMsg(d.error || "Bulk add failed");
+    else {
+      let msg = `Added ${d.added.length} items`;
+      if (d.created.length) msg += ` - created ${d.created.length} new products (set their prices!)`;
+      if (d.skipped.length) msg += ` - skipped (no match): ${d.skipped.join(", ")}`;
+      setPasteMsg(msg);
+      setPasteText("");
+    }
+    await load();
+    setBusy(false);
+  }
+
   async function removeLine(lineId: string) {
     setBusy(true);
     await fetch(`/api/lines/${lineId}`, { method: "DELETE" });
@@ -120,6 +171,17 @@ export default function StreamEditor({ id }: { id: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ qtyHit: clamped }),
     });
+  }
+
+  async function returnItems() {
+    setBusy(true); setReturnMsg("");
+    const res = await fetch(`/api/streams/${id}/return`, { method: "POST" });
+    const d = await res.json();
+    if (!res.ok) setReturnMsg(d.error || "Return failed");
+    else setReturnMsg(`Returned ${d.itemsReturned} items to inventory`);
+    setReturnArmed(false);
+    await load();
+    setBusy(false);
   }
 
   async function saveResults(markComplete: boolean) {
@@ -202,8 +264,33 @@ export default function StreamEditor({ id }: { id: string }) {
 
       {/* Show set builder */}
       <section className="card p-5 space-y-4">
-        <h2 className="label">Show set</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="label">Show set</h2>
+          <button className="text-foil text-xs hover:underline" onClick={() => setShowPaste(!showPaste)}>
+            {showPaste ? "Hide paste" : "Paste a list"}
+          </button>
+        </div>
         <ProductPicker onAdd={addLine} busy={busy} />
+        {showPaste && (
+          <div className="space-y-2 border border-edge rounded-lg p-3">
+            <textarea
+              className="input !h-32 font-mono text-xs"
+              placeholder={"Paste from Excel - one item per line:\nPrismatic ETB\t2\n4x Topps Pack\nBlooming Waters"}
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+            />
+            <div className="flex items-center gap-3 flex-wrap">
+              <button className="btn-foil disabled:opacity-40" disabled={busy || !pasteText.trim()} onClick={bulkAdd}>
+                Add all to show
+              </button>
+              {pasteMsg && <span className="text-dim text-xs">{pasteMsg}</span>}
+            </div>
+            <p className="text-dim text-xs">
+              Accepts Name + Qty columns from Excel, or lines like "4x Topps Pack". Names are matched
+              against inventory; anything unknown gets created as a new product (admin) for you to price.
+            </p>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -220,6 +307,7 @@ export default function StreamEditor({ id }: { id: string }) {
                   <td>{l.qty}</td>
                   <td>
                     {canManage ? (
+                      <div>
                       <div className="flex items-center gap-2">
                         <input
                           type="number" step="0.01" min={0}
@@ -230,10 +318,30 @@ export default function StreamEditor({ id }: { id: string }) {
                         <a
                           className="text-foil text-xs hover:underline whitespace-nowrap"
                           target="_blank" rel="noreferrer"
-                          href={`https://www.google.com/search?q=${encodeURIComponent(l.name)}+site:tcgplayer.com`}
+                          href={l.isGraded
+                            ? `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(l.name)}&LH_Sold=1&LH_Complete=1`
+                            : `https://www.google.com/search?q=${encodeURIComponent(l.name)}+site:tcgplayer.com`}
                         >
-                          TCG
+                          {l.isGraded ? "Sold comps" : "TCG"}
                         </a>
+                      </div>
+                      {l.isGraded && (
+                        <input
+                          className="input !w-40 !py-1 mt-1 text-xs"
+                          placeholder="avg: 180, 172, 195 ⏎"
+                          title="Paste recent sale prices separated by commas and press Enter - the average fills the market price"
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            const nums = (e.target as HTMLInputElement).value
+                              .split(/[^0-9.]+/).map(parseFloat).filter((n) => !isNaN(n) && n > 0);
+                            if (nums.length > 0) {
+                              const avg = Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100;
+                              setMarket(l.id, avg);
+                              (e.target as HTMLInputElement).value = "";
+                            }
+                          }}
+                        />
+                      )}
                       </div>
                     ) : (
                       $(l.market)
@@ -321,6 +429,27 @@ export default function StreamEditor({ id }: { id: string }) {
             Save and mark complete
           </button>
           {saved && <span className="text-win text-sm">Saved</span>}
+          <span className="mx-2 text-edge">|</span>
+          {stream.itemsReturned ? (
+            <span className="text-win text-sm">✓ Unsold items returned to inventory - show set locked</span>
+          ) : !returnArmed ? (
+            <button
+              className="btn-ghost disabled:opacity-40"
+              disabled={busy || lines.length === 0}
+              onClick={() => setReturnArmed(true)}
+            >
+              Return unsold items to inventory
+            </button>
+          ) : (
+            <span className="flex items-center gap-2">
+              <span className="text-givvy text-sm">
+                Return {lines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0), 0)} items? Hits must be final - this locks the show set.
+              </span>
+              <button className="btn-win" disabled={busy} onClick={returnItems}>Yes, return</button>
+              <button className="btn-ghost" onClick={() => setReturnArmed(false)}>Cancel</button>
+            </span>
+          )}
+          {returnMsg && <span className="text-win text-sm">{returnMsg}</span>}
           <span className="text-dim text-xs">
             Hours come from the timeclock above. Pay settles weekly: profit is netted first, then you get
             the higher of hourly or commission.

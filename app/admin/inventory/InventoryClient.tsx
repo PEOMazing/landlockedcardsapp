@@ -6,7 +6,7 @@ type Item = {
   marketPrice: number; qtyOnHand: number; tcgUrl: string; priceChecked: string | null;
 };
 
-const CATS = ["ETB", "Booster Box", "Pack", "Box Set", "Collection", "Coin/Accessory", "Giveaway", "Other"];
+const CATS = ["Elite Trainer Box", "Booster Box", "Booster Pack", "Premium Collection", "Super Premium Collection", "Blister", "Graded Card", "Giveaway", "Other"];
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function InventoryClient() {
@@ -14,7 +14,7 @@ export default function InventoryClient() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [draft, setDraft] = useState({ name: "", category: "ETB", buyPrice: "", marketPrice: "", qtyOnHand: "", tcgUrl: "" });
+  const [draft, setDraft] = useState({ name: "", category: "Elite Trainer Box", buyPrice: "", marketPrice: "", qtyOnHand: "", tcgUrl: "" });
 
   const load = useCallback(async () => {
     const d = await fetch("/api/inventory").then((r) => r.json());
@@ -42,7 +42,7 @@ export default function InventoryClient() {
         tcgUrl: draft.tcgUrl,
       }),
     });
-    setDraft({ name: "", category: "ETB", buyPrice: "", marketPrice: "", qtyOnHand: "", tcgUrl: "" });
+    setDraft({ name: "", category: "Elite Trainer Box", buyPrice: "", marketPrice: "", qtyOnHand: "", tcgUrl: "" });
     await load();
     setBusy(false);
   }
@@ -150,9 +150,11 @@ export default function InventoryClient() {
                     <a
                       className="text-foil text-xs hover:underline"
                       target="_blank" rel="noreferrer"
-                      href={i.tcgUrl || `https://www.google.com/search?q=${encodeURIComponent(i.name)}+site:tcgplayer.com`}
+                      href={i.tcgUrl || (i.category === "Graded Card"
+                        ? `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(i.name)}&LH_Sold=1&LH_Complete=1`
+                        : `https://www.google.com/search?q=${encodeURIComponent(i.name)}+site:tcgplayer.com`)}
                     >
-                      TCGplayer
+                      {i.category === "Graded Card" ? "Sold comps" : "TCGplayer"}
                     </a>
                     <button className="text-dim text-xs ml-3 hover:text-body" onClick={() => refreshPrices(i.id)}>
                       refresh

@@ -17,8 +17,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const g = await guard(params.id);
   if ("err" in g) return g.err;
   const b = await req.json();
+  const returned = !!g.stream.fields["Items Returned"];
   const fields: Record<string, any> = {};
-  if (b.qtyHit !== undefined) fields["Qty Hit"] = Math.max(0, parseInt(b.qtyHit) || 0);
+  if (b.qtyHit !== undefined) {
+    if (returned) return NextResponse.json({ error: "items already returned - hits are locked" }, { status: 400 });
+    fields["Qty Hit"] = Math.max(0, parseInt(b.qtyHit) || 0);
+  }
   if (b.market !== undefined) {
     // pricing is admin/manager territory
     if (!canManageStream(g.me, g.stream)) {
@@ -36,6 +40,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   }
   if (b.qty !== undefined) {
+    if (returned) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
     const newQty = Math.max(1, parseInt(b.qty) || 1);
     const oldQty = g.line.fields["Qty"] || 0;
     fields["Qty"] = newQty;
@@ -55,6 +60,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   const g = await guard(params.id);
   if ("err" in g) return g.err;
+  if (g.stream.fields["Items Returned"]) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
   const qty = g.line.fields["Qty"] || 0;
   const productId = g.line.fields["Product"]?.[0];
   if (productId) {
