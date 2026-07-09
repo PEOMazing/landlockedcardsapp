@@ -38,7 +38,11 @@ function extractProductId(url: string): number | null {
 function matchScore(invName: string, prodName: string): number {
   const a = norm(invName), b = norm(prodName);
   if (a === b) return 100;
-  if (b.includes(a) || a.includes(b)) return 80;
+  // tcgcsv name containing the full inventory name is safe; the reverse only counts
+  // when the tcgcsv name is most of the inventory name (stops "Sinistea" the card
+  // from matching "... Single Pack Blister [Sinistea]" the product)
+  if (b.includes(a)) return 80;
+  if (a.includes(b) && b.length >= a.length * 0.6) return 70;
   const at = tokens(invName), bt = new Set(tokens(prodName));
   if (at.length === 0) return 0;
   const hit = at.filter((t) => bt.has(t)).length;
@@ -60,7 +64,7 @@ async function tcgcsvBulkRefresh(targets: AtRecord[]) {
 
   // pick only groups that plausibly contain our products: shared name tokens with
   // any inventory item, plus the catch-all groups where one-off products live
-  const ALWAYS = new Set(["Miscellaneous Cards & Products", "World Championship Decks", "First Partner Pack"]);
+  const ALWAYS = new Set(["Miscellaneous Cards & Products", "World Championship Decks", "First Partner Pack", "Blister Exclusives"]);
   const productTokenSets = targets.map((r) => new Set(tokens(r.fields["Product Name"])));
   const scored = groups.map((g) => {
     // strip short set-code prefixes like "ME04:", "SV10:", "SWSH12:"
