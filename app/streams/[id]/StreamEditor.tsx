@@ -4,6 +4,8 @@ import Link from "next/link";
 import ProductPicker, { PickerItem } from "@/components/ProductPicker";
 import CopyShowSet from "@/components/CopyShowSet";
 import Timeclock from "@/components/Timeclock";
+import BreakChecklist from "@/components/BreakChecklist";
+import SinglesPicker from "@/components/SinglesPicker";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -11,6 +13,7 @@ const $ = (n: number) =>
 type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
   market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; buy?: number;
+  singleRecId?: string; salePrice?: number | null;
 };
 
 export default function StreamEditor({ id }: { id: string }) {
@@ -175,6 +178,17 @@ export default function StreamEditor({ id }: { id: string }) {
     });
   }
 
+  // sale price on an auctioned single: marks the card Sold and counts the hit
+  function setSale(lineId: string, salePrice: number) {
+    const sale = Math.max(0, salePrice);
+    setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, salePrice: sale, qtyHit: sale > 0 ? 1 : l.qtyHit } : l)));
+    fetch(`/api/lines/${lineId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ salePrice: sale }),
+    });
+  }
+
   async function returnItems() {
     setBusy(true); setReturnMsg("");
     const res = await fetch(`/api/streams/${id}/return`, { method: "POST" });
@@ -235,6 +249,9 @@ export default function StreamEditor({ id }: { id: string }) {
           </h1>
           <span className={`text-sm ${stream.status === "Complete" ? "text-win" : "text-foil"}`}>
             {stream.status}
+          </span>
+          <span className="text-dim text-sm ml-3 border border-edge rounded-full px-3 py-0.5">
+            {stream.streamType || "Surprise Set"}
           </span>
           {stream.managerName && (
             <span className="text-dim text-sm ml-3">Managed by {stream.managerName}</span>
@@ -298,6 +315,9 @@ export default function StreamEditor({ id }: { id: string }) {
           </button>
         </div>
         <ProductPicker onAdd={addLine} busy={busy} />
+        {stream.streamType === "Single Stream" && (
+          <SinglesPicker streamId={id} onAdded={load} busy={busy} />
+        )}
         {showPaste && (
           <div className="space-y-2 border border-edge rounded-lg p-3">
             <textarea
@@ -321,7 +341,11 @@ export default function StreamEditor({ id }: { id: string }) {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr><th>Product</th><th>Qty</th><th>Market</th><th>Hits</th><th>Remain</th><th>Hit value left</th><th></th></tr>
+              <tr>
+                <th>Product</th><th>Qty</th><th>Market</th><th>Hits</th><th>Remain</th><th>Hit value left</th>
+                {lines.some((l) => l.singleRecId) && <th>Sale</th>}
+                <th></th>
+              </tr>
             </thead>
             <tbody>
               {lines.map((l) => (
@@ -402,18 +426,46 @@ export default function StreamEditor({ id }: { id: string }) {
                   </td>
                   <td>{Math.max(l.qty - l.qtyHit, 0)}</td>
                   <td>{$(Math.max(l.qty - l.qtyHit, 0) * l.market)}</td>
+                  {lines.some((x) => x.singleRecId) && (
+                    <td>
+                      {l.singleRecId ? (
+                        <input
+                          type="number" step="0.01" min={0}
+                          className="input !w-24 !py-1"
+                          placeholder="hammer $"
+                          title="Final auction price - entering it marks the card Sold"
+                          defaultValue={l.salePrice ?? ""}
+                          onBlur={(e) => {
+                            const v = parseFloat(e.target.value);
+                            if (!isNaN(v) && v !== (l.salePrice ?? 0)) setSale(l.id, v);
+                          }}
+                        />
+                      ) : (
+                        <span className="text-dim text-xs">-</span>
+                      )}
+                    </td>
+                  )}
                   <td className="text-right">
                     <button className="text-bad text-xs hover:underline" onClick={() => removeLine(l.id)}>remove</button>
                   </td>
                 </tr>
               ))}
               {lines.length === 0 && (
-                <tr><td colSpan={7} className="text-dim">Search the inventory above to build this stream&apos;s show set</td></tr>
+                <tr><td colSpan={8} className="text-dim">
+                  {stream.streamType === "Single Stream"
+                    ? "Search the singles inventory above to add auction cards - each starts at $1 on Whatnot"
+                    : "Search the inventory above to build this stream's show set"}
+                </td></tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
+
+      {/* Character break checklist */}
+      {stream.streamType === "Character Break" && (
+        <BreakChecklist streamId={id} initial={stream.checklist || null} locked={stream.status === "Complete"} />
+      )}
 
       {/* Spot economics */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">

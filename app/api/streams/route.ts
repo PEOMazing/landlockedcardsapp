@@ -17,6 +17,7 @@ export async function GET() {
       title: r.fields["Title"],
       date: r.fields["Stream Date"],
       status: r.fields["Status"] || "Planned",
+      streamType: r.fields["Stream Type"] || "Surprise Set",
       managed: !!me.streamer && r.fields["Manager Rec Id"] === me.streamer.id,
     })),
   });
@@ -43,6 +44,9 @@ export async function POST(req: Request) {
     "Title": `${b.date} - ${b.title || assignedName}`,
     "Stream Date": b.date,
     "Status": "Planned",
+    "Stream Type": ["Surprise Set", "Character Break", "Single Stream"].includes(b.streamType)
+      ? b.streamType
+      : "Surprise Set",
     "Streamer": [assignedId],
     "Streamer Rec Id": assignedId,
   };

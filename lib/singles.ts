@@ -1,0 +1,29 @@
+import { AtRecord } from "./airtable";
+
+// Shape an Airtable Singles record for the client. Buy price is admin-only,
+// matching the sealed inventory.
+export function toSingle(r: AtRecord, isAdmin: boolean) {
+  const f = r.fields;
+  return {
+    id: r.id,
+    name: f["Card Name"] || "",
+    setName: f["Set Name"] || "",
+    number: f["Card Number"] || "",
+    cardId: f["Card ID"] || "",
+    rarity: f["Rarity"] || "",
+    variant: f["Variant"] || "",
+    condition: f["Condition"] || "Raw",
+    comp: f["Comp"] ?? null,
+    compSource: f["Comp Source"] || "",
+    compDate: f["Comp Date"] || "",
+    image: f["Image URL"] || "",
+    qty: f["Qty"] ?? 1,
+    status: f["Status"] || "In Stock",
+    streamRecId: f["Stream Rec Id"] || "",
+    salePrice: f["Sale Price"] ?? null,
+    notes: f["Notes"] || "",
+    addedBy: f["Added By"] || "",
+    dateAdded: f["Date Added"] || "",
+    ...(isAdmin ? { buy: f["Buy Price"] ?? 0 } : {}),
+  };
+}

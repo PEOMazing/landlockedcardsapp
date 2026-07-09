@@ -75,6 +75,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       managerPackingHours: stream.fields["Manager Packing Hours"] ?? null,
       managerName,
       notes: stream.fields["Notes"] || "",
+      streamType: stream.fields["Stream Type"] || "Surprise Set",
+      checklist: (() => {
+        try { return stream.fields["Checklist"] ? JSON.parse(stream.fields["Checklist"]) : null; }
+        catch { return null; }
+      })(),
     },
     lines: lines.map((l, i) => ({
       id: l.id, name: l.name.replace(/^\d+x\s+/, ""), qty: l.qty, qtyHit: l.qtyHit,
@@ -104,6 +109,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   // hours come from the timeclock (/api/time), not direct edits
   if (b.status !== undefined) fields["Status"] = b.status;
   if (b.notes !== undefined) fields["Notes"] = b.notes;
+  if (b.checklist !== undefined) fields["Checklist"] = b.checklist === null ? "" : JSON.stringify(b.checklist);
   await atUpdate(T.streams, params.id, fields);
   return NextResponse.json({ ok: true });
 }

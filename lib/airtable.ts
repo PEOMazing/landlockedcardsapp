@@ -9,6 +9,7 @@ export const T = {
   lines: "Stream Products",
   settings: "Settings",
   time: "Time Entries",
+  singles: "Singles",
 };
 
 const headers = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };

@@ -11,6 +11,13 @@ export default function NewStream() {
   const [err, setErr] = useState("");
   const [streamers, setStreamers] = useState<{ id: string; name: string }[]>([]);
   const [streamerId, setStreamerId] = useState("");
+  const [streamType, setStreamType] = useState("Surprise Set");
+
+  const TYPE_HELP: Record<string, string> = {
+    "Surprise Set": "Wheel show: spins land on hit items or floor level packs.",
+    "Character Break": "Pick a product, sell spots randomly, rip packs at the end - checklist cards go to whoever pulled them.",
+    "Single Stream": "Auction singles from the card inventory, starting at $1.",
+  };
 
   useEffect(() => {
     // only managers/admins get a list back; everyone else streams for themselves
@@ -27,7 +34,7 @@ export default function NewStream() {
     const res = await fetch("/api/streams", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, title, ...(streamerId ? { streamerId } : {}) }),
+      body: JSON.stringify({ date, title, streamType, ...(streamerId ? { streamerId } : {}) }),
     });
     const data = await res.json();
     if (!res.ok) { setErr(data.error || "Could not create stream"); setBusy(false); return; }
@@ -58,6 +65,24 @@ export default function NewStream() {
             </p>
           </div>
         )}
+        <div>
+          <label className="label">Show type</label>
+          <div className="grid grid-cols-3 gap-2 mt-1">
+            {["Surprise Set", "Character Break", "Single Stream"].map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`rounded-lg border px-2 py-2 text-xs font-semibold transition-colors ${
+                  streamType === t ? "border-foil text-foil bg-foil/10" : "border-edge text-dim hover:text-body"
+                }`}
+                onClick={() => setStreamType(t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <p className="text-dim text-xs mt-1">{TYPE_HELP[streamType]}</p>
+        </div>
         <div>
           <label className="label">Title (optional)</label>
           <input className="input mt-1" placeholder="Friday Night Rips" value={title} onChange={(e) => setTitle(e.target.value)} />

@@ -32,6 +32,15 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       detail.push(`${back}x ${product.fields["Product Name"]}`);
     }
   }
+  // singles attached to this stream are considered sold once the show wraps
+  let singlesSold = 0;
+  try {
+    const singles = await atList(T.singles, { filterByFormula: `AND({Stream Rec Id} = '${params.id}', {Status} = 'In Stream')` });
+    for (const s of singles) {
+      await atUpdate(T.singles, s.id, { "Status": "Sold" });
+      singlesSold++;
+    }
+  } catch {} // singles table may not exist yet; nothing to do
   await atUpdate(T.streams, params.id, { "Items Returned": true });
-  return NextResponse.json({ itemsReturned, detail });
+  return NextResponse.json({ itemsReturned, detail, singlesSold });
 }
