@@ -17,6 +17,11 @@ export const maxDuration = 60;
 
 // ---------------- tcgcsv (free nightly TCGplayer mirror) ----------------
 const TCGCSV = "https://tcgcsv.com/tcgplayer/3"; // category 3 = Pokemon
+// tcgcsv rejects requests without a real User-Agent (server fetches get 401 otherwise)
+const TCGCSV_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (compatible; LandLockedCards/1.0; +https://landlockedcards.app)",
+  "Accept": "application/json",
+};
 const MAX_GROUPS_PER_RUN = 30;
 
 const norm = (s: string) =>
@@ -49,7 +54,7 @@ async function tcgcsvBulkRefresh(targets: AtRecord[]) {
     if (pid) idByRecord.set(r.id, pid);
   }
 
-  const groupsRes = await fetch(`${TCGCSV}/groups`, { cache: "no-store" });
+  const groupsRes = await fetch(`${TCGCSV}/groups`, { cache: "no-store", headers: TCGCSV_HEADERS });
   if (!groupsRes.ok) throw new Error(`tcgcsv groups: ${groupsRes.status}`);
   const groups: any[] = (await groupsRes.json()).results || [];
 
@@ -87,8 +92,8 @@ async function tcgcsvBulkRefresh(targets: AtRecord[]) {
     const settled = await Promise.all(chunk.map(async (g) => {
       try {
         const [pr, pc] = await Promise.all([
-          fetch(`${TCGCSV}/${g.groupId}/products`, { cache: "no-store" }),
-          fetch(`${TCGCSV}/${g.groupId}/prices`, { cache: "no-store" }),
+          fetch(`${TCGCSV}/${g.groupId}/products`, { cache: "no-store", headers: TCGCSV_HEADERS }),
+          fetch(`${TCGCSV}/${g.groupId}/prices`, { cache: "no-store", headers: TCGCSV_HEADERS }),
         ]);
         if (!pr.ok || !pc.ok) return null;
         return { g, prods: (await pr.json()).results || [], prices: (await pc.json()).results || [] };
