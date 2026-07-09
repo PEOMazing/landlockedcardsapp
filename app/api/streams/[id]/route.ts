@@ -21,8 +21,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     atList(T.inventory),
   ]);
   const categoryByProduct: Record<string, string> = {};
+  const tcgByProduct: Record<string, string> = {};
   for (const inv of inventoryRows) {
     categoryByProduct[inv.id] = inv.fields["Category"]?.name || inv.fields["Category"] || "";
+    if (inv.fields["TCGplayer URL"]) tcgByProduct[inv.id] = inv.fields["TCGplayer URL"];
   }
   const lines = lineRows.map(toLine);
 
@@ -85,6 +87,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       id: l.id, name: l.name.replace(/^\d+x\s+/, ""), qty: l.qty, qtyHit: l.qtyHit,
       market: l.market, isGiveaway: l.isGiveaway, isHit: isHitLine(l, settings),
       isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
+      tcgUrl: tcgByProduct[lineRows[i].fields["Product"]?.[0]] || "",
       ...(me.isAdmin ? { buy: l.buy } : {}),
     })),
     config: {

@@ -12,7 +12,7 @@ const $ = (n: number) =>
 
 type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
-  market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; buy?: number;
+  market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; tcgUrl?: string; buy?: number;
   singleRecId?: string; salePrice?: number | null;
 };
 
@@ -373,7 +373,7 @@ export default function StreamEditor({ id }: { id: string }) {
                           target="_blank" rel="noreferrer"
                           href={l.isGraded
                             ? `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(l.name)}&LH_Sold=1&LH_Complete=1`
-                            : `https://www.google.com/search?q=${encodeURIComponent(l.name)}+site:tcgplayer.com`}
+                            : l.tcgUrl || `https://www.google.com/search?q=${encodeURIComponent(l.name)}+site:tcgplayer.com`}
                         >
                           {l.isGraded ? "Sold comps" : "TCG"}
                         </a>
