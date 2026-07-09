@@ -52,23 +52,51 @@ async function tcgcsvBulkRefresh(targets: AtRecord[]) {
   const groupsRes = await fetch(`${TCGCSV}/groups`, { cache: "no-store" });
   if (!groupsRes.ok) throw new Error(`tcgcsv groups: ${groupsRes.status}`);
   const groups: any[] = (await groupsRes.json()).results || [];
-  groups.sort((a, b) => String(b.modifiedOn || "").localeCompare(String(a.modifiedOn || "")));
+
+  // pick only groups that plausibly contain our products: shared name tokens with
+  // any inventory item, plus the catch-all groups where one-off products live
+  const ALWAYS = new Set(["Miscellaneous Cards & Products", "World Championship Decks", "First Partner Pack"]);
+  const productTokenSets = targets.map((r) => new Set(tokens(r.fields["Product Name"])));
+  const scored = groups.map((g) => {
+    // strip short set-code prefixes like "ME04:", "SV10:", "SWSH12:"
+    const stripped = String(g.name).replace(/^[A-Za-z0-9]{1,7}:\s*/, "");
+    const gTokens = tokens(stripped);
+    let score = 0;
+    for (const pt of productTokenSets) {
+      const shared = gTokens.filter((t) => pt.has(t));
+      const strongNum = shared.some((t) => /^\d{3,}$/.test(t));
+      if ((gTokens.length > 0 && shared.length === gTokens.length) || shared.length >= 2 || strongNum) {
+        score += shared.length + (strongNum ? 2 : 0);
+      }
+    }
+    return { g, score };
+  });
+  const candidates = [
+    ...scored.filter((x) => ALWAYS.has(x.g.name)).map((x) => x.g),
+    ...scored.filter((x) => x.score > 0 && !ALWAYS.has(x.g.name))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_GROUPS_PER_RUN)
+      .map((x) => x.g),
+  ];
 
   const priced = new Map<string, { price: number; matched: string; url: string }>();
-  let scanned = 0;
-  for (const g of groups) {
-    if (scanned >= MAX_GROUPS_PER_RUN || priced.size >= pending.size) break;
-    scanned++;
-    let prods: any[] = [], prices: any[] = [];
-    try {
-      const [pr, pc] = await Promise.all([
-        fetch(`${TCGCSV}/${g.groupId}/products`, { cache: "no-store" }),
-        fetch(`${TCGCSV}/${g.groupId}/prices`, { cache: "no-store" }),
-      ]);
-      if (!pr.ok || !pc.ok) continue;
-      prods = (await pr.json()).results || [];
-      prices = (await pc.json()).results || [];
-    } catch { continue; }
+  // fetch candidate groups in parallel chunks to stay well inside the time limit
+  const groupData: { g: any; prods: any[]; prices: any[] }[] = [];
+  for (let i = 0; i < candidates.length; i += 4) {
+    const chunk = candidates.slice(i, i + 4);
+    const settled = await Promise.all(chunk.map(async (g) => {
+      try {
+        const [pr, pc] = await Promise.all([
+          fetch(`${TCGCSV}/${g.groupId}/products`, { cache: "no-store" }),
+          fetch(`${TCGCSV}/${g.groupId}/prices`, { cache: "no-store" }),
+        ]);
+        if (!pr.ok || !pc.ok) return null;
+        return { g, prods: (await pr.json()).results || [], prices: (await pc.json()).results || [] };
+      } catch { return null; }
+    }));
+    for (const x of settled) if (x) groupData.push(x);
+  }
+  for (const { prods, prices } of groupData) {
     const marketById = new Map<number, number>();
     for (const p of prices) {
       if (typeof p.marketPrice === "number" && p.marketPrice > 0 && !marketById.has(p.productId)) {
@@ -145,7 +173,9 @@ export async function POST(req: Request) {
   const me = await getMe();
   if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
-  const providerName = (process.env.PRICE_PROVIDER || "tcgcsv").toLowerCase();
+  let providerName = (process.env.PRICE_PROVIDER || "tcgcsv").toLowerCase();
+  // graceful fallback: pricecharting configured but no token means use the free provider
+  if (providerName === "pricecharting" && !process.env.PRICECHARTING_TOKEN) providerName = "tcgcsv";
 
   const body = await req.json().catch(() => ({}));
   const rows = await atList(T.inventory, { filterByFormula: "{Active} = TRUE()" });
