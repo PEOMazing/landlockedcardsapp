@@ -310,11 +310,13 @@ export default function StreamEditor({ id }: { id: string }) {
       <section className="card p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="label">Show set</h2>
-          <button className="text-foil text-xs hover:underline" onClick={() => setShowPaste(!showPaste)}>
-            {showPaste ? "Hide paste" : "Paste a list"}
-          </button>
+          {stream.streamType !== "Single Stream" && (
+            <button className="text-foil text-xs hover:underline" onClick={() => setShowPaste(!showPaste)}>
+              {showPaste ? "Hide paste" : "Paste a list"}
+            </button>
+          )}
         </div>
-        <ProductPicker onAdd={addLine} busy={busy} />
+        {stream.streamType !== "Single Stream" && <ProductPicker onAdd={addLine} busy={busy} />}
         {stream.streamType === "Single Stream" && (
           <SinglesPicker streamId={id} onAdded={load} busy={busy} />
         )}
