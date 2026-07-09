@@ -149,7 +149,9 @@ export default function InventoryClient() {
                   <td>
                     <PriceAge date={i.priceChecked} />
                   </td>
-                  <td className={margin >= 0 ? "text-win" : "text-bad"}>{$(margin)}</td>
+                  <td className={!(i.buyPrice > 0) ? "text-dim" : margin >= 0 ? "text-win" : "text-bad"}>
+                    {!(i.buyPrice > 0) ? "-" : $(margin)}
+                  </td>
                   <td>{num(i.id, "qtyOnHand", i.qtyOnHand, "1")}</td>
                   <td className="whitespace-nowrap">
                     <a
