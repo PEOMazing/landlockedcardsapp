@@ -172,9 +172,9 @@ export default function InventoryClient() {
     setTimeout(() => setMsg(""), 5000);
   }
 
-  const num = (id: string, key: string, val: number, step = "0.01") => (
+  const num = (id: string, key: string, val: number, step = "0.01", extra = "") => (
     <input
-      type="number" step={step} className="input !w-24 !py-1" defaultValue={val}
+      type="number" step={step} className={`input !w-24 !py-1 ${extra}`} defaultValue={val}
       onBlur={(e) => {
         const v = parseFloat(e.target.value) || 0;
         if (v !== val) patch(id, { [key]: v });
@@ -243,13 +243,10 @@ export default function InventoryClient() {
                   <td className="!font-medium min-w-[220px] max-w-[300px] !whitespace-normal leading-snug" title={i.name}>
                     {i.imageUrl && <Thumb src={i.imageUrl} size={32} className="mr-2" />}
                     {displayName(i.name, i.category)}
-                    {!(i.buyPrice > 0) && (
-                      <span className="ml-2 text-xs text-givvy border border-givvy/40 rounded px-1.5 py-0.5 whitespace-nowrap">needs buy price</span>
-                    )}
                   </td>
                   <td className="text-dim">{i.category}</td>
                   <td>
-                    {num(i.id, "buyPrice", i.buyPrice)}
+                    {num(i.id, "buyPrice", i.buyPrice, "0.01", !(i.buyPrice > 0) ? "!border-amber-400/70 !bg-amber-400/10" : "")}
                     <button
                       className="text-dim text-[10px] underline decoration-dotted hover:text-body"
                       onClick={() => toggleLots(i.id)}
