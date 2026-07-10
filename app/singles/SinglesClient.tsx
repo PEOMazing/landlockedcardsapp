@@ -17,7 +17,7 @@ const CONDITION_LABELS: Record<string, string> = {
 type SingleT = {
   id: string; name: string; setName: string; number: string; cardId: string;
   rarity: string; variant: string; condition: string;
-  comp: number | null; compSource: string; compDate: string; entryComp: number | null;
+  comp: number | null; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
   image: string; qty: number; status: string; salePrice: number | null; soldDate: string;
   notes: string; addedBy: string; dateAdded: string; buy?: number;
@@ -49,7 +49,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<SearchCard | null>(null);
   const [manual, setManual] = useState(false);
-  const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "" });
+  const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "" });
   const debounce = useRef<any>(null);
 
   async function load() {
@@ -94,6 +94,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
       condition: draft.condition,
       qty: parseInt(draft.qty) || 1,
       notes: draft.notes,
+      ...(draft.printing.trim() ? { printing: draft.printing.trim() } : {}),
       ...(isAdmin && draft.buyPrice ? { buyPrice: parseFloat(draft.buyPrice) } : {}),
     };
     if (picked) {
@@ -115,7 +116,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     if (!r.ok) setErr(d.error || "Could not add card");
     else {
       setPicked(null); setManual(false); setQ(""); setResults([]);
-      setDraft({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "" });
+      setDraft({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "" });
       await load();
     }
     setBusy("");
@@ -196,13 +197,13 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
 
   function exportCsv() {
     const header = [
-      "Card", "Set", "Number", "Condition", "Rarity", "Qty", "Status",
+      "Card", "Set", "Number", "Condition", "Printing", "Rarity", "Qty", "Status",
       "Comp", "Comp Source", "Comp Date",
       ...(isAdmin ? ["Buy Price"] : []),
       "Sale Price", "Sold Date", "Date Added", "Added By", "Notes",
     ];
     const rows = shown.map((s) => [
-      s.name, s.setName, s.number, s.condition, s.rarity, s.qty, s.status,
+      s.name, s.setName, s.number, s.condition, s.printing, s.rarity, s.qty, s.status,
       s.comp ?? "", s.compSource, s.compDate,
       ...(isAdmin ? [s.buy ?? ""] : []),
       s.salePrice ?? "", s.soldDate, s.dateAdded, s.addedBy, s.notes,
@@ -344,6 +345,22 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                 </select>
               </div>
               <div>
+                <label className="label">Printing</label>
+                <input
+                  className="input mt-1 !w-32"
+                  list="printing-options"
+                  placeholder="Unlimited"
+                  value={draft.printing}
+                  onChange={(e) => setDraft({ ...draft, printing: e.target.value })}
+                  title="For vintage cards: 1st Edition, Shadowless, or Unlimited"
+                />
+                <datalist id="printing-options">
+                  <option value="1st Edition" />
+                  <option value="Shadowless" />
+                  <option value="Unlimited" />
+                </datalist>
+              </div>
+              <div>
                 <label className="label">Qty</label>
                 <input type="number" min={1} className="input mt-1" value={draft.qty} onChange={(e) => setDraft({ ...draft, qty: e.target.value })} />
               </div>
@@ -458,6 +475,9 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                         {s.name}
                         <span className="block text-dim text-xs font-normal">
                           {s.setName}{s.number ? ` #${s.number}` : ""}{s.rarity ? ` - ${s.rarity}` : ""}
+                          {s.printing && (
+                            <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>
+                          )}
                         </span>
                       </span>
                     </span>

@@ -30,6 +30,7 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     salePrice: f["Sale Price"] ?? null,
     soldDate: f["Sold Date"] || "",
     entryComp: f["Entry Comp"] ?? null,
+    printing: f["Printing"] || "",
     notes: f["Notes"] || "",
     addedBy: f["Added By"] || "",
     dateAdded: f["Date Added"] || "",

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
 import { listSetCards, searchCards } from "@/lib/pokemon";
-import { searchTcgcsvCards } from "@/lib/tcgcsvCards";
+import { printingKey, searchTcgcsvCards, vintagePrintings } from "@/lib/tcgcsvCards";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -15,7 +15,19 @@ export async function GET(req: Request) {
   const setId = url.searchParams.get("setId");
   const q = url.searchParams.get("q");
   try {
-    if (setId) return NextResponse.json({ cards: await listSetCards(setId) });
+    if (setId) {
+      let cards = await listSetCards(setId);
+      // vintage sets get per-printing prices layered from TCGplayer, since the
+      // single pokemontcg.io price cannot say which printing it belongs to
+      const vp = await vintagePrintings(setId).catch(() => null);
+      if (vp) {
+        cards = cards.map((c) => {
+          const printings = vp.get(printingKey(c.number));
+          return printings && printings.length > 0 ? { ...c, printings } : c;
+        });
+      }
+      return NextResponse.json({ cards });
+    }
     if (q) {
       // TCGplayer catalog (via tcgcsv) covers the newest sets first; pokemontcg.io
       // fills in older cards. Dedupe by name+number, TCGplayer entries win.

@@ -177,3 +177,88 @@ export function tcgProductIdFromCardId(id: string): number | null {
   const m = String(id).match(/^tcg:(\d+):(\d+)$/);
   return m ? parseInt(m[1]) : null;
 }
+
+
+// ---------------- vintage printings ----------------
+// pokemontcg.io returns one printing-ambiguous price for pre-2003 sets, so
+// per-printing prices come straight from the TCGplayer groups. Base Set is
+// split across two groups: 604 is the standard Unlimited run, and 1663
+// "Base Set (Shadowless)" holds the early run, where 1st Edition subtypes are
+// the stamped print and everything else is the no-stamp Shadowless print.
+// Every other 1st-edition-era set keeps both printings in one group.
+export const PRINTING_ORDER = ["1st Edition", "Shadowless", "Unlimited"];
+
+const VINTAGE_GROUPS: Record<string, { groupId: number; base: string }[]> = {
+  base1: [
+    { groupId: 604, base: "Unlimited" },
+    { groupId: 1663, base: "Shadowless" },
+  ],
+  base2: [{ groupId: 635, base: "Unlimited" }],
+  base3: [{ groupId: 630, base: "Unlimited" }],
+  base5: [{ groupId: 1373, base: "Unlimited" }],
+  gym1: [{ groupId: 1441, base: "Unlimited" }],
+  gym2: [{ groupId: 1440, base: "Unlimited" }],
+  neo1: [{ groupId: 1396, base: "Unlimited" }],
+  neo2: [{ groupId: 1434, base: "Unlimited" }],
+  neo3: [{ groupId: 1389, base: "Unlimited" }],
+  neo4: [{ groupId: 1444, base: "Unlimited" }],
+};
+
+export const isVintageSet = (setId: string): boolean => !!VINTAGE_GROUPS[setId];
+
+// "004/102", "4/102", and "4" all become "4" so pokemontcg.io card numbers
+// line up with TCGplayer extendedData numbers
+export function printingKey(rawNumber: string): string {
+  const n = String(rawNumber || "").split("/")[0].trim();
+  const i = parseInt(n, 10);
+  return isNaN(i) ? n.toLowerCase() : String(i);
+}
+
+export type PrintingPrice = { label: string; market: number | null };
+
+const vintageCache = new Map<string, { at: number; data: Map<string, PrintingPrice[]> }>();
+
+export async function vintagePrintings(setId: string): Promise<Map<string, PrintingPrice[]> | null> {
+  const groups = VINTAGE_GROUPS[setId];
+  if (!groups) return null;
+  const hit = vintageCache.get(setId);
+  if (hit && Date.now() - hit.at < TTL) return hit.data;
+
+  // number -> printing label -> best market price
+  const byNum = new Map<string, Map<string, number>>();
+  for (const { groupId, base } of groups) {
+    try {
+      const [pd, pc] = await Promise.all([
+        jget(`${TCGCSV}/${groupId}/products`),
+        jget(`${TCGCSV}/${groupId}/prices`),
+      ]);
+      const numById = new Map<number, string>();
+      for (const prod of pd.results || []) {
+        if (!isCard(prod)) continue;
+        const key = printingKey(ext(prod, "Number"));
+        if (key) numById.set(prod.productId, key);
+      }
+      for (const row of pc.results || []) {
+        if (!(typeof row.marketPrice === "number" && row.marketPrice > 0)) continue;
+        const key = numById.get(row.productId);
+        if (!key) continue;
+        const label = String(row.subTypeName || "").startsWith("1st Edition") ? "1st Edition" : base;
+        const m = byNum.get(key) || new Map<string, number>();
+        m.set(label, Math.max(m.get(label) || 0, row.marketPrice));
+        byNum.set(key, m);
+      }
+    } catch {
+      // one group failing should not blank the whole set
+    }
+  }
+
+  const data = new Map<string, PrintingPrice[]>();
+  for (const [key, m] of byNum) {
+    const list = [...m.entries()]
+      .map(([label, market]) => ({ label, market: Math.round(market * 100) / 100 }))
+      .sort((a, b) => PRINTING_ORDER.indexOf(a.label) - PRINTING_ORDER.indexOf(b.label));
+    data.set(key, list);
+  }
+  vintageCache.set(setId, { at: Date.now(), data });
+  return data;
+}

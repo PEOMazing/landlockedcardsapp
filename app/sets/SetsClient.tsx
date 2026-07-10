@@ -1,10 +1,13 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "@/components/Toaster";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type SetT = { id: string; name: string; series: string; releaseDate: string; total: number; symbol?: string; logo?: string };
-type CardT = { id: string; name: string; number: string; rarity: string; image?: string; imageLarge?: string; market: number | null };
+type CardT = { id: string; name: string; number: string; rarity: string; image?: string; imageLarge?: string; market: number | null; printings?: { label: string; market: number | null }[] };
+
+const PRINTING_ORDER = ["1st Edition", "Shadowless", "Unlimited"];
 
 // Browse every Pokemon set and its full card checklist with TCGplayer market
 // prices. This is the planning tool for character breaks: check what is in a
@@ -18,6 +21,9 @@ export default function SetsClient() {
   const [cardQ, setCardQ] = useState("");
   const [onlyChase, setOnlyChase] = useState(false);
   const [ownFilter, setOwnFilter] = useState<"all" | "owned" | "missing">("all");
+  const [printing, setPrinting] = useState<string>("");
+  const [adding, setAdding] = useState<string>("");
+  const [added, setAdded] = useState<Set<string>>(new Set());
   const [owned, setOwned] = useState<Map<string, number> | null>(null);
   const [err, setErr] = useState("");
 
@@ -55,7 +61,7 @@ export default function SetsClient() {
 
   useEffect(() => {
     if (!active) return;
-    setLoading(true); setCards([]); setCardQ("");
+    setLoading(true); setCards([]); setCardQ(""); setPrinting(""); setAdded(new Set());
     fetch(`/api/pokemon/cards?setId=${encodeURIComponent(active.id)}`)
       .then((r) => r.json())
       .then((d) => (d.cards ? setCards(d.cards) : setErr(d.error || "Could not load cards")))
@@ -81,7 +87,47 @@ export default function SetsClient() {
 
   const masteryOwned = useMemo(() => cards.filter((c) => ownedQty(c) > 0).length, [cards, owned]);
 
-  const setValue = cards.reduce((a, c) => a + (c.market || 0), 0);
+  const setPrintings = useMemo(() => {
+    const labels = new Set<string>();
+    for (const c of cards) for (const pr of c.printings || []) labels.add(pr.label);
+    return [...labels].sort((a, b) => PRINTING_ORDER.indexOf(a) - PRINTING_ORDER.indexOf(b));
+  }, [cards]);
+  const hasPrintings = setPrintings.length >= 2;
+  const activePrinting = hasPrintings
+    ? (printing && setPrintings.includes(printing) ? printing : setPrintings.includes("Unlimited") ? "Unlimited" : setPrintings[0])
+    : "";
+
+  const priceFor = (c: CardT): number | null => {
+    if (!hasPrintings) return c.market;
+    const hit = (c.printings || []).find((pr) => pr.label === activePrinting);
+    return hit ? hit.market : null;
+  };
+
+  const setValue = cards.reduce((a, c) => a + (priceFor(c) || 0), 0);
+  const pricedCount = cards.filter((c) => priceFor(c) !== null).length;
+
+  async function quickAdd(c: CardT) {
+    setAdding(c.id);
+    const body: Record<string, any> = { cardId: c.id, condition: "Raw" };
+    const pr = hasPrintings ? (c.printings || []).find((x) => x.label === activePrinting) : null;
+    if (pr && pr.market !== null) {
+      body.printing = activePrinting;
+      body.comp = pr.market;
+      body.compSource = `TCGplayer ${activePrinting} (Set Lists)`;
+    }
+    const r = await fetch("/api/singles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setAdding("");
+    if (r.ok) {
+      setAdded((prev) => new Set(prev).add(c.id));
+      toast(`Added ${c.name}${body.printing ? ` (${body.printing})` : ""} to Singles`);
+    } else {
+      toast((await r.json()).error || "Could not add card", "bad");
+    }
+  }
 
   if (active) {
     return (
@@ -93,10 +139,20 @@ export default function SetsClient() {
             <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{active.name}</h1>
             <div className="text-dim text-sm">
               {active.series} - released {active.releaseDate} - {active.total} cards
-              {setValue > 0 && <span className="text-foil ml-2 num">full checklist market {$(setValue)}</span>}
+              {setValue > 0 && (
+                <span className="text-foil ml-2 num">
+                  {hasPrintings ? `${activePrinting} checklist market` : "full checklist market"} {$(setValue)}
+                  {hasPrintings && <span className="text-dim"> ({pricedCount} priced)</span>}
+                </span>
+              )}
             </div>
           </div>
         </div>
+        {hasPrintings && !loading && (
+          <p className="text-dim text-xs">
+            1st Edition, Shadowless and Unlimited are priced separately here from TCGplayer listings, because the single pokemontcg.io market price cannot say which printing it belongs to.
+          </p>
+        )}
         {!loading && cards.length > 0 && owned && (
           <div className="card p-4 space-y-2">
             <div className="flex items-baseline justify-between flex-wrap gap-2">
@@ -117,6 +173,19 @@ export default function SetsClient() {
         )}
         <div className="flex items-center gap-3 flex-wrap">
           <input className="input !w-64" placeholder="Filter cards" value={cardQ} onChange={(e) => setCardQ(e.target.value)} />
+          {hasPrintings && (
+            <div className="flex rounded-lg border border-foil/40 overflow-hidden text-sm">
+              {setPrintings.map((pl) => (
+                <button
+                  key={pl}
+                  className={`px-3 py-1.5 ${activePrinting === pl ? "bg-foil/20 text-body font-semibold" : "text-dim hover:text-body"}`}
+                  onClick={() => setPrinting(pl)}
+                >
+                  {pl}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex rounded-lg border border-edge overflow-hidden text-sm">
             {(["all", "owned", "missing"] as const).map((f) => (
               <button
@@ -151,7 +220,18 @@ export default function SetsClient() {
               <div>
                 <div className="text-sm font-medium leading-tight">{c.name}</div>
                 <div className="text-dim text-xs">#{c.number} - {c.rarity || "no rarity"}</div>
-                <div className="num text-foil text-sm font-bold mt-1">{c.market !== null ? $(c.market) : "-"}</div>
+                <div className="num text-foil text-sm font-bold mt-1">{priceFor(c) !== null ? $(priceFor(c) as number) : "-"}</div>
+                <button
+                  className={`mt-1.5 text-xs rounded px-2 py-1 border transition-colors disabled:opacity-40 ${
+                    added.has(c.id)
+                      ? "border-win/50 text-win cursor-default"
+                      : "border-edge text-dim hover:text-body hover:border-foil/50"
+                  }`}
+                  disabled={adding === c.id || added.has(c.id)}
+                  onClick={() => !added.has(c.id) && quickAdd(c)}
+                >
+                  {added.has(c.id) ? "\u2713 Added" : adding === c.id ? "Adding..." : "+ Add to Singles"}
+                </button>
               </div>
             </div>
           ))}

@@ -44,6 +44,7 @@ export async function POST(req: Request) {
     "Added By": me.streamer?.fields?.["Name"] || me.email,
     "Date Added": new Date().toISOString().slice(0, 10),
   };
+  if (b.printing) fields["Printing"] = String(b.printing);
   // buy price is admin territory, same as the sealed inventory
   if (me.isAdmin && b.buyPrice !== undefined) fields["Buy Price"] = Math.max(0, parseFloat(b.buyPrice) || 0);
 

@@ -33,6 +33,7 @@ export type PokeCard = {
   market: number | null;
   variant: string | null;
   priceUpdated: string | null;
+  printings?: { label: string; market: number | null }[];
 };
 
 // serverless best-effort caches: warm instances skip refetching
