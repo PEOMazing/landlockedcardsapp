@@ -18,7 +18,8 @@ function csvEscape(v: any): string {
 
 function displayName(name: string, category: string): string {
   if (!category || category === "Other") return name;
-  const stripped = name.replace(new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "").replace(/\s{2,}/g, " ").trim();
+  let stripped = name.replace(new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "").replace(/\s{2,}/g, " ").trim();
+  stripped = stripped.replace(/\b(\w+) \1\b/gi, "$1"); // "2-Pack Pack" -> "2-Pack" after the strip
   return stripped.length >= 3 ? stripped : name;
 }
 
