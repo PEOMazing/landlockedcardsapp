@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atList, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
-import { getTcgcsvCard, isTcgcsvCardId } from "@/lib/tcgcsv";
+import { getTcgcsvCard } from "@/lib/tcgcsvCards";
 import { toSingle } from "@/lib/singles";
 
 export const dynamic = "force-dynamic";

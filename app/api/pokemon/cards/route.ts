@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
 import { listSetCards, searchCards } from "@/lib/pokemon";
-import { searchRecentTcgcsvCards } from "@/lib/tcgcsv";
 import { searchTcgcsvCards } from "@/lib/tcgcsvCards";
 
 export const dynamic = "force-dynamic";
