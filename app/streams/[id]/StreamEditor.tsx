@@ -279,7 +279,35 @@ export default function StreamEditor({ id }: { id: string }) {
       {/* Stream P&L: product that was not hit goes back to inventory, so the
           stream is only charged for what actually left the building */}
       <section className="card p-5 border-foil/40">
-        <div className="label mb-3">Stream P&L</div>
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <div className="label">Stream P&L - live</div>
+          {canManage && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-dim text-xs">Sales so far $</label>
+              <input
+                type="number" step="0.01" className="input !w-28 !py-1"
+                value={form.afterFees}
+                onChange={(e) => setForm({ ...form, afterFees: e.target.value })}
+                placeholder="0.00"
+              />
+              <label className="text-dim text-xs">Spins sold</label>
+              <input
+                type="number" step="1" min={0} className="input !w-20 !py-1"
+                value={form.spotsSold}
+                onChange={(e) => setForm({ ...form, spotsSold: e.target.value })}
+                placeholder="0"
+              />
+              <button
+                className="btn-ghost !py-1 text-xs disabled:opacity-40"
+                disabled={busy}
+                onClick={() => saveResults(false)}
+                title="Save running numbers without marking the stream complete"
+              >
+                {busy ? "..." : "Save"}
+              </button>
+            </div>
+          )}
+        </div>
         <div className="grid md:grid-cols-2 gap-6">
           <div className="space-y-1.5 text-sm">
             <div className="flex justify-between gap-6">
@@ -343,9 +371,15 @@ export default function StreamEditor({ id }: { id: string }) {
                 <span className={`num ${buyNet >= 0 ? "text-win" : "text-bad"}`}>{$(buyNet)}</span>
               </div>
             )}
-            {!resultsEntered && <div className="text-dim text-xs">enter results below and the right side fills in</div>}
+            {!resultsEntered && (
+              <div className="text-dim text-xs">
+                {canManage ? "type sales up top as they come in - every number here updates live, and marking a hit updates it too" : "updates live once sales are entered"}
+              </div>
+            )}
             {resultsEntered && spotsSoldNum > 0 && (
-              <div className="text-dim text-xs num text-right">{$(netProfit / spotsSoldNum)} per spin across {spotsSoldNum}</div>
+              <div className="text-dim text-xs num text-right">
+                {$(afterFeesNum / spotsSoldNum)} avg per spin - {$(netProfit / spotsSoldNum)} profit per spin so far
+              </div>
             )}
           </div>
         </div>
