@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Item = {
   id: string; name: string; category: string; buyPrice: number;
-  marketPrice: number; qtyOnHand: number; tcgUrl: string; priceChecked: string | null;
+  marketPrice: number; qtyOnHand: number; tcgUrl: string; imageUrl?: string; priceChecked: string | null;
 };
 
 import { CATEGORIES as CATS } from "@/lib/categories";
