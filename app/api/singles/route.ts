@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atList, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
-import { getTcgcsvCard } from "@/lib/tcgcsvCards";
+import { getTcgcsvCard, isTcgcsvCardId } from "@/lib/tcgcsv";
 import { toSingle } from "@/lib/singles";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
   if (b.cardId) {
     const cid = String(b.cardId);
     const card = cid.startsWith("tcg:") ? await getTcgcsvCard(cid) : await getCard(cid);
-    if (!card) return NextResponse.json({ error: "card not found on pokemontcg.io" }, { status: 404 });
+    if (!card) return NextResponse.json({ error: "card not found" }, { status: 404 });
     fields = {
       ...fields,
       "Card Name": card.name,

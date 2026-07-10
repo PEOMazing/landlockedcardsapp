@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
-import { getTcgcsvCard } from "@/lib/tcgcsvCards";
+import { getTcgcsvCard, isTcgcsvCardId } from "@/lib/tcgcsv";
 import { toSingle } from "@/lib/singles";
 
 // Refresh a raw card's comp from its linked pokemontcg.io card record.

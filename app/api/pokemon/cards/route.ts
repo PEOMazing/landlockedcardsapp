@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
 import { listSetCards, searchCards } from "@/lib/pokemon";
+import { searchRecentTcgcsvCards } from "@/lib/tcgcsv";
 import { searchTcgcsvCards } from "@/lib/tcgcsvCards";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 // ?setId=xyz -> full checklist for a set
 // ?q=charizard -> name search across all sets
