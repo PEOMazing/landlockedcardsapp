@@ -9,6 +9,8 @@ type Item = {
 import { CATEGORIES as CATS } from "@/lib/categories";
 import Thumb from "@/components/Thumb";
 import CollectrImport from "@/components/CollectrImport";
+import EditCell from "@/components/EditCell";
+import { toast } from "@/components/Toaster";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function csvEscape(v: any): string {
@@ -79,6 +81,7 @@ export default function InventoryClient() {
     setBulkBusy("");
     setSelected(new Set());
     await load();
+    toast("Updated selected products");
   }
   async function bulkDelete() {
     if (!confirm(`Delete ${selected.size} products from inventory? Purchase history rows are kept for the record, but the products and their quantities are gone for good.`)) return;
@@ -89,6 +92,7 @@ export default function InventoryClient() {
     setBulkBusy("");
     setSelected(new Set());
     await load();
+    toast("Deleted selected products");
   }
 
   const [lotsFor, setLotsFor] = useState<string | null>(null);
@@ -123,6 +127,9 @@ export default function InventoryClient() {
       setStockFor(null); setStockQty("1"); setStockCost("");
       setLotsCache((prev) => { const n = { ...prev }; delete n[id]; return n; });
       await load();
+      toast("Stock received - lot logged and average updated");
+    } else {
+      toast("Could not receive stock", "bad");
     }
   }
 
@@ -146,12 +153,14 @@ export default function InventoryClient() {
   }
 
   async function patch(id: string, fields: any) {
-    await fetch(`/api/inventory/${id}`, {
+    const r = await fetch(`/api/inventory/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(fields),
     });
     await load();
+    if (r.ok) toast("Saved");
+    else toast("Save failed", "bad");
   }
 
   async function refreshPrices(id?: string) {
@@ -173,12 +182,13 @@ export default function InventoryClient() {
   }
 
   const num = (id: string, key: string, val: number, step = "0.01", extra = "") => (
-    <input
-      type="number" step={step} className={`input !w-24 !py-1 ${extra}`} defaultValue={val}
-      onBlur={(e) => {
-        const v = parseFloat(e.target.value) || 0;
-        if (v !== val) patch(id, { [key]: v });
-      }}
+    <EditCell
+      value={val || null}
+      money={key !== "qtyOnHand"}
+      step={key === "qtyOnHand" ? "1" : step}
+      highlightEmpty={key === "buyPrice"}
+      placeholder={key === "qtyOnHand" ? "0" : "-"}
+      onSave={(v) => patch(id, { [key]: v })}
     />
   );
 
@@ -288,16 +298,7 @@ export default function InventoryClient() {
                     )}
                   </td>
                   <td>
-                    <input
-                      type="number" step="0.01" className="input !w-20 !py-1"
-                      key={`${i.id}-retail-${i.retailPrice}`}
-                      defaultValue={i.retailPrice ?? ""}
-                      placeholder="-"
-                      onBlur={(e) => {
-                        const v = e.target.value === "" ? null : parseFloat(e.target.value);
-                        if (v !== (i.retailPrice ?? null)) patch(i.id, { retailPrice: v });
-                      }}
-                    />
+                    <EditCell value={i.retailPrice ?? null} onSave={(v) => patch(i.id, { retailPrice: v })} />
                   </td>
                   <td>
                     <PriceAge date={i.priceChecked} />

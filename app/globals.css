@@ -23,7 +23,9 @@ body { background: #0D0F14; color: #F4F5F7; }
 .btn-win { @apply btn bg-win/15 text-win border border-win/40 hover:bg-win/25; }
 .num { font-variant-numeric: tabular-nums; }
 th { @apply label text-left py-2 px-3 border-b border-edge; }
-td { @apply py-2 px-3 border-b border-edge/60 text-sm num; }
+td { @apply py-2.5 px-3 border-b border-edge/60 text-sm num align-middle; }
+tbody tr { @apply transition-colors; }
+tbody tr:hover { background: rgba(38, 43, 56, 0.35); }
 
 :root {
   --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
@@ -45,4 +47,14 @@ body { font-family: var(--font-body); }
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
+}
+
+
+/* content sits beside the fixed sidebar on desktop */
+@media (min-width: 768px) {
+  body:has(nav.sidebar) main { margin-left: 14rem; }
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }

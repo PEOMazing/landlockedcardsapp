@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
+import EditCell from "@/components/EditCell";
+import { toast } from "@/components/Toaster";
 import CollectrImport from "@/components/CollectrImport";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,6 +39,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
   const [statusFilter, setStatusFilter] = useState("In Stock");
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [err, setErr] = useState("");
 
   // add flow
@@ -133,15 +136,15 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
       body: JSON.stringify(body),
     });
     const d = await r.json();
-    if (r.ok) setSingles((prev) => prev.map((s) => (s.id === id ? d.single : s)));
-    else setErr(d.error || "Update failed");
+    if (r.ok) { setSingles((prev) => prev.map((s) => (s.id === id ? d.single : s))); toast("Saved"); }
+    else { setErr(d.error || "Update failed"); toast(d.error || "Update failed", "bad"); }
   }
 
   async function remove(id: string) {
     if (!confirm("Delete this card from the singles inventory?")) return;
     const r = await fetch(`/api/singles/${id}`, { method: "DELETE" });
-    if (r.ok) setSingles((prev) => prev.filter((s) => s.id !== id));
-    else setErr((await r.json()).error || "Delete failed");
+    if (r.ok) { setSingles((prev) => prev.filter((s) => s.id !== id)); toast("Card deleted"); }
+    else { const e = (await r.json()).error || "Delete failed"; setErr(e); toast(e, "bad"); }
   }
 
   const [setFilter, setSetFilter] = useState("All");
@@ -462,27 +465,15 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                   <td>{s.qty}</td>
                   {isAdmin && (
                     <td>
-                      <input
-                        type="number" step="0.01" className="input !w-20 !py-1"
-                        defaultValue={s.buy ?? 0}
-                        onBlur={(e) => patch(s.id, { buyPrice: parseFloat(e.target.value) || 0 })}
-                      />
+                      <EditCell value={s.buy ?? null} highlightEmpty onSave={(v) => patch(s.id, { buyPrice: v })} />
                     </td>
                   )}
                   <td>
                     <div className="flex items-center gap-2">
                       {isManager ? (
-                        <input
-                          type="number" step="0.01" className="input !w-24 !py-1"
-                          key={`${s.id}-${s.comp}`}
-                          defaultValue={s.comp ?? ""}
-                          onBlur={(e) => {
-                            const v = parseFloat(e.target.value);
-                            if (!isNaN(v) && v !== s.comp) patch(s.id, { comp: v });
-                          }}
-                        />
+                        <EditCell value={s.comp} onSave={(v) => patch(s.id, { comp: v })} />
                       ) : (
-                        <span>{s.comp !== null ? $(s.comp) : "-"}</span>
+                        <span className="num">{s.comp !== null ? $(s.comp) : "-"}</span>
                       )}
                       {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
                       {!s.compDetail && s.comp !== null && s.compSource.includes("est.") && (
@@ -492,20 +483,6 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                         >
                           est.
                         </span>
-                      )}
-                      {["Raw", "NM", "LP", "MP", "HP", "DM"].includes(s.condition) && s.cardId ? (
-                        <button
-                          className="text-foil text-xs hover:underline whitespace-nowrap disabled:opacity-40"
-                          disabled={busy === s.id}
-                          onClick={() => refreshComp(s.id)}
-                          title={s.compSource ? `${s.compSource} - ${s.compDate}` : "Pull the latest TCGplayer market price"}
-                        >
-                          {busy === s.id ? "..." : "refresh"}
-                        </button>
-                      ) : (
-                        <a className="text-foil text-xs hover:underline whitespace-nowrap" target="_blank" rel="noreferrer" href={ebayLink(s)}>
-                          sold comps
-                        </a>
                       )}
                     </div>
                     {s.compDate && <div className="text-dim text-[10px]">{s.compSource} {s.compDate}</div>}
@@ -535,29 +512,52 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                   </td>
                   <td>
                     {isManager && s.status !== "In Stream" ? (
-                      <input
-                        type="number" step="0.01" className="input !w-20 !py-1"
-                        placeholder="-"
-                        key={`${s.id}-sale-${s.salePrice}`}
-                        defaultValue={s.salePrice ?? ""}
-                        title="Entering a sale price marks the card Sold"
-                        onBlur={(e) => {
-                          const v = parseFloat(e.target.value);
-                          if (!isNaN(v) && v !== s.salePrice) {
-                            patch(s.id, { salePrice: v, ...(s.status === "In Stock" ? { status: "Sold" } : {}) });
-                          }
-                        }}
+                      <EditCell
+                        value={s.salePrice}
+                        onSave={(v) => patch(s.id, { salePrice: v, ...(s.status === "In Stock" ? { status: "Sold" } : {}) })}
                       />
                     ) : (
-                      <span>{s.salePrice ? $(s.salePrice) : "-"}</span>
+                      <span className="num">{s.salePrice ? $(s.salePrice) : "-"}</span>
                     )}
                     {s.status === "Sold" && s.soldDate && (
                       <div className="text-dim text-[10px]">{s.soldDate}</div>
                     )}
                   </td>
-                  <td className="text-right whitespace-nowrap">
-                    {isAdmin && s.status !== "In Stream" && (
-                      <button className="text-bad text-xs hover:underline" onClick={() => remove(s.id)}>delete</button>
+                  <td className="text-right whitespace-nowrap relative">
+                    <button
+                      className="text-dim hover:text-body px-2 py-1 rounded hover:bg-edge/60"
+                      onClick={() => setMenuFor(menuFor === s.id ? null : s.id)}
+                      aria-label="Row actions"
+                    >
+                      {"\u22EF"}
+                    </button>
+                    {menuFor === s.id && (
+                      <div className="absolute right-2 top-9 z-20 w-44 rounded-lg border border-edge bg-panel shadow-2xl py-1 text-left">
+                        {["Raw", "NM", "LP", "MP", "HP", "DM"].includes(s.condition) && s.cardId && (
+                          <button
+                            className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50 disabled:opacity-40"
+                            disabled={busy === s.id}
+                            onClick={() => { setMenuFor(null); refreshComp(s.id); }}
+                          >
+                            {busy === s.id ? "Refreshing..." : "Refresh comp"}
+                          </button>
+                        )}
+                        <a
+                          className="block px-3 py-1.5 text-sm text-body hover:bg-edge/50"
+                          target="_blank" rel="noreferrer" href={ebayLink(s)}
+                          onClick={() => setMenuFor(null)}
+                        >
+                          eBay solds {"\u2197"}
+                        </a>
+                        {isAdmin && s.status !== "In Stream" && (
+                          <button
+                            className="block w-full text-left px-3 py-1.5 text-sm text-bad hover:bg-bad/10"
+                            onClick={() => { setMenuFor(null); remove(s.id); }}
+                          >
+                            Delete card
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
