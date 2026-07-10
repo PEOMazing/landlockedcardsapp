@@ -8,7 +8,7 @@ export type Settings = {
 };
 
 const DEFAULTS: Settings = {
-  packing_rate: 20, support_pct: 0.1, breakeven_mult: 1.45,
+  packing_rate: 20, support_pct: 0.1, breakeven_mult: 1.5,
   tier1_limit: 500, tier1_rate: 0.15, tier2_limit: 1000, tier2_rate: 0.2,
   tier3_rate: 0.25, default_hourly_rate: 20, hit_threshold: 10,
   giveaway_cost: 2.5,

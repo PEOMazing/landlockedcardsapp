@@ -381,6 +381,12 @@ export default function StreamEditor({ id }: { id: string }) {
                 {$(afterFeesNum / spotsSoldNum)} avg per spin - {$(netProfit / spotsSoldNum)} profit per spin so far
               </div>
             )}
+            {m.spots > 0 && (
+              <div className={`text-xs num text-right ${resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < m.breakEven ? "text-amber-400" : "text-dim"}`}>
+                break-even ask: {$(m.breakEven)} per spin ({m.cfg.breakevenMult}x value per spot)
+                {resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < m.breakEven && " - current avg is under it"}
+              </div>
+            )}
           </div>
         </div>
         <div className="text-dim text-xs mt-3">
