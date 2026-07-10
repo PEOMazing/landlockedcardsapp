@@ -35,7 +35,7 @@ export default function SetsClient() {
     return `${n}#${num}`;
   }
 
-  useEffect(() => {
+  function loadOwned() {
     fetch("/api/singles")
       .then((r) => r.json())
       .then((d) => {
@@ -48,7 +48,8 @@ export default function SetsClient() {
         setOwned(map);
       })
       .catch(() => setOwned(new Map()));
-  }, []);
+  }
+  useEffect(() => { loadOwned(); }, []);
 
   const ownedQty = (c: CardT) => (owned ? owned.get(ownKey(c.name, c.number)) || 0 : 0);
 
@@ -62,6 +63,7 @@ export default function SetsClient() {
   useEffect(() => {
     if (!active) return;
     setLoading(true); setCards([]); setCardQ(""); setPrinting(""); setAdded(new Set());
+    loadOwned();
     fetch(`/api/pokemon/cards?setId=${encodeURIComponent(active.id)}`)
       .then((r) => r.json())
       .then((d) => (d.cards ? setCards(d.cards) : setErr(d.error || "Could not load cards")))
@@ -123,6 +125,12 @@ export default function SetsClient() {
     setAdding("");
     if (r.ok) {
       setAdded((prev) => new Set(prev).add(c.id));
+      setOwned((prev) => {
+        const next = new Map(prev || []);
+        const key = ownKey(c.name, c.number);
+        next.set(key, (next.get(key) || 0) + 1);
+        return next;
+      });
       toast(`Added ${c.name}${body.printing ? ` (${body.printing})` : ""} to Singles`);
     } else {
       toast((await r.json()).error || "Could not add card", "bad");
