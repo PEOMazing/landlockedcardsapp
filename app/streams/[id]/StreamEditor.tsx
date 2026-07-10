@@ -411,27 +411,34 @@ export default function StreamEditor({ id }: { id: string }) {
       {/* Live hit tracker - updates the instant a hit is marked */}
       <section className="card p-5 flex flex-wrap items-baseline gap-x-8 gap-y-2">
         <div>
-          <div className="label">Total $ hit so far</div>
+          <div className="label">Total product hit so far</div>
           <div className="text-3xl font-bold num text-foil">{$(m.hitValueDelivered)}</div>
-        </div>
-        <div>
-          <div className="label">Hits out</div>
-          <div className="text-xl font-bold num">{m.hitsDelivered} <span className="text-dim text-sm">of {m.hitPoolQty}</span></div>
+          <div className="text-dim text-xs num">{m.hitsDelivered} of {m.hitPoolQty} hits out</div>
         </div>
         <div>
           <div className="label">Hit value remaining</div>
           <div className="text-xl font-bold num">{$(m.hitValueRemaining)}</div>
         </div>
+        {(() => {
+          const hitsLeft = Math.max(m.hitPoolQty - m.hitsDelivered, 0);
+          const spotsLeft = spotsSoldNum > 0 ? Math.max(m.spots - spotsSoldNum, 0) : m.spots;
+          const odds = spotsLeft > 0 ? (hitsLeft / spotsLeft) * 100 : 0;
+          return (
+            <div>
+              <div className="label">% chance of a hit</div>
+              <div className={`text-xl font-bold num ${odds > 0 ? "text-win" : "text-dim"}`}>
+                {spotsLeft > 0 ? `${Math.min(odds, 100).toFixed(1)}%` : "-"}
+              </div>
+              <div className="text-dim text-xs num">
+                {hitsLeft} hits in {spotsLeft} spins left{spotsSoldNum === 0 ? " (base odds)" : ""}
+              </div>
+            </div>
+          );
+        })()}
         {m.hitCostDelivered !== null && (
           <div>
             <div className="label">Cost of hits out (admin)</div>
             <div className="text-xl font-bold num">{$(m.hitCostDelivered)}</div>
-          </div>
-        )}
-        {spotsSoldNum > 0 && (
-          <div>
-            <div className="label">Hit rate per spin sold</div>
-            <div className="text-xl font-bold num text-win">{((m.hitsDelivered / spotsSoldNum) * 100).toFixed(1)}%</div>
           </div>
         )}
         {spotsSoldNum > 0 && afterFeesNum > 0 && (
