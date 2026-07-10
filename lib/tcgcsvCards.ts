@@ -105,11 +105,14 @@ export async function searchTcgcsvCards(q: string): Promise<PokeCard[]> {
         const n = norm(p.name);
         if (!qTokens.every((t) => n.includes(t))) continue;
         out.push(toCard(p, g, d.market.get(p.productId)));
-        if (out.length >= 30) return out;
+        if (out.length >= 60) break;
       }
+      if (out.length >= 60) break;
     }
   }
-  return out;
+  // priced cards first: presale sets have no market yet and make bad picks
+  out.sort((a, b) => Number(b.market !== null) - Number(a.market !== null));
+  return out.slice(0, 30);
 }
 
 export async function getTcgcsvCard(id: string): Promise<PokeCard | null> {
