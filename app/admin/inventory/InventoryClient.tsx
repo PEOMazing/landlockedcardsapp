@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 type Item = {
   id: string; name: string; category: string; buyPrice: number;
@@ -10,6 +10,7 @@ import { CATEGORIES as CATS } from "@/lib/categories";
 import Thumb from "@/components/Thumb";
 import CollectrImport from "@/components/CollectrImport";
 import EditCell from "@/components/EditCell";
+import DeltaHover from "@/components/DeltaHover";
 import { toast } from "@/components/Toaster";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -246,7 +247,8 @@ export default function InventoryClient() {
             {filtered.map((i) => {
               const margin = (i.marketPrice || 0) - (i.buyPrice || 0);
               return (
-                <tr key={i.id} className={selected.has(i.id) ? "bg-foil/5" : ""}>
+                <Fragment key={i.id}>
+                <tr className={selected.has(i.id) ? "bg-foil/5" : ""}>
                   <td className="!px-2">
                     <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggleSelect(i.id)} />
                   </td>
@@ -258,44 +260,18 @@ export default function InventoryClient() {
                   <td>
                     {num(i.id, "buyPrice", i.buyPrice, "0.01", !(i.buyPrice > 0) ? "!border-amber-400/70 !bg-amber-400/10" : "")}
                     <button
-                      className="text-dim text-[10px] underline decoration-dotted hover:text-body"
+                      className="block text-dim text-[10px] hover:text-body mt-0.5"
                       onClick={() => toggleLots(i.id)}
+                      title="Show every purchase lot behind this average"
                     >
-                      lots
+                      {lotsFor === i.id ? "\u25BE hide history" : "\u25B8 buy history"}
                     </button>
-                    {lotsFor === i.id && (
-                      <div className="mt-2 w-56 rounded-lg border border-edge bg-panel p-3 space-y-1">
-                        <div className="label">Purchase history</div>
-                        {!lotsCache[i.id] && <div className="text-dim text-xs">Loading...</div>}
-                        {lotsCache[i.id] && lotsCache[i.id].length === 0 && (
-                          <div className="text-dim text-xs">
-                            No lots logged yet. Lots record automatically from + stock, add product, and imports.
-                          </div>
-                        )}
-                        {lotsCache[i.id]?.map((l, idx) => (
-                          <div key={idx} className="flex justify-between text-xs">
-                            <span className="text-dim">{l.date}{l.source ? ` - ${l.source}` : ""}</span>
-                            <span className="num">{l.qty} x {"$"}{l.unitCost.toFixed(2)}</span>
-                          </div>
-                        ))}
-                        {lotsCache[i.id] && lotsCache[i.id].length > 0 && (
-                          <div className="flex justify-between text-xs pt-1 border-t border-edge">
-                            <span className="text-dim">avg basis</span>
-                            <span className="num font-semibold">{"$"}{(i.buyPrice || 0).toFixed(2)}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </td>
                   <td>
-                    {num(i.id, "marketPrice", i.marketPrice)}
-                    {(i.entryMarket ?? 0) > 0 && i.marketPrice > 0 && Math.abs(i.marketPrice - (i.entryMarket as number)) >= 0.01 && (
-                      <div className={`text-[10px] num font-semibold ${i.marketPrice >= (i.entryMarket as number) ? "text-win" : "text-bad"}`}>
-                        {i.marketPrice >= (i.entryMarket as number) ? "\u25B2" : "\u25BC"} ${Math.abs(i.marketPrice - (i.entryMarket as number)).toFixed(2)}
-                        {" "}({i.marketPrice >= (i.entryMarket as number) ? "+" : "-"}{Math.abs(((i.marketPrice - (i.entryMarket as number)) / (i.entryMarket as number)) * 100).toFixed(1)}%)
-                        {" "}since {i.dateAdded || "entry"}
-                      </div>
-                    )}
+                    <span className="inline-flex items-center gap-1.5">
+                      {num(i.id, "marketPrice", i.marketPrice)}
+                      <DeltaHover current={i.marketPrice || null} entry={i.entryMarket ?? null} date={i.dateAdded} />
+                    </span>
                   </td>
                   <td>
                     <EditCell value={i.retailPrice ?? null} onSave={(v) => patch(i.id, { retailPrice: v })} />
@@ -360,6 +336,39 @@ export default function InventoryClient() {
                     </button>
                   </td>
                 </tr>
+                {lotsFor === i.id && (
+                  <tr className="!bg-ink/60">
+                    <td className="!py-0 !border-b-0" />
+                    <td colSpan={10} className="!py-0">
+                      <div className="py-3 pl-2 pr-4 space-y-1.5">
+                        <div className="label">Buy history</div>
+                        {!lotsCache[i.id] && <div className="text-dim text-xs">Loading...</div>}
+                        {lotsCache[i.id] && lotsCache[i.id].length === 0 && (
+                          <div className="text-dim text-xs">
+                            No lots logged yet. Lots record automatically from + stock, add product, and imports.
+                          </div>
+                        )}
+                        {lotsCache[i.id]?.map((l, idx) => (
+                          <div key={idx} className="grid grid-cols-[110px_60px_110px_1fr] gap-3 text-xs items-baseline">
+                            <span className="text-dim num">{l.date}</span>
+                            <span className="num">{l.qty}x</span>
+                            <span className="num font-medium">{"$"}{l.unitCost.toFixed(2)} each</span>
+                            <span className="text-dim">{l.source}</span>
+                          </div>
+                        ))}
+                        {lotsCache[i.id] && lotsCache[i.id].length > 0 && (
+                          <div className="grid grid-cols-[110px_60px_110px_1fr] gap-3 text-xs pt-1.5 border-t border-edge">
+                            <span className="text-dim">average basis</span>
+                            <span className="num">{i.qtyOnHand}x</span>
+                            <span className="num font-semibold text-foil">{"$"}{(i.buyPrice || 0).toFixed(2)} each</span>
+                            <span />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {filtered.length === 0 && <tr><td colSpan={9} className="text-dim">No products match</td></tr>}

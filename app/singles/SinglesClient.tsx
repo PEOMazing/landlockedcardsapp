@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
+import DeltaHover from "@/components/DeltaHover";
 import { toast } from "@/components/Toaster";
 import CollectrImport from "@/components/CollectrImport";
 
@@ -475,6 +476,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                       ) : (
                         <span className="num">{s.comp !== null ? $(s.comp) : "-"}</span>
                       )}
+                      <DeltaHover current={s.comp} entry={s.entryComp} date={s.dateAdded} />
                       {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
                       {!s.compDetail && s.comp !== null && s.compSource.includes("est.") && (
                         <span
@@ -486,13 +488,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                       )}
                     </div>
                     {s.compDate && <div className="text-dim text-[10px]">{s.compSource} {s.compDate}</div>}
-                    {s.entryComp !== null && s.entryComp > 0 && s.comp !== null && Math.abs(s.comp - s.entryComp) >= 0.01 && (
-                      <div className={`text-[10px] num font-semibold ${s.comp >= s.entryComp ? "text-win" : "text-bad"}`}>
-                        {s.comp >= s.entryComp ? "\u25B2" : "\u25BC"} ${Math.abs(s.comp - s.entryComp).toFixed(2)}
-                        {" "}({s.comp >= s.entryComp ? "+" : "-"}{Math.abs(((s.comp - s.entryComp) / s.entryComp) * 100).toFixed(1)}%)
-                        {" "}since {s.dateAdded || "entry"}
-                      </div>
-                    )}
+
                   </td>
                   <td>
                     {s.status === "In Stream" || !isManager ? (
