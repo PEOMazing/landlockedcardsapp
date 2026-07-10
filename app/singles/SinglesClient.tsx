@@ -394,6 +394,14 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                         <span>{s.comp !== null ? $(s.comp) : "-"}</span>
                       )}
                       {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
+                      {!s.compDetail && s.comp !== null && s.compSource.includes("est.") && (
+                        <span
+                          className="text-amber-400 text-xs font-semibold border border-amber-400/40 bg-amber-400/10 rounded px-1.5 py-0.5 cursor-help whitespace-nowrap"
+                          title={`${s.compSource} - no recent sales in this condition, comp is a discount off NM market. Verify before pricing.`}
+                        >
+                          {"\u26A0"} est.
+                        </span>
+                      )}
                       {["Raw", "NM", "LP", "MP", "HP", "DM"].includes(s.condition) && s.cardId ? (
                         <button
                           className="text-foil text-xs hover:underline whitespace-nowrap disabled:opacity-40"

@@ -34,6 +34,8 @@ export default function CompSales({
     closeTimer.current = setTimeout(() => setPos(null), 180);
   };
 
+  const thin = detail.length < 4; // 1-3 sales is shaky ground for a comp
+
   const url = productId
     ? `https://www.tcgplayer.com/product/${productId}?Language=English&Condition=${encodeURIComponent(CONDITION_FULL[condition] || "Near Mint")}`
     : null;
@@ -47,8 +49,14 @@ export default function CompSales({
 
   return (
     <span onMouseEnter={open} onMouseLeave={close} className="relative">
-      <span className="text-dim text-xs cursor-help underline decoration-dotted whitespace-nowrap">
-        {detail.length} sold{detail.length > 1 ? "s" : ""}
+      <span
+        className={`text-xs cursor-help whitespace-nowrap ${
+          thin
+            ? "text-amber-400 font-semibold border border-amber-400/40 bg-amber-400/10 rounded px-1.5 py-0.5"
+            : "text-dim underline decoration-dotted"
+        }`}
+      >
+        {thin ? "\u26A0 " : ""}{detail.length} sold{detail.length > 1 ? "s" : ""}
       </span>
       {pos && (
         <span
@@ -67,6 +75,11 @@ export default function CompSales({
           <span className="block text-dim text-xs pt-1 border-t border-edge">
             Comp = median of these sales
           </span>
+          {thin && (
+            <span className="block text-amber-400 text-xs font-semibold">
+              Thin data: only {detail.length} recent sale{detail.length > 1 ? "s" : ""} in this condition. Verify before pricing.
+            </span>
+          )}
           {url && (
             <a href={url} target="_blank" rel="noreferrer" className="block text-foil text-xs hover:underline">
               View on TCGplayer ({CONDITION_FULL[condition] || condition}) &#8599;
