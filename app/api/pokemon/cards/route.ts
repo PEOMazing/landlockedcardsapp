@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
 import { listSetCards, searchCards } from "@/lib/pokemon";
+import { searchTcgcsvCards } from "@/lib/tcgcsvCards";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,15 @@ export async function GET(req: Request) {
   const q = url.searchParams.get("q");
   try {
     if (setId) return NextResponse.json({ cards: await listSetCards(setId) });
-    if (q) return NextResponse.json({ cards: await searchCards(q) });
+    if (q) {
+      // TCGplayer catalog (via tcgcsv) covers the newest sets first; pokemontcg.io
+      // fills in older cards. Dedupe by name+number, TCGplayer entries win.
+      const tcg = await searchTcgcsvCards(q).catch(() => []);
+      const poke = tcg.length >= 30 ? [] : await searchCards(q).catch(() => []);
+      const seen = new Set(tcg.map((c) => `${c.name.toLowerCase()}|${c.number}`));
+      const merged = [...tcg, ...poke.filter((c) => !seen.has(`${c.name.toLowerCase()}|${c.number}`))].slice(0, 30);
+      return NextResponse.json({ cards: merged });
+    }
     return NextResponse.json({ error: "setId or q required" }, { status: 400 });
   } catch {
     return NextResponse.json({ error: "pokemontcg.io is not responding, try again shortly" }, { status: 502 });
