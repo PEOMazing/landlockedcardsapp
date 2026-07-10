@@ -381,20 +381,22 @@ export default function StreamEditor({ id }: { id: string }) {
                 {$(afterFeesNum / spotsSoldNum)} avg per spin - {$(netProfit / spotsSoldNum)} profit per spin so far
               </div>
             )}
-            {m.spots > 0 && (
-              <div className={`text-xs num text-right ${resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < m.breakEven ? "text-amber-400" : "text-dim"}`}>
-                break-even ask: {$(m.breakEven)} per spin ({m.cfg.breakevenMult}x value per spot)
-                {resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < m.breakEven && " - current avg is under it"}
-              </div>
-            )}
-            {m.spots > 0 && m.buyCost !== null && m.buyCost > 0 && (() => {
-              const costAsk = (m.buyCost / m.spots) * m.cfg.breakevenMult;
-              const under = resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < costAsk;
+            {m.spots > 0 && (() => {
+              const costBE = data?.config?.costBreakEvenPerSpot ?? null;
+              const primary = costBE ?? m.breakEven;
+              const under = resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < primary;
               return (
-                <div className={`text-xs num text-right ${under ? "text-amber-400" : "text-dim"}`}>
-                  spin target on cost (admin): {$(costAsk)} ({m.cfg.breakevenMult}x avg buy per spot)
-                  {under && " - current avg is under it"}
-                </div>
+                <>
+                  <div className={`text-xs num text-right ${under ? "text-amber-400 font-semibold" : "text-dim"}`}>
+                    break even: {$(primary)} per spin ({m.cfg.breakevenMult}x average spin cost{costBE === null ? ", on market value until buy prices are set" : ""})
+                    {under && " - current avg is under it"}
+                  </div>
+                  {costBE !== null && (
+                    <div className="text-dim text-[10px] num text-right">
+                      on market value instead: {$(m.breakEven)} per spin
+                    </div>
+                  )}
+                </>
               );
             })()}
           </div>
@@ -610,7 +612,7 @@ export default function StreamEditor({ id }: { id: string }) {
         <Stat label="Giveaways" value={`${m.givvyQty} / ${$(m.givvyValue)}`} accent="givvy" />
         <Stat label="Total product value" value={$(m.totalValue)} />
         <Stat label="Value per spot" value={m.spots ? $(m.valuePerSpot) : "-"} />
-        <Stat label="Break even per spot" value={m.spots ? $(m.breakEven) : "-"} accent="win" />
+        <Stat label="Break even per spin" value={m.spots ? $(data?.config?.costBreakEvenPerSpot ?? m.breakEven) : "-"} accent="win" />
         <Stat label={`Hit pool (> $${m.cfg.hitThreshold})`} value={`${m.hitPoolQty} items / ${$(m.hitPoolValue)}`} accent="foil" />
         <Stat label="Hit odds per spot" value={m.spots ? (m.hitOddsPerSpot * 100).toFixed(1) + "%" : "-"} accent="foil" />
         {m.expectedHits !== null ? (
