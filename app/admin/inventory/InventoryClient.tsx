@@ -45,6 +45,21 @@ export default function InventoryClient() {
     a.click();
   }
 
+  const [lotsFor, setLotsFor] = useState<string | null>(null);
+  const [lotsCache, setLotsCache] = useState<Record<string, { date: string; qty: number; unitCost: number; source: string }[]>>({});
+
+  async function toggleLots(id: string) {
+    if (lotsFor === id) { setLotsFor(null); return; }
+    setLotsFor(id);
+    if (!lotsCache[id]) {
+      const r = await fetch(`/api/inventory/${id}/purchases`);
+      if (r.ok) {
+        const d = await r.json();
+        setLotsCache((prev) => ({ ...prev, [id]: d.lots }));
+      }
+    }
+  }
+
   const [stockFor, setStockFor] = useState<string | null>(null);
   const [stockQty, setStockQty] = useState("1");
   const [stockCost, setStockCost] = useState("");
@@ -60,6 +75,7 @@ export default function InventoryClient() {
     setStockBusy(false);
     if (r.ok) {
       setStockFor(null); setStockQty("1"); setStockCost("");
+      setLotsCache((prev) => { const n = { ...prev }; delete n[id]; return n; });
       await load();
     }
   }
@@ -183,7 +199,38 @@ export default function InventoryClient() {
                     )}
                   </td>
                   <td className="text-dim">{i.category}</td>
-                  <td>{num(i.id, "buyPrice", i.buyPrice)}</td>
+                  <td>
+                    {num(i.id, "buyPrice", i.buyPrice)}
+                    <button
+                      className="text-dim text-[10px] underline decoration-dotted hover:text-body"
+                      onClick={() => toggleLots(i.id)}
+                    >
+                      lots
+                    </button>
+                    {lotsFor === i.id && (
+                      <div className="mt-2 w-56 rounded-lg border border-edge bg-panel p-3 space-y-1">
+                        <div className="label">Purchase history</div>
+                        {!lotsCache[i.id] && <div className="text-dim text-xs">Loading...</div>}
+                        {lotsCache[i.id] && lotsCache[i.id].length === 0 && (
+                          <div className="text-dim text-xs">
+                            No lots logged yet. Lots record automatically from + stock, add product, and imports.
+                          </div>
+                        )}
+                        {lotsCache[i.id]?.map((l, idx) => (
+                          <div key={idx} className="flex justify-between text-xs">
+                            <span className="text-dim">{l.date}{l.source ? ` - ${l.source}` : ""}</span>
+                            <span className="num">{l.qty} x {"$"}{l.unitCost.toFixed(2)}</span>
+                          </div>
+                        ))}
+                        {lotsCache[i.id] && lotsCache[i.id].length > 0 && (
+                          <div className="flex justify-between text-xs pt-1 border-t border-edge">
+                            <span className="text-dim">avg basis</span>
+                            <span className="num font-semibold">{"$"}{(i.buyPrice || 0).toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     {num(i.id, "marketPrice", i.marketPrice)}
                     {(i.entryMarket ?? 0) > 0 && i.marketPrice > 0 && Math.abs(i.marketPrice - (i.entryMarket as number)) >= 0.01 && (
