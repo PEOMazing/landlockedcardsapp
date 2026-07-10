@@ -15,7 +15,7 @@ export default async function AdminDashboard() {
   const [settings, streamerRows, streamRows, lineRows] = await Promise.all([
     getSettings(),
     atList(T.streamers),
-    atList(T.streams, { filterByFormula: "{Status} = 'Complete'" }),
+    atList(T.streams, { filterByFormula: "AND({Status} = 'Complete', {Deleted At} = BLANK())" }),
     atList(T.lines),
   ]);
 

@@ -17,7 +17,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     atList(T.time, { filterByFormula: `{Stream Rec Id} = '${params.id}'`, "sort[0][field]": "Start" }),
     getSettings(),
     isComplete ? Promise.resolve([]) : atList(T.lines),
-    isComplete ? Promise.resolve([]) : atList(T.streams, { filterByFormula: "{Status} = 'Complete'" }),
+    isComplete ? Promise.resolve([]) : atList(T.streams, { filterByFormula: "AND({Status} = 'Complete', {Deleted At} = BLANK())" }),
     atList(T.inventory),
   ]);
   const categoryByProduct: Record<string, string> = {};
@@ -119,6 +119,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.status !== undefined) fields["Status"] = b.status;
   if (b.notes !== undefined) fields["Notes"] = b.notes;
   if (b.checklist !== undefined) fields["Checklist"] = b.checklist === null ? "" : JSON.stringify(b.checklist);
+  // reinstate a soft-deleted stream within the grace window (admin only)
+  if (b.restoreDeleted === true) {
+    if (!me.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    fields["Deleted At"] = null;
+  }
   await atUpdate(T.streams, params.id, fields);
+  return NextResponse.json({ ok: true });
+}
+
+// Soft delete: the stream disappears from every list and pay calculation
+// immediately, but sits in a 72 hour grace period where an admin can
+// reinstate it from the All Streams page before it is purged for good.
+export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  const me = await getMe();
+  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!isRecId(params.id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
+  await atUpdate(T.streams, params.id, { "Deleted At": new Date().toISOString() });
   return NextResponse.json({ ok: true });
 }

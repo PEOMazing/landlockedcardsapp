@@ -5,10 +5,14 @@ import { getMe } from "@/lib/auth";
 export async function GET() {
   const me = await getMe();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const params: Record<string, string> = { "sort[0][field]": "Stream Date", "sort[0][direction]": "desc" };
+  const params: Record<string, string> = {
+    "sort[0][field]": "Stream Date",
+    "sort[0][direction]": "desc",
+    filterByFormula: "{Deleted At} = BLANK()",
+  };
   if (!me.isAdmin) {
     if (!me.streamer) return NextResponse.json({ streams: [] });
-    params.filterByFormula = `OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}')`;
+    params.filterByFormula = `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`;
   }
   const rows = await atList(T.streams, params);
   return NextResponse.json({

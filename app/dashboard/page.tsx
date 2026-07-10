@@ -33,7 +33,7 @@ export default async function Dashboard() {
   const [settings, streamRows, lineRows] = await Promise.all([
     getSettings(),
     atList(T.streams, {
-      filterByFormula: `OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}')`,
+      filterByFormula: `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`,
       "sort[0][field]": "Stream Date",
       "sort[0][direction]": "desc",
     }),

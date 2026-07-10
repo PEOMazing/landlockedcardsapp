@@ -17,7 +17,7 @@ export default async function InsightsPage() {
     getSettings(),
     atList(T.streamers),
     atList(T.streams, {
-      filterByFormula: "{Status} = 'Complete'",
+      filterByFormula: "AND({Status} = 'Complete', {Deleted At} = BLANK())",
       "sort[0][field]": "Stream Date",
       "sort[0][direction]": "asc",
     }),
