@@ -169,6 +169,21 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
   const stockValue = singles.filter((s) => s.status === "In Stock").reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0);
   const soldTotal = singles.filter((s) => s.status === "Sold").reduce((a, s) => a + (s.salePrice || 0), 0);
 
+  // totals over exactly what is shown: they react to search, set, and status filters
+  const totals = useMemo(() => {
+    let cards = 0, spend = 0, market = 0, profit = 0;
+    for (const s of shown) {
+      const q = s.qty || 1;
+      cards += q;
+      spend += (s.buy || 0) * q;
+      market += (s.comp || 0) * q;
+      // realized price counts once a card actually sold; otherwise the comp
+      const value = s.status === "Sold" && s.salePrice !== null ? s.salePrice : (s.comp || 0);
+      profit += (value - (s.buy || 0)) * q;
+    }
+    return { cards, spend, market, profit };
+  }, [shown]);
+
   const ebayLink = (s: SingleT) =>
     `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${s.name} ${s.setName} ${s.number} ${s.condition !== "Raw" ? s.condition : ""}`.trim())}&LH_Sold=1&LH_Complete=1`;
 
@@ -369,6 +384,28 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
               <option value="price-asc">Price low-high</option>
             </select>
           </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-lg border border-edge p-3">
+            <div className="label">Cards shown</div>
+            <div className="num text-lg font-bold">{totals.cards}</div>
+          </div>
+          {isAdmin && (
+            <div className="rounded-lg border border-edge p-3">
+              <div className="label">Total spend</div>
+              <div className="num text-lg font-bold">{$(totals.spend)}</div>
+            </div>
+          )}
+          <div className="rounded-lg border border-edge p-3">
+            <div className="label">Market value</div>
+            <div className="num text-lg font-bold text-foil">{$(totals.market)}</div>
+          </div>
+          {isAdmin && (
+            <div className="rounded-lg border border-edge p-3">
+              <div className="label">Est. profit</div>
+              <div className={`num text-lg font-bold ${totals.profit >= 0 ? "text-win" : "text-bad"}`}>{$(totals.profit)}</div>
+            </div>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
