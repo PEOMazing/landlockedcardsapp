@@ -126,6 +126,9 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       };
       if (hit.url && !rec.fields["TCGplayer URL"]) fields["TCGplayer URL"] = hit.url;
       if (hit.image && !rec.fields["Image URL"]) fields["Image URL"] = hit.image;
+      // first time this product gets a market price, freeze the entry benchmark
+      if (!(rec.fields["Entry Market"] > 0)) fields["Entry Market"] = hit.price;
+      if (!rec.fields["Date Added"]) fields["Date Added"] = new Date().toISOString().slice(0, 10);
       await atUpdate(T.inventory, recId, fields);
     }
     results.push({ id: recId, name: rec.fields["Product Name"], matched: hit?.matched ?? null, price: hit?.price ?? null });
@@ -185,7 +188,10 @@ export async function refreshSingleComps(cap = 50): Promise<{ updated: number; c
     const sold = await conditionSoldComp(pid, cond);
     if (!sold) continue;
     try {
+      const compFields: Record<string, any> = {};
+      if (!(rec.fields["Entry Comp"] > 0)) compFields["Entry Comp"] = sold.price;
       await atUpdate(T.singles, rec.id, {
+        ...compFields,
         "Comp": sold.price,
         "Comp Source": `TCGplayer solds (${cond}, median of ${sold.sales})`,
         "Comp Date": new Date().toISOString().slice(0, 10),

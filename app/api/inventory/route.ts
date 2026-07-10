@@ -18,6 +18,8 @@ export async function GET() {
     tcgUrl: r.fields["TCGplayer URL"] || "",
     imageUrl: r.fields["Image URL"] || "",
     retailPrice: r.fields["Retail Price"] ?? null,
+    entryMarket: r.fields["Entry Market"] ?? null,
+    dateAdded: r.fields["Date Added"] || "",
     priceChecked: r.fields["Price Checked"] || null,
     isGiveaway: r.fields["Category"] === "Giveaway",
     // buy price is admin-only
@@ -36,6 +38,8 @@ export async function POST(req: Request) {
     "Buy Price": b.buyPrice ?? 0,
     "Market Price": b.marketPrice ?? 0,
     "Price Checked": new Date().toISOString().slice(0, 10),
+    "Date Added": new Date().toISOString().slice(0, 10),
+    ...((b.marketPrice ?? 0) > 0 ? { "Entry Market": b.marketPrice } : {}),
     "Qty On Hand": b.qtyOnHand ?? 0,
     "TCGplayer URL": b.tcgUrl || "",
     "Active": true,

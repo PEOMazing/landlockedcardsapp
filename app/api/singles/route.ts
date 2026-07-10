@@ -96,6 +96,8 @@ export async function POST(req: Request) {
     fields["Comp Date"] = new Date().toISOString().slice(0, 10);
   }
 
+  // entry benchmark: whatever the comp is at the moment of entry
+  if (typeof fields["Comp"] === "number" && fields["Comp"] > 0) fields["Entry Comp"] = fields["Comp"];
   const rec = await atCreate(T.singles, fields);
   return NextResponse.json({ single: toSingle(rec, me.isAdmin) });
 }

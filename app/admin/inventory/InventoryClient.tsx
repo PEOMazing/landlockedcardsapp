@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Item = {
   id: string; name: string; category: string; buyPrice: number;
-  marketPrice: number; qtyOnHand: number; tcgUrl: string; imageUrl?: string; retailPrice?: number | null; priceChecked: string | null;
+  marketPrice: number; qtyOnHand: number; tcgUrl: string; imageUrl?: string; retailPrice?: number | null; entryMarket?: number | null; dateAdded?: string; priceChecked: string | null;
 };
 
 import { CATEGORIES as CATS } from "@/lib/categories";
@@ -165,7 +165,16 @@ export default function InventoryClient() {
                   </td>
                   <td className="text-dim">{i.category}</td>
                   <td>{num(i.id, "buyPrice", i.buyPrice)}</td>
-                  <td>{num(i.id, "marketPrice", i.marketPrice)}</td>
+                  <td>
+                    {num(i.id, "marketPrice", i.marketPrice)}
+                    {(i.entryMarket ?? 0) > 0 && i.marketPrice > 0 && Math.abs(i.marketPrice - (i.entryMarket as number)) >= 0.01 && (
+                      <div className={`text-[10px] num font-semibold ${i.marketPrice >= (i.entryMarket as number) ? "text-win" : "text-bad"}`}>
+                        {i.marketPrice >= (i.entryMarket as number) ? "\u25B2" : "\u25BC"} ${Math.abs(i.marketPrice - (i.entryMarket as number)).toFixed(2)}
+                        {" "}({i.marketPrice >= (i.entryMarket as number) ? "+" : "-"}{Math.abs(((i.marketPrice - (i.entryMarket as number)) / (i.entryMarket as number)) * 100).toFixed(1)}%)
+                        {" "}since {i.dateAdded || "entry"}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <input
                       type="number" step="0.01" className="input !w-20 !py-1"

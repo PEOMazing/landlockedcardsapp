@@ -14,7 +14,7 @@ const CONDITION_LABELS: Record<string, string> = {
 type SingleT = {
   id: string; name: string; setName: string; number: string; cardId: string;
   rarity: string; variant: string; condition: string;
-  comp: number | null; compSource: string; compDate: string;
+  comp: number | null; compSource: string; compDate: string; entryComp: number | null;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
   image: string; qty: number; status: string; salePrice: number | null; soldDate: string;
   notes: string; addedBy: string; dateAdded: string; buy?: number;
@@ -509,6 +509,13 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                       )}
                     </div>
                     {s.compDate && <div className="text-dim text-[10px]">{s.compSource} {s.compDate}</div>}
+                    {s.entryComp !== null && s.entryComp > 0 && s.comp !== null && Math.abs(s.comp - s.entryComp) >= 0.01 && (
+                      <div className={`text-[10px] num font-semibold ${s.comp >= s.entryComp ? "text-win" : "text-bad"}`}>
+                        {s.comp >= s.entryComp ? "\u25B2" : "\u25BC"} ${Math.abs(s.comp - s.entryComp).toFixed(2)}
+                        {" "}({s.comp >= s.entryComp ? "+" : "-"}{Math.abs(((s.comp - s.entryComp) / s.entryComp) * 100).toFixed(1)}%)
+                        {" "}since {s.dateAdded || "entry"}
+                      </div>
+                    )}
                   </td>
                   <td>
                     {s.status === "In Stream" || !isManager ? (

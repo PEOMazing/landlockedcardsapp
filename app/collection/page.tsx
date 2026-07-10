@@ -109,6 +109,34 @@ export default async function CollectionDashboard() {
 
         <TopMovers snaps={snaps} />
 
+        {(() => {
+          const perf = (held as any[])
+            .filter((s) => s.entryComp > 0 && s.comp !== null && Math.abs(s.comp - s.entryComp) >= 0.01)
+            .map((s) => ({ ...s, delta: s.comp - s.entryComp, pct: ((s.comp - s.entryComp) / s.entryComp) * 100 }))
+            .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+            .slice(0, 3);
+          if (perf.length === 0) return null;
+          return (
+            <section className="card p-5">
+              <div className="label mb-3">Since you added them</div>
+              <div className="space-y-2">
+                {perf.map((s: any) => (
+                  <div key={s.id} className="flex items-center gap-3">
+                    {s.image && <Thumb src={s.image} size={30} />}
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{s.name}</div>
+                      <div className="text-dim text-xs">added {s.dateAdded} at {"$"}{Number(s.entryComp).toFixed(2)}</div>
+                    </div>
+                    <span className={`num ml-auto font-semibold ${s.delta >= 0 ? "text-win" : "text-bad"}`}>
+                      {s.delta >= 0 ? "\u25B2" : "\u25BC"} {"$"}{Math.abs(s.delta).toFixed(2)} ({s.delta >= 0 ? "+" : "-"}{Math.abs(s.pct).toFixed(1)}%)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })()}
+
         <div className="grid md:grid-cols-2 gap-4">
           <section className="card p-5">
             <div className="label mb-3">Most valuable cards</div>

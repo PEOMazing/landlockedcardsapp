@@ -45,14 +45,17 @@ export async function POST(req: Request) {
         await atUpdate(T.inventory, hit.id, fields);
         sealedMerged++;
       } else {
-        toCreate.push({
+        const create: Record<string, any> = {
           "Product Name": name,
           "Category": categoryForName(name),
           "Buy Price": row.buy && row.buy > 0 ? row.buy : 0,
           "Market Price": row.market && row.market > 0 ? row.market : 0,
           "Qty On Hand": row.qty || 1,
           "Active": true,
-        });
+          "Date Added": new Date().toISOString().slice(0, 10),
+        };
+        if (row.market && row.market > 0) create["Entry Market"] = row.market;
+        toCreate.push(create);
       }
     }
     if (toCreate.length) {
@@ -82,6 +85,7 @@ export async function POST(req: Request) {
         if (r.buy && r.buy > 0) fields["Buy Price"] = r.buy;
         if (r.comp && r.comp > 0) {
           fields["Comp"] = r.comp;
+          fields["Entry Comp"] = r.comp;
           fields["Comp Source"] = "Collectr import (market)";
           fields["Comp Date"] = today;
         }
