@@ -16,6 +16,13 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     comp: f["Comp"] ?? null,
     compSource: f["Comp Source"] || "",
     compDate: f["Comp Date"] || "",
+    compDetail: (() => {
+      try { return f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null; } catch { return null; }
+    })(),
+    tcgProductId: (() => {
+      const m = String(f["Card ID"] || "").match(/^tcg:(\d+):/);
+      return m ? parseInt(m[1]) : null;
+    })(),
     image: f["Image URL"] || "",
     qty: f["Qty"] ?? 1,
     status: f["Status"] || "In Stock",

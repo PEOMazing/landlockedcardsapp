@@ -132,31 +132,39 @@ const CONDITION_NAMES: Record<string, string> = {
   NM: "Near Mint", LP: "Lightly Played", MP: "Moderately Played",
   HP: "Heavily Played", DM: "Damaged", Raw: "Near Mint",
 };
+// TCGplayer condition ids for server-side filtering of the sales feed
+const CONDITION_IDS: Record<string, number> = { NM: 1, Raw: 1, LP: 2, MP: 3, HP: 4, DM: 5 };
+const MAX_SALE_AGE_DAYS = 90; // older sales are too stale to anchor a comp
+
+export type SoldSale = { date: string; price: number; qty: number };
 
 export async function conditionSoldComp(
   productId: number,
   condition: string
-): Promise<{ price: number; sales: number } | null> {
-  const want = CONDITION_NAMES[condition];
-  if (!want) return null;
+): Promise<{ price: number; sales: number; detail: SoldSale[] } | null> {
+  const condId = CONDITION_IDS[condition];
+  if (!condId) return null;
   try {
     const res = await fetch(`https://mpapi.tcgplayer.com/v2/product/${productId}/latestsales`, {
       method: "POST",
       cache: "no-store",
       headers: { ...HEADERS, "Content-Type": "application/json" },
-      body: JSON.stringify({ conditions: [], languages: [], variants: [], listingType: "All", limit: 50 }),
+      body: JSON.stringify({ conditions: [condId], languages: [1], variants: [], listingType: "All", limit: 25 }),
     });
     if (!res.ok) return null;
     const d = await res.json();
-    const prices = (d?.data || [])
-      .filter((x: any) => x.condition === want && typeof x.purchasePrice === "number" && x.purchasePrice > 0)
+    const cutoff = Date.now() - MAX_SALE_AGE_DAYS * 24 * 60 * 60 * 1000;
+    const recent: SoldSale[] = (d?.data || [])
+      .filter((x: any) =>
+        typeof x.purchasePrice === "number" && x.purchasePrice > 0 &&
+        x.orderDate && new Date(x.orderDate).getTime() >= cutoff)
       .slice(0, 10)
-      .map((x: any) => x.purchasePrice)
-      .sort((a: number, b: number) => a - b);
-    if (prices.length === 0) return null;
-    const mid = Math.floor(prices.length / 2);
-    const median = prices.length % 2 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2;
-    return { price: Math.round(median * 100) / 100, sales: prices.length };
+      .map((x: any) => ({ date: String(x.orderDate).slice(0, 10), price: x.purchasePrice, qty: x.quantity || 1 }));
+    if (recent.length === 0) return null;
+    const sorted = recent.map((x) => x.price).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    return { price: Math.round(median * 100) / 100, sales: recent.length, detail: recent };
   } catch {
     return null;
   }

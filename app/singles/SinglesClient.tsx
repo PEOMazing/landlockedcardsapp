@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import CompSales from "@/components/CompSales";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
@@ -13,6 +14,7 @@ type SingleT = {
   id: string; name: string; setName: string; number: string; cardId: string;
   rarity: string; variant: string; condition: string;
   comp: number | null; compSource: string; compDate: string;
+  compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
   image: string; qty: number; status: string; salePrice: number | null;
   notes: string; addedBy: string; dateAdded: string; buy?: number;
 };
@@ -391,7 +393,8 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                       ) : (
                         <span>{s.comp !== null ? $(s.comp) : "-"}</span>
                       )}
-                      {s.condition === "Raw" && s.cardId ? (
+                      {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
+                      {["Raw", "NM", "LP", "MP", "HP", "DM"].includes(s.condition) && s.cardId ? (
                         <button
                           className="text-foil text-xs hover:underline whitespace-nowrap disabled:opacity-40"
                           disabled={busy === s.id}

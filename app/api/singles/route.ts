@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         fields["Comp"] = sold.price;
         fields["Comp Source"] = `TCGplayer solds (${cond}, median of ${sold.sales})`;
         fields["Comp Date"] = new Date().toISOString().slice(0, 10);
+        fields["Comp Detail"] = JSON.stringify(sold.detail);
       } else if (card.market !== null) {
         fields["Comp"] = Math.round(card.market * mult * 100) / 100;
         fields["Comp Source"] = `TCGplayer market (${card.variant})` + (mult < 1 ? ` x ${cond} ${Math.round(mult * 100)}% est.` : "");
