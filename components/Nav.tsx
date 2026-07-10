@@ -6,7 +6,7 @@ export default function Nav({ isAdmin, name }: { isAdmin: boolean; name?: string
     <header className="border-b border-edge bg-panel/60 backdrop-blur sticky top-0 z-20">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-6">
         <Link href="/" className="font-bold" style={{ fontFamily: "var(--font-display, sans-serif)" }}>
-          LandLocked <span className="text-foil">Cards</span>
+          LandLocked <span className="holo-text">Cards</span>
         </Link>
         <nav className="flex items-center gap-4 text-sm text-dim">
           <Link className="hover:text-body" href="/dashboard">My Streams</Link>

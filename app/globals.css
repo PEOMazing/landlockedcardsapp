@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }
-body { background: #0E1420; color: #E8EDF6; }
+body { background: #0D0F14; color: #F4F5F7; }
 
 .card { @apply bg-panel border border-edge rounded-xl; }
 .label { @apply text-[11px] uppercase tracking-[0.14em] text-dim font-semibold; }
@@ -12,7 +12,13 @@ body { background: #0E1420; color: #E8EDF6; }
   focus:outline-none focus:border-foil/60 placeholder:text-dim/60;
 }
 .btn { @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors; }
-.btn-foil { @apply btn bg-foil text-ink hover:bg-foil/85; }
+.btn-foil {
+  @apply btn text-ink;
+  background: linear-gradient(120deg, #58e6d9, #7aa2ff, #c084fc);
+  background-size: 200% 200%;
+  transition: background-position .4s ease;
+}
+.btn-foil:hover { background-position: 100% 50%; }
 .btn-ghost { @apply btn border border-edge text-body hover:border-foil/50; }
 .btn-win { @apply btn bg-win/15 text-win border border-win/40 hover:bg-win/25; }
 .num { font-variant-numeric: tabular-nums; }
@@ -24,3 +30,19 @@ td { @apply py-2 px-3 border-b border-edge/60 text-sm num; }
   --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 body { font-family: var(--font-body); }
+
+
+/* CardQuarters holo identity: rolling foil gradient for brand moments */
+.holo-text {
+  background: linear-gradient(120deg, #58e6d9, #7aa2ff, #c084fc, #f472b6, #7aa2ff, #58e6d9);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: holo-roll 8s ease infinite;
+}
+@keyframes holo-roll {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
