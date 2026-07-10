@@ -387,6 +387,16 @@ export default function StreamEditor({ id }: { id: string }) {
                 {resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < m.breakEven && " - current avg is under it"}
               </div>
             )}
+            {m.spots > 0 && m.buyCost !== null && m.buyCost > 0 && (() => {
+              const costAsk = (m.buyCost / m.spots) * m.cfg.breakevenMult;
+              const under = resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < costAsk;
+              return (
+                <div className={`text-xs num text-right ${under ? "text-amber-400" : "text-dim"}`}>
+                  spin target on cost (admin): {$(costAsk)} ({m.cfg.breakevenMult}x avg buy per spot)
+                  {under && " - current avg is under it"}
+                </div>
+              );
+            })()}
           </div>
         </div>
         <div className="text-dim text-xs mt-3">
