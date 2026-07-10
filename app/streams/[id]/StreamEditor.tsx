@@ -238,14 +238,39 @@ export default function StreamEditor({ id }: { id: string }) {
   const promoNum = parseFloat(form.promotion) || 0;
   const tipsNum = parseFloat(form.tips) || 0;
   const giveawaysNum = parseInt(form.giveaways) || 0;
-  const giveawayCost = giveawaysNum * (data?.config?.giveawayCost || 0);
-  // stream profit, in plain totals, on the same basis as streamer pay:
-  // revenue after fees minus promotion, tips, giveaways run, and the product cost of the set
-  const streamProfit = afterFeesNum - promoNum - tipsNum - giveawayCost - m.totalValue;
-  // admin only: the same total measured against what the product actually cost to buy
-  const buyStreamProfit = m.buyCost !== null ? afterFeesNum - promoNum - tipsNum - giveawayCost - m.buyCost : null;
-  const packsValue = Math.max(0, m.totalValue - m.hitPoolValue - m.givvyValue);
   const resultsEntered = afterFeesNum > 0;
+
+  // ---- the stream P&L waterfall ----
+  // Product that was not hit goes back into inventory, so it is not a cost of
+  // this stream. What the stream "sold" is the hits that went out plus the
+  // giveaways it spent.
+  const giveawaySpend = giveawaysNum * (data?.config?.giveawayCost || 0);
+  const productSold = m.hitValueDelivered + giveawaySpend;
+  const productBack = Math.max(0, m.totalValue - m.hitValueDelivered - m.givvyValue);
+  const grossProfit = afterFeesNum - productSold;
+
+  // Streamer pay uses the official payroll rules so this preview matches the
+  // pay dashboard: greater of hourly or tier commission, where commission runs
+  // on the payroll basis (full set at market, minus promo, tips, giveaways,
+  // and packing). Pay settles weekly, so this is the single-stream estimate.
+  const pay = data?.pay || null;
+  const hoursNum = stream?.hours || 0;
+  const packingPay = pay ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * pay.packingRate : 0;
+  const payrollProfit = afterFeesNum - promoNum - tipsNum - giveawaySpend - m.totalValue;
+  const commissionable = payrollProfit - packingPay;
+  const tierPay = (() => {
+    if (!pay || commissionable <= 0) return 0;
+    const t1 = Math.min(commissionable, pay.tier1_limit) * pay.tier1_rate;
+    const t2 = Math.max(Math.min(commissionable - pay.tier1_limit, pay.tier2_limit - pay.tier1_limit), 0) * pay.tier2_rate;
+    const t3 = Math.max(commissionable - pay.tier2_limit, 0) * pay.tier3_rate;
+    return t1 + t2 + t3;
+  })();
+  const hourlyPay = pay ? hoursNum * pay.hourlyRate : 0;
+  const streamerPay = Math.max(hourlyPay, tierPay);
+  const netProfit = grossProfit - streamerPay - packingPay - tipsNum - promoNum;
+  const buyNet = m.hitCostDelivered !== null
+    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend) - streamerPay - packingPay - tipsNum - promoNum
+    : null;
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-8">
@@ -268,52 +293,89 @@ export default function StreamEditor({ id }: { id: string }) {
         <CopyShowSet lines={lines.map((l) => ({ qty: l.qty, name: l.name }))} />
       </div>
 
-      {/* Stream P&L in plain totals - the answer to "did this stream make money" */}
+      {/* Stream P&L: product that was not hit goes back to inventory, so the
+          stream is only charged for what actually left the building */}
       <section className="card p-5 border-foil/40">
         <div className="label mb-3">Stream P&L</div>
-        <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
-          <div>
-            <div className="label">Revenue after fees</div>
-            <div className="text-xl font-bold num">{resultsEntered ? $(afterFeesNum) : "-"}</div>
-          </div>
-          <div>
-            <div className="label">Break product cost</div>
-            <div className="text-xl font-bold num">{$(m.totalValue)}</div>
-            <div className="text-dim text-xs num">
-              hits {$(m.hitPoolValue)} - packs and fillers {$(packsValue)}
-              {m.buyCost !== null && <span> - bought for {$(m.buyCost)}</span>}
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Stream product at start</span>
+              <span className="num">{$(m.totalValue)}</span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Not hit, back to inventory</span>
+              <span className="num">-{$(productBack)}</span>
+            </div>
+            <div className="flex justify-between gap-6 pl-3">
+              <span className="text-dim">Hits delivered</span>
+              <span className="num">{$(m.hitValueDelivered)}</span>
+            </div>
+            <div className="flex justify-between gap-6 pl-3">
+              <span className="text-dim">Giveaways spent ({giveawaysNum} run{m.givvyQty > 0 ? ` + ${m.givvyQty} in set` : ""})</span>
+              <span className="num">{$(giveawaySpend)}</span>
+            </div>
+            <div className="flex justify-between gap-6 border-t border-edge pt-1.5 font-semibold">
+              <span>Product sold this show</span>
+              <span className="num">{$(productSold)}</span>
             </div>
           </div>
-          <div>
-            <div className="label">Giveaways</div>
-            <div className="text-xl font-bold num">{giveawaysNum}<span className="text-dim text-sm"> run</span></div>
-            <div className="text-dim text-xs num">
-              {m.givvyQty > 0 ? `${m.givvyQty} product (${$(m.givvyValue)})` : "no giveaway product in set"}
-              {giveawayCost > 0 && ` - cost ${$(giveawayCost)}`}
+
+          <div className="space-y-1.5 text-sm">
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Total sales after fees</span>
+              <span className="num">{resultsEntered ? $(afterFeesNum) : "-"}</span>
             </div>
-          </div>
-          <div>
-            <div className="label">Stream time</div>
-            <div className="text-xl font-bold num">{stream.hours ? `${stream.hours}h` : "-"}</div>
-            {stream.packingHours > 0 && <div className="text-dim text-xs num">+ {stream.packingHours}h packing</div>}
-          </div>
-          <div>
-            <div className="label" title="Revenue after fees minus promotion, tips, giveaways run, and the market value of the set. Same basis as streamer pay.">
-              Stream profit
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Product sold this show</span>
+              <span className="num">-{$(productSold)}</span>
             </div>
-            <div className={`text-3xl font-bold num ${!resultsEntered ? "text-dim" : streamProfit >= 0 ? "text-win" : "text-bad"}`}>
-              {resultsEntered ? $(streamProfit) : "-"}
+            <div className="flex justify-between gap-6 border-t border-edge pt-1.5 font-semibold">
+              <span>Gross profit</span>
+              <span className={`num ${!resultsEntered ? "text-dim" : grossProfit >= 0 ? "text-win" : "text-bad"}`}>
+                {resultsEntered ? $(grossProfit) : "-"}
+              </span>
             </div>
-            {resultsEntered && (
-              <div className="text-dim text-xs num">
-                {buyStreamProfit !== null && (
-                  <span className={buyStreamProfit >= 0 ? "text-win" : "text-bad"}>{$(buyStreamProfit)} over buy (admin)</span>
-                )}
-                {spotsSoldNum > 0 && <span>{buyStreamProfit !== null ? " - " : ""}{$(streamProfit / spotsSoldNum)} per spin across {spotsSoldNum}</span>}
+            <div className="flex justify-between gap-6">
+              <span className="text-dim" title={pay ? `Greater of ${hoursNum}h x $${pay.hourlyRate}/h = ${$(hourlyPay)} or tier commission ${$(tierPay)}. Pay settles weekly, so this is the single-stream estimate.` : ""}>
+                Streamer pay ({streamerPay === hourlyPay && hourlyPay >= tierPay ? "hourly" : "commission"})
+              </span>
+              <span className="num">-{$(streamerPay)}</span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Packing time</span>
+              <span className="num">-{$(packingPay)}</span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Tips (paid through)</span>
+              <span className="num">-{$(tipsNum)}</span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Promotion</span>
+              <span className="num">-{$(promoNum)}</span>
+            </div>
+            <div className="flex justify-between gap-6 border-t border-edge pt-1.5">
+              <span className="font-bold">Stream profit</span>
+              <span className={`num text-xl font-bold ${!resultsEntered ? "text-dim" : netProfit >= 0 ? "text-win" : "text-bad"}`}>
+                {resultsEntered ? $(netProfit) : "-"}
+              </span>
+            </div>
+            {resultsEntered && buyNet !== null && (
+              <div className="flex justify-between gap-6 text-xs">
+                <span className="text-dim">over actual buy cost (admin)</span>
+                <span className={`num ${buyNet >= 0 ? "text-win" : "text-bad"}`}>{$(buyNet)}</span>
               </div>
             )}
-            {!resultsEntered && <div className="text-dim text-xs">enter results below to see it</div>}
+            {!resultsEntered && <div className="text-dim text-xs">enter results below and the right side fills in</div>}
+            {resultsEntered && spotsSoldNum > 0 && (
+              <div className="text-dim text-xs num text-right">{$(netProfit / spotsSoldNum)} per spin across {spotsSoldNum}</div>
+            )}
           </div>
+        </div>
+        <div className="text-dim text-xs mt-3">
+          Stream time: {stream.hours ? `${stream.hours}h streamed` : "no hours logged"}
+          {(stream.packingHours || 0) > 0 && ` + ${stream.packingHours}h packing`}
+          {(stream.managerPackingHours || 0) > 0 && ` + ${stream.managerPackingHours}h manager packing`}
         </div>
       </section>
 
