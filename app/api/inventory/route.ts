@@ -44,5 +44,16 @@ export async function POST(req: Request) {
     "TCGplayer URL": b.tcgUrl || "",
     "Active": true,
   });
+  // the opening lot goes in the purchase log so the cost history is complete
+  if ((b.buyPrice ?? 0) > 0 && (b.qtyOnHand ?? 0) > 0) {
+    await atCreate(T.purchases, {
+      "Product Name": b.name,
+      "Product Rec Id": rec.id,
+      "Qty": b.qtyOnHand,
+      "Unit Cost": b.buyPrice,
+      "Date": new Date().toISOString().slice(0, 10),
+      "Source": "add product",
+    }).catch(() => {});
+  }
   return NextResponse.json({ id: rec.id });
 }
