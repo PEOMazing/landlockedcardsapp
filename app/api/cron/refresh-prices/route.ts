@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { atList, T } from "@/lib/airtable";
-import { fillRetailPrices, refreshSingleComps, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
+import { fillRetailPrices, recordSnapshot, refreshSingleComps, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -22,11 +22,13 @@ export async function GET(req: Request) {
   const results = await tcgcsvBulkRefresh(inventory);
   const retailFilled = await fillRetailPrices(inventory);
   const singles = await refreshSingleComps(50);
+  const snapshot = await recordSnapshot();
   const priced = results.filter((r: any) => r.price !== null).length;
   return NextResponse.json({
     sealed: { priced, total: results.length },
     retailFilled,
     singles,
+    snapshot: { date: snapshot.date, total: snapshot.total },
     ranAt: new Date().toISOString(),
   });
 }

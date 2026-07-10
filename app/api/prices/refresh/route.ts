@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fillRetailPrices, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
+import { fillRetailPrices, recordSnapshot, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
 import { atList, atUpdate, T, AtRecord } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 
@@ -65,6 +65,7 @@ export async function POST(req: Request) {
     try {
       const results = await tcgcsvBulkRefresh(targets);
       await fillRetailPrices(targets);
+      await recordSnapshot();
       return NextResponse.json({ provider: providerName, results });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 502 });

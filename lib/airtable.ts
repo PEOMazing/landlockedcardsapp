@@ -10,6 +10,7 @@ export const T = {
   settings: "Settings",
   time: "Time Entries",
   singles: "Singles",
+  snapshots: "Price History",
 };
 
 const headers = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };

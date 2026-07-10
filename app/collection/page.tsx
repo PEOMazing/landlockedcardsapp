@@ -4,6 +4,8 @@ import Thumb from "@/components/Thumb";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { toSingle } from "@/lib/singles";
+import { getSnapshots } from "@/lib/priceRefresh";
+import { HeroCard, TopMovers, TrendChart, ValueDelta } from "@/components/PortfolioPulse";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +29,10 @@ export default async function CollectionDashboard() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
 
-  const [inventoryRows, singlesRows] = await Promise.all([
+  const [inventoryRows, singlesRows, snaps] = await Promise.all([
     atList(T.inventory, { filterByFormula: "{Active} = TRUE()" }),
     atList(T.singles),
+    getSnapshots(30),
   ]);
 
   const singles = singlesRows.map((r) => toSingle(r, me.isAdmin));
@@ -81,7 +84,7 @@ export default async function CollectionDashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Tile label="Collection value" value={$0(collectionValue)} sub={`${$0(singlesValue)} singles - ${$0(sealedMarket)} sealed`} tone="holo-text" />
+          <ValueDelta snaps={snaps} fallback={collectionValue} label="Collection value" sub={`${$0(singlesValue)} singles - ${$0(sealedMarket)} sealed`} />
           <Tile label="Cards" value={String(cards)} sub={`${slabs.reduce((a: number, s: any) => a + (s.qty || 1), 0)} slabs worth ${$0(slabValue)}`} />
           <Tile label="Sealed products" value={String(sealedUnits)} sub="boxes, bundles, ETBs, and more" />
           {invested !== null ? (
@@ -95,6 +98,16 @@ export default async function CollectionDashboard() {
             <Tile label="Sets represented" value={String(bySet.size)} sub="across your singles" />
           )}
         </div>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <HeroCard card={topCards[0] || null} />
+          <section className="card p-5">
+            <div className="label mb-3">Value trend - nightly reprices</div>
+            <TrendChart snaps={snaps} />
+          </section>
+        </div>
+
+        <TopMovers snaps={snaps} />
 
         <div className="grid md:grid-cols-2 gap-4">
           <section className="card p-5">

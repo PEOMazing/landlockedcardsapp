@@ -1,4 +1,4 @@
-import { atList, atUpdate, T, AtRecord } from "./airtable";
+import { atCreate, atList, atUpdate, T, AtRecord } from "./airtable";
 import { conditionSoldComp, tcgProductIdFromCardId } from "./tcgcsvCards";
 
 // ---------------- tcgcsv (free nightly TCGplayer mirror) ----------------
@@ -195,4 +195,91 @@ export async function refreshSingleComps(cap = 50): Promise<{ updated: number; c
     } catch {}
   }
   return { updated, checked };
+}
+
+
+// ---------------- nightly portfolio snapshots ----------------
+// One record per day capturing total value and per-item prices, written after
+// each reprice. Powers the trend chart, day-over-day deltas, and top movers.
+export type SnapItem = { n: string; p: number; img?: string };
+export type Snapshot = {
+  date: string;
+  total: number;
+  sealed: number;
+  singles: number;
+  items: Record<string, SnapItem>;
+};
+
+export async function recordSnapshot(): Promise<Snapshot> {
+  const [inventory, singlesRows] = await Promise.all([
+    atList(T.inventory, { filterByFormula: "{Active} = TRUE()" }),
+    atList(T.singles, { filterByFormula: "NOT({Status} = 'Sold')" }),
+  ]);
+  const items: Record<string, SnapItem> = {};
+  let sealed = 0, singles = 0;
+  for (const r of inventory) {
+    const qty = r.fields["Qty On Hand"] ?? 0;
+    const m = r.fields["Market Price"] ?? 0;
+    sealed += m * qty;
+    if (m > 0) items[`i:${r.id}`] = { n: r.fields["Product Name"] || "", p: m, img: r.fields["Image URL"] || undefined };
+  }
+  for (const r of singlesRows) {
+    const qty = r.fields["Qty"] ?? 1;
+    const c = r.fields["Comp"] ?? 0;
+    singles += c * qty;
+    if (c > 0) items[`s:${r.id}`] = { n: r.fields["Card Name"] || "", p: c, img: r.fields["Image URL"] || undefined };
+  }
+  const snap: Snapshot = {
+    date: new Date().toISOString().slice(0, 10),
+    total: Math.round((sealed + singles) * 100) / 100,
+    sealed: Math.round(sealed * 100) / 100,
+    singles: Math.round(singles * 100) / 100,
+    items,
+  };
+  const existing = await atList(T.snapshots, { filterByFormula: `{Date} = '${snap.date}'` }).catch(() => []);
+  const fields = {
+    "Date": snap.date,
+    "Total Market": snap.total,
+    "Sealed Market": snap.sealed,
+    "Singles Market": snap.singles,
+    "Items": JSON.stringify(snap.items),
+  };
+  if (existing[0]) await atUpdate(T.snapshots, existing[0].id, fields);
+  else await atCreate(T.snapshots, fields);
+  return snap;
+}
+
+export async function getSnapshots(n = 30): Promise<Snapshot[]> {
+  const rows = await atList(T.snapshots, {
+    "sort[0][field]": "Date",
+    "sort[0][direction]": "desc",
+    maxRecords: String(n),
+  }).catch(() => []);
+  return rows
+    .map((r) => {
+      let items: Record<string, SnapItem> = {};
+      try { items = r.fields["Items"] ? JSON.parse(r.fields["Items"]) : {}; } catch {}
+      return {
+        date: r.fields["Date"] || "",
+        total: r.fields["Total Market"] ?? 0,
+        sealed: r.fields["Sealed Market"] ?? 0,
+        singles: r.fields["Singles Market"] ?? 0,
+        items,
+      };
+    })
+    .reverse();
+}
+
+// biggest per-item price changes between two snapshots
+export function topMovers(prev: Snapshot, latest: Snapshot, count = 3) {
+  const moves: { key: string; n: string; img?: string; from: number; to: number; delta: number; pct: number }[] = [];
+  for (const [key, cur] of Object.entries(latest.items)) {
+    const old = prev.items[key];
+    if (!old || old.p <= 0) continue;
+    const delta = Math.round((cur.p - old.p) * 100) / 100;
+    if (delta === 0) continue;
+    moves.push({ key, n: cur.n, img: cur.img, from: old.p, to: cur.p, delta, pct: Math.round((delta / old.p) * 1000) / 10 });
+  }
+  moves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  return moves.slice(0, count);
 }

@@ -7,6 +7,8 @@ import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
 import { buildWeekPay, buildManagerPay, StreamRow, toLine, weekStartOf } from "@/lib/calc";
 import { toSingle } from "@/lib/singles";
+import { getSnapshots } from "@/lib/priceRefresh";
+import { HeroCard, TopMovers, TrendChart, ValueDelta } from "@/components/PortfolioPulse";
 
 export const dynamic = "force-dynamic";
 
@@ -29,13 +31,14 @@ export default async function VendorDashboard() {
   if (!me) redirect("/sign-in");
   if (!me.isAdmin) redirect("/dashboard");
 
-  const [settings, streamerRows, streamRows, lineRows, inventoryRows, singlesRows] = await Promise.all([
+  const [settings, streamerRows, streamRows, lineRows, inventoryRows, singlesRows, snaps] = await Promise.all([
     getSettings(),
     atList(T.streamers),
     atList(T.streams, { filterByFormula: "{Deleted At} = BLANK()" }),
     atList(T.lines),
     atList(T.inventory, { filterByFormula: "{Active} = TRUE()" }),
     atList(T.singles),
+    getSnapshots(30),
   ]);
 
   // ---- sealed inventory ----
@@ -151,7 +154,7 @@ export default async function VendorDashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Tile label="Inventory market value" value={$0(totalMarket)} sub={`${$0(sealedMarket)} sealed - ${$0(singlesMarket)} singles`} tone="holo-text" />
+          <ValueDelta snaps={snaps} fallback={totalMarket} label="Inventory market value" sub={`${$0(sealedMarket)} sealed - ${$0(singlesMarket)} singles`} />
           <Tile label="Cost basis" value={$0(totalCost)} sub="what you paid for what you hold" />
           <Tile label="Unrealized est. profit" value={$0(totalMarket - totalCost)} tone={totalMarket - totalCost >= 0 ? "text-win" : "text-bad"} sub="market minus cost, on hand" />
           <Tile label="Singles sold to date" value={$0(soldRevenue)} sub={`${sold.length} sales - ${$0(soldProfit)} profit`} tone="text-win" />
@@ -176,6 +179,14 @@ export default async function VendorDashboard() {
             </div>
           </section>
         )}
+
+        <div className="grid md:grid-cols-2 gap-4">
+          <section className="card p-5">
+            <div className="label mb-3">Portfolio value - nightly reprices</div>
+            <TrendChart snaps={snaps} />
+          </section>
+          <TopMovers snaps={snaps} />
+        </div>
 
         <div className="grid md:grid-cols-2 gap-4">
           <section className="card p-5">
