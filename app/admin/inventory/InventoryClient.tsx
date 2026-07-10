@@ -16,6 +16,12 @@ function csvEscape(v: any): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+function displayName(name: string, category: string): string {
+  if (!category || category === "Other") return name;
+  const stripped = name.replace(new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "").replace(/\s{2,}/g, " ").trim();
+  return stripped.length >= 3 ? stripped : name;
+}
+
 export default function InventoryClient() {
   const [items, setItems] = useState<Item[]>([]);
   const [q, setQ] = useState("");
@@ -43,6 +49,45 @@ export default function InventoryClient() {
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     a.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
+  }
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkBuy, setBulkBuy] = useState("");
+  const [bulkBusy, setBulkBusy] = useState("");
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  function toggleSelectAll(ids: string[]) {
+    setSelected((prev) => (prev.size === ids.length ? new Set() : new Set(ids)));
+  }
+  async function bulkPatch(body: Record<string, any>, label: string) {
+    setBulkBusy(label);
+    for (const id of Array.from(selected)) {
+      await fetch(`/api/inventory/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+    setBulkBusy("");
+    setSelected(new Set());
+    await load();
+  }
+  async function bulkDelete() {
+    if (!confirm(`Delete ${selected.size} products from inventory? Purchase history rows are kept for the record, but the products and their quantities are gone for good.`)) return;
+    setBulkBusy("delete");
+    for (const id of Array.from(selected)) {
+      await fetch(`/api/inventory/${id}`, { method: "DELETE" });
+    }
+    setBulkBusy("");
+    setSelected(new Set());
+    await load();
   }
 
   const [lotsFor, setLotsFor] = useState<string | null>(null);
@@ -137,7 +182,7 @@ export default function InventoryClient() {
   );
 
   return (
-    <main className="max-w-6xl mx-auto p-6 space-y-6">
+    <main className="max-w-7xl mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Inventory</h1>
         <div className="flex items-center gap-3">
@@ -184,16 +229,19 @@ export default function InventoryClient() {
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr><th>Product</th><th>Category</th><th>Buy (avg)</th><th>Market</th><th>Retail</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>
+            <tr><th className="!px-2 w-8"><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={() => toggleSelectAll(filtered.map((i) => i.id))} /></th><th>Product</th><th>Category</th><th>Buy (avg)</th><th>Market</th><th>Retail</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>
           </thead>
           <tbody>
             {filtered.map((i) => {
               const margin = (i.marketPrice || 0) - (i.buyPrice || 0);
               return (
-                <tr key={i.id}>
-                  <td className="!font-medium">
+                <tr key={i.id} className={selected.has(i.id) ? "bg-foil/5" : ""}>
+                  <td className="!px-2">
+                    <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggleSelect(i.id)} />
+                  </td>
+                  <td className="!font-medium min-w-[220px] max-w-[300px] !whitespace-normal leading-snug" title={i.name}>
                     {i.imageUrl && <Thumb src={i.imageUrl} size={32} className="mr-2" />}
-                    {i.name}
+                    {displayName(i.name, i.category)}
                     {!(i.buyPrice > 0) && (
                       <span className="ml-2 text-xs text-givvy border border-givvy/40 rounded px-1.5 py-0.5 whitespace-nowrap">needs buy price</span>
                     )}

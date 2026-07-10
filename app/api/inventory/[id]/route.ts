@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { atGet, atList, atUpdate, T } from "@/lib/airtable";
+import { T, atDelete, atGet, atList, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 
 // When a quick-added product (buy price 0) gets its real buy price, fix the
@@ -43,5 +43,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (typeof b.buyPrice === "number" && b.buyPrice > 0) {
     try { await backfillSnapshots(params.id, b.buyPrice); } catch {}
   }
+  return NextResponse.json({ ok: true });
+}
+
+// Hard delete a product (admin). Stream lines keep their own name copy, so
+// history stays readable even after the product is gone.
+export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  const me = await getMe();
+  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!isRecId(params.id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
+  await atDelete(T.inventory, params.id);
   return NextResponse.json({ ok: true });
 }

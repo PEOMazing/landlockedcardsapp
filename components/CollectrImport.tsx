@@ -108,7 +108,7 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
             dateAdded: iAdded >= 0 ? (r[iAdded] || "").trim() : "",
           });
         } else {
-          portfolios[pf].sealed.push({ name, qty, buy, market });
+          portfolios[pf].sealed.push({ name, qty, buy, market, dateAdded: iAdded >= 0 ? (r[iAdded] || "").trim() : "" });
         }
       }
       setParsed({ portfolios, skipped });

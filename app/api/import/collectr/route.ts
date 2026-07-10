@@ -9,7 +9,7 @@ export const maxDuration = 60;
 // in chunks. Sealed rows merge into existing products by name (quantities
 // add, blank prices fill); singles create new records. Admin only.
 
-type SealedRow = { name: string; qty: number; buy?: number; market?: number };
+type SealedRow = { name: string; qty: number; buy?: number; market?: number; dateAdded?: string };
 type SingleRow = {
   name: string; setName?: string; number?: string; rarity?: string;
   condition: string; qty: number; buy?: number; comp?: number;
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
           "Market Price": row.market && row.market > 0 ? row.market : 0,
           "Qty On Hand": row.qty || 1,
           "Active": true,
-          "Date Added": new Date().toISOString().slice(0, 10),
+          "Date Added": row.dateAdded || new Date().toISOString().slice(0, 10),
         };
         if (row.market && row.market > 0) create["Entry Market"] = row.market;
         toCreate.push(create);
