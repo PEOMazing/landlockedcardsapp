@@ -8,6 +8,7 @@ export type PickerItem = {
   category?: string;
   marketPrice?: number;
   qtyOnHand?: number;
+  imageUrl?: string;
 };
 
 export default function ProductPicker({
@@ -144,9 +145,12 @@ export default function ProductPicker({
                   onMouseEnter={() => setHi(idx)}
                   onClick={() => choose(i)}
                 >
-                  <span>
-                    {i.name}
-                    {i.category && <span className="text-dim text-xs ml-2">{i.category}</span>}
+                  <span className="flex items-center gap-2 min-w-0">
+                    {i.imageUrl && <img src={i.imageUrl} alt="" className="w-7 h-7 object-contain rounded-sm bg-white/5 shrink-0" loading="lazy" />}
+                    <span className="truncate">
+                      {i.name}
+                      {i.category && <span className="text-dim text-xs ml-2">{i.category}</span>}
+                    </span>
                   </span>
                   <span className="text-dim text-xs num whitespace-nowrap">
                     {typeof i.marketPrice === "number" && `$${i.marketPrice.toFixed(2)}`}

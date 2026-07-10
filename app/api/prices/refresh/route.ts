@@ -88,7 +88,7 @@ async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       .map((x) => x.g),
   ];
 
-  const priced = new Map<string, { price: number; matched: string; url: string }>();
+  const priced = new Map<string, { price: number; matched: string; url: string; image: string }>();
   // fetch candidate groups in parallel chunks to stay well inside the time limit
   const groupData: { g: any; prods: any[]; prices: any[] }[] = [];
   for (let i = 0; i < candidates.length; i += 4) {
@@ -125,7 +125,7 @@ async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       if (best && bestScore >= 60) {
         const mkt = marketById.get(best.productId);
         if (typeof mkt === "number") {
-          priced.set(recId, { price: Math.round(mkt * 100) / 100, matched: best.name, url: best.url || "" });
+          priced.set(recId, { price: Math.round(mkt * 100) / 100, matched: best.name, url: best.url || "", image: best.imageUrl || "" });
         }
       }
     }
@@ -139,6 +139,7 @@ async function tcgcsvBulkRefresh(targets: AtRecord[]) {
         "Price Checked": new Date().toISOString().slice(0, 10),
       };
       if (hit.url && !rec.fields["TCGplayer URL"]) fields["TCGplayer URL"] = hit.url;
+      if (hit.image && !rec.fields["Image URL"]) fields["Image URL"] = hit.image;
       await atUpdate(T.inventory, recId, fields);
     }
     results.push({ id: recId, name: rec.fields["Product Name"], matched: hit?.matched ?? null, price: hit?.price ?? null });

@@ -22,9 +22,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   ]);
   const categoryByProduct: Record<string, string> = {};
   const tcgByProduct: Record<string, string> = {};
+  const imageByProduct: Record<string, string> = {};
   for (const inv of inventoryRows) {
     categoryByProduct[inv.id] = inv.fields["Category"]?.name || inv.fields["Category"] || "";
     if (inv.fields["TCGplayer URL"]) tcgByProduct[inv.id] = inv.fields["TCGplayer URL"];
+    if (inv.fields["Image URL"]) imageByProduct[inv.id] = inv.fields["Image URL"];
   }
   const lines = lineRows.map(toLine);
 
@@ -88,6 +90,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       market: l.market, isGiveaway: l.isGiveaway, isHit: isHitLine(l, settings),
       isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
       tcgUrl: tcgByProduct[lineRows[i].fields["Product"]?.[0]] || "",
+      image: imageByProduct[lineRows[i].fields["Product"]?.[0]] || "",
       ...(me.isAdmin ? { buy: l.buy } : {}),
     })),
     config: {

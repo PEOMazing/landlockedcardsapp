@@ -12,7 +12,7 @@ const $ = (n: number) =>
 
 type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
-  market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; tcgUrl?: string; buy?: number;
+  market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; tcgUrl?: string; image?: string; buy?: number;
   singleRecId?: string; salePrice?: number | null;
 };
 
@@ -353,6 +353,7 @@ export default function StreamEditor({ id }: { id: string }) {
               {lines.map((l) => (
                 <tr key={l.id} className={l.isGiveaway ? "bg-givvy/5" : ""}>
                   <td className="!font-medium">
+                    {l.image && <img src={l.image} alt="" className="w-7 h-7 object-contain rounded-sm inline-block mr-2 align-middle bg-white/5" loading="lazy" />}
                     {l.name}
                     {l.isGiveaway && <span className="text-givvy text-xs ml-2">giveaway</span>}
                     {l.isHit && <span className="text-foil text-xs ml-2 font-bold">HIT</span>}
