@@ -483,11 +483,40 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                     {s.compDate && <div className="text-dim text-[10px]">{s.compSource} {s.compDate}</div>}
                   </td>
                   <td>
-                    <span className={s.status === "Sold" ? "text-win" : s.status === "In Stream" ? "text-foil" : "text-dim"}>
-                      {s.status}
-                    </span>
+                    {s.status === "In Stream" || !isManager ? (
+                      <span className={s.status === "Sold" ? "text-win" : s.status === "In Stream" ? "text-foil" : "text-dim"}>
+                        {s.status}
+                      </span>
+                    ) : (
+                      <select
+                        className={`input !w-28 !py-1 text-xs ${s.status === "Sold" ? "text-win" : ""}`}
+                        value={s.status}
+                        onChange={(e) => patch(s.id, { status: e.target.value })}
+                      >
+                        <option value="In Stock">In Stock</option>
+                        <option value="Sold">Sold</option>
+                      </select>
+                    )}
                   </td>
-                  <td>{s.salePrice ? $(s.salePrice) : "-"}</td>
+                  <td>
+                    {isManager && s.status !== "In Stream" ? (
+                      <input
+                        type="number" step="0.01" className="input !w-20 !py-1"
+                        placeholder="-"
+                        key={`${s.id}-sale-${s.salePrice}`}
+                        defaultValue={s.salePrice ?? ""}
+                        title="Entering a sale price marks the card Sold"
+                        onBlur={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!isNaN(v) && v !== s.salePrice) {
+                            patch(s.id, { salePrice: v, ...(s.status === "In Stock" ? { status: "Sold" } : {}) });
+                          }
+                        }}
+                      />
+                    ) : (
+                      <span>{s.salePrice ? $(s.salePrice) : "-"}</span>
+                    )}
+                  </td>
                   <td className="text-right whitespace-nowrap">
                     {isAdmin && s.status !== "In Stream" && (
                       <button className="text-bad text-xs hover:underline" onClick={() => remove(s.id)}>delete</button>
