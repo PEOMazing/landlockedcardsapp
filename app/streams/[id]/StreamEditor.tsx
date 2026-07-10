@@ -249,27 +249,10 @@ export default function StreamEditor({ id }: { id: string }) {
   const productBack = Math.max(0, m.totalValue - m.hitValueDelivered - m.givvyValue);
   const grossProfit = afterFeesNum - productSold;
 
-  // Streamer pay uses the official payroll rules so this preview matches the
-  // pay dashboard: greater of hourly or tier commission, where commission runs
-  // on the payroll basis (full set at market, minus promo, tips, giveaways,
-  // and packing). Pay settles weekly, so this is the single-stream estimate.
-  const pay = data?.pay || null;
-  const hoursNum = stream?.hours || 0;
-  const packingPay = pay ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * pay.packingRate : 0;
-  const payrollProfit = afterFeesNum - promoNum - tipsNum - giveawaySpend - m.totalValue;
-  const commissionable = payrollProfit - packingPay;
-  const tierPay = (() => {
-    if (!pay || commissionable <= 0) return 0;
-    const t1 = Math.min(commissionable, pay.tier1_limit) * pay.tier1_rate;
-    const t2 = Math.max(Math.min(commissionable - pay.tier1_limit, pay.tier2_limit - pay.tier1_limit), 0) * pay.tier2_rate;
-    const t3 = Math.max(commissionable - pay.tier2_limit, 0) * pay.tier3_rate;
-    return t1 + t2 + t3;
-  })();
-  const hourlyPay = pay ? hoursNum * pay.hourlyRate : 0;
-  const streamerPay = Math.max(hourlyPay, tierPay);
-  const netProfit = grossProfit - streamerPay - packingPay - tipsNum - promoNum;
+  const packingPay = data?.pay ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * data.pay.packingRate : 0;
+  const netProfit = grossProfit - packingPay - tipsNum - promoNum;
   const buyNet = m.hitCostDelivered !== null
-    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend) - streamerPay - packingPay - tipsNum - promoNum
+    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend) - packingPay - tipsNum - promoNum
     : null;
 
   return (
@@ -335,12 +318,6 @@ export default function StreamEditor({ id }: { id: string }) {
               <span className={`num ${!resultsEntered ? "text-dim" : grossProfit >= 0 ? "text-win" : "text-bad"}`}>
                 {resultsEntered ? $(grossProfit) : "-"}
               </span>
-            </div>
-            <div className="flex justify-between gap-6">
-              <span className="text-dim" title={pay ? `Greater of ${hoursNum}h x $${pay.hourlyRate}/h = ${$(hourlyPay)} or tier commission ${$(tierPay)}. Pay settles weekly, so this is the single-stream estimate.` : ""}>
-                Streamer pay ({streamerPay === hourlyPay && hourlyPay >= tierPay ? "hourly" : "commission"})
-              </span>
-              <span className="num">-{$(streamerPay)}</span>
             </div>
             <div className="flex justify-between gap-6">
               <span className="text-dim">Packing time</span>

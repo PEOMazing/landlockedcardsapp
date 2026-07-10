@@ -100,19 +100,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       giveawayCost: settings.giveaway_cost,
       histDeliveryRate,
     },
-    pay: {
-      hourlyRate: (await (async () => {
-        const sid = stream.fields["Streamer Rec Id"];
-        if (!sid) return settings.default_hourly_rate;
-        const rec = await atGet(T.streamers, sid).catch(() => null);
-        const r = rec?.fields?.["Hourly Rate"];
-        return typeof r === "number" ? r : settings.default_hourly_rate;
-      })()),
-      packingRate: settings.packing_rate,
-      tier1_limit: settings.tier1_limit, tier1_rate: settings.tier1_rate,
-      tier2_limit: settings.tier2_limit, tier2_rate: settings.tier2_rate,
-      tier3_rate: settings.tier3_rate,
-    },
+    pay: { packingRate: settings.packing_rate },
   });
 }
 
