@@ -61,10 +61,13 @@ export async function POST(req: Request) {
       "Variant": card.variant || "",
       "Image URL": card.imageLarge || card.image || "",
     };
-    // raw cards get an automatic TCGplayer market comp; graded comps are manual
-    if ((fields["Condition"] === "Raw" || !b.condition) && card.market !== null) {
-      fields["Comp"] = card.market;
-      fields["Comp Source"] = `TCGplayer market (${card.variant})`;
+    // ungraded cards get an automatic TCGplayer market comp, discounted by
+    // condition (market prices are NM basis); graded comps are manual
+    const CONDITION_MULT: Record<string, number> = { NM: 1, Raw: 1, LP: 0.9, MP: 0.8, HP: 0.65, DM: 0.5 };
+    const mult = CONDITION_MULT[String(fields["Condition"])];
+    if (mult !== undefined && card.market !== null) {
+      fields["Comp"] = Math.round(card.market * mult * 100) / 100;
+      fields["Comp Source"] = `TCGplayer market (${card.variant})` + (mult < 1 ? ` x ${fields["Condition"]} ${Math.round(mult * 100)}%` : "");
       fields["Comp Date"] = new Date().toISOString().slice(0, 10);
     }
   } else {

@@ -11,7 +11,7 @@ const HEADERS = {
   "Accept": "application/json",
 };
 const TTL = 1000 * 60 * 60 * 12;
-const RECENT_SETS = 14;
+const RECENT_SETS = 16;
 
 type GroupCache = { at: number; prods: any[]; market: Map<number, number> };
 const cache: { groups?: { at: number; data: any[] }; byGroup: Map<number, GroupCache> } = {
@@ -33,9 +33,11 @@ async function allGroups(): Promise<any[]> {
 
 async function recentGroups(): Promise<any[]> {
   const groups = await allGroups();
+  // publishedOn is unreliable on tcgcsv (ancient sets carry far-future placeholder
+  // dates), but groupId increments with catalog age, so newest sets sort last-in
   return groups
     .filter((g) => !g.isSupplemental)
-    .sort((a, b) => String(b.publishedOn || "").localeCompare(String(a.publishedOn || "")))
+    .sort((a, b) => (b.groupId || 0) - (a.groupId || 0))
     .slice(0, RECENT_SETS);
 }
 

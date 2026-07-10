@@ -16,7 +16,9 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   if (!cardId) {
     return NextResponse.json({ error: "no linked card - this single was added manually, so enter the comp by hand" }, { status: 400 });
   }
-  if ((rec.fields["Condition"] || "Raw") !== "Raw") {
+  const CONDITION_MULT: Record<string, number> = { NM: 1, Raw: 1, LP: 0.9, MP: 0.8, HP: 0.65, DM: 0.5 };
+  const mult = CONDITION_MULT[String(rec.fields["Condition"] || "Raw")];
+  if (mult === undefined) {
     return NextResponse.json({ error: "graded comps are manual - use the eBay sold link and type it in" }, { status: 400 });
   }
   const cid = String(cardId);

@@ -2,7 +2,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const CONDITIONS = ["Raw", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
+const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
+const GRADED = ["PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
+const CONDITION_LABELS: Record<string, string> = {
+  NM: "NM - Near Mint", LP: "LP - Lightly Played", MP: "MP - Moderately Played",
+  HP: "HP - Heavily Played", DM: "DM - Damaged",
+};
 
 type SingleT = {
   id: string; name: string; setName: string; number: string; cardId: string;
@@ -32,7 +37,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<SearchCard | null>(null);
   const [manual, setManual] = useState(false);
-  const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "Raw", qty: "1", buyPrice: "", comp: "", notes: "" });
+  const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "" });
   const debounce = useRef<any>(null);
 
   async function load() {
@@ -82,7 +87,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     if (picked) {
       body.cardId = picked.id;
       // graded cards need a manual comp even when API-linked
-      if (draft.condition !== "Raw" && draft.comp) body.comp = parseFloat(draft.comp);
+      if (GRADED.includes(draft.condition) && draft.comp) body.comp = parseFloat(draft.comp);
     } else {
       body.name = draft.name.trim();
       body.setName = draft.setName.trim();
@@ -98,7 +103,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     if (!r.ok) setErr(d.error || "Could not add card");
     else {
       setPicked(null); setManual(false); setQ(""); setResults([]);
-      setDraft({ name: "", setName: "", number: "", condition: "Raw", qty: "1", buyPrice: "", comp: "", notes: "" });
+      setDraft({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "" });
       await load();
     }
     setBusy("");
@@ -192,13 +197,36 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
 
         {!manual && !picked && (
           <div className="space-y-2">
+            <div>
+              <label className="label">Condition first</label>
+              <div className="flex gap-1 flex-wrap mt-1">
+                {CONDITIONS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    title={CONDITION_LABELS[c] || c}
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      draft.condition === c ? "border-foil text-foil bg-foil/10" : "border-edge text-dim hover:text-body"
+                    }`}
+                    onClick={() => setDraft({ ...draft, condition: c })}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <p className="text-dim text-xs mt-1">
+                {GRADED.includes(draft.condition)
+                  ? "Graded card: comp is manual, use the eBay sold link after adding."
+                  : "Comp pulls the TCGplayer market price" + (draft.condition !== "NM" ? " with a condition discount" : "") + "."}
+              </p>
+            </div>
             <input
               className="input"
               placeholder='Search any card - try "Charizard ex" or "Umbreon"'
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
-            {searching && <div className="text-dim text-xs">Searching pokemontcg.io...</div>}
+            {searching && <div className="text-dim text-xs">Searching TCGplayer...</div>}
             <div className="grid gap-1 max-h-80 overflow-y-auto">
               {results.map((c) => (
                 <button
@@ -264,13 +292,13 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                   <input type="number" step="0.01" className="input mt-1" value={draft.buyPrice} onChange={(e) => setDraft({ ...draft, buyPrice: e.target.value })} />
                 </div>
               )}
-              {(manual || draft.condition !== "Raw") && (
+              {(manual || GRADED.includes(draft.condition)) && (
                 <div>
                   <label className="label">Comp ($)</label>
-                  <input type="number" step="0.01" className="input mt-1" placeholder={draft.condition !== "Raw" ? "from eBay sold" : ""} value={draft.comp} onChange={(e) => setDraft({ ...draft, comp: e.target.value })} />
+                  <input type="number" step="0.01" className="input mt-1" placeholder={GRADED.includes(draft.condition) ? "from eBay sold" : ""} value={draft.comp} onChange={(e) => setDraft({ ...draft, comp: e.target.value })} />
                 </div>
               )}
-              <div className={manual || draft.condition !== "Raw" ? "" : "md:col-span-2"}>
+              <div className={manual || GRADED.includes(draft.condition) ? "" : "md:col-span-2"}>
                 <label className="label">Notes</label>
                 <input className="input mt-1" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
               </div>
