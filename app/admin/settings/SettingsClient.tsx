@@ -7,6 +7,7 @@ const FIELDS: { key: string; label: string; hint: string; pct?: boolean }[] = [
   { key: "support_pct", label: "Stream support %", hint: "Share of profit after streamer pay", pct: true },
   { key: "breakeven_mult", label: "Break-even multiplier", hint: "Value per spot x this = break-even price" },
   { key: "hit_threshold", label: "Hit threshold ($)", hint: "Items over this market price count as hits" },
+  { key: "giveaway_cost", label: "Giveaway cost ($ each)", hint: "Deducted from profit per giveaway run on a stream" },
   { key: "tier1_limit", label: "Tier 1 cap ($)", hint: "First slice of weekly profit" },
   { key: "tier1_rate", label: "Tier 1 rate", hint: "Rate on the first slice", pct: true },
   { key: "tier2_limit", label: "Tier 2 cap ($)", hint: "Profit up to this amount hits tier 2" },
