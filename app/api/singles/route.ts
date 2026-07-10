@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atList, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
-import { getTcgcsvCard } from "@/lib/tcgcsvCards";
+import { conditionSoldComp, getTcgcsvCard, tcgProductIdFromCardId } from "@/lib/tcgcsvCards";
 import { toSingle } from "@/lib/singles";
 
 export const dynamic = "force-dynamic";
@@ -64,11 +64,21 @@ export async function POST(req: Request) {
     // ungraded cards get an automatic TCGplayer market comp, discounted by
     // condition (market prices are NM basis); graded comps are manual
     const CONDITION_MULT: Record<string, number> = { NM: 1, Raw: 1, LP: 0.9, MP: 0.8, HP: 0.65, DM: 0.5 };
-    const mult = CONDITION_MULT[String(fields["Condition"])];
-    if (mult !== undefined && card.market !== null) {
-      fields["Comp"] = Math.round(card.market * mult * 100) / 100;
-      fields["Comp Source"] = `TCGplayer market (${card.variant})` + (mult < 1 ? ` x ${fields["Condition"]} ${Math.round(mult * 100)}%` : "");
-      fields["Comp Date"] = new Date().toISOString().slice(0, 10);
+    const cond = String(fields["Condition"]);
+    const mult = CONDITION_MULT[cond];
+    if (mult !== undefined) {
+      // best comp: median of recent TCGplayer sales in this exact condition
+      const pid = tcgProductIdFromCardId(String(b.cardId));
+      const sold = pid ? await conditionSoldComp(pid, cond) : null;
+      if (sold) {
+        fields["Comp"] = sold.price;
+        fields["Comp Source"] = `TCGplayer solds (${cond}, median of ${sold.sales})`;
+        fields["Comp Date"] = new Date().toISOString().slice(0, 10);
+      } else if (card.market !== null) {
+        fields["Comp"] = Math.round(card.market * mult * 100) / 100;
+        fields["Comp Source"] = `TCGplayer market (${card.variant})` + (mult < 1 ? ` x ${cond} ${Math.round(mult * 100)}% est.` : "");
+        fields["Comp Date"] = new Date().toISOString().slice(0, 10);
+      }
     }
   } else {
     const name = String(b.name || "").trim();

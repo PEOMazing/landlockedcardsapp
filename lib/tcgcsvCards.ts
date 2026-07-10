@@ -123,3 +123,46 @@ export async function getTcgcsvCard(id: string): Promise<PokeCard | null> {
   const p = d.prods.find((x) => x.productId === productId);
   return p ? toCard(p, g, d.market.get(productId)) : null;
 }
+
+// ---- per-condition comps from TCGplayer latest sales ----
+// mpapi.tcgplayer.com serves the site's own sold-transaction feed. The median
+// of recent sales in the chosen condition is the truest comp available; if a
+// condition has no recent sales we fall back to a discount off NM market.
+const CONDITION_NAMES: Record<string, string> = {
+  NM: "Near Mint", LP: "Lightly Played", MP: "Moderately Played",
+  HP: "Heavily Played", DM: "Damaged", Raw: "Near Mint",
+};
+
+export async function conditionSoldComp(
+  productId: number,
+  condition: string
+): Promise<{ price: number; sales: number } | null> {
+  const want = CONDITION_NAMES[condition];
+  if (!want) return null;
+  try {
+    const res = await fetch(`https://mpapi.tcgplayer.com/v2/product/${productId}/latestsales`, {
+      method: "POST",
+      cache: "no-store",
+      headers: { ...HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify({ conditions: [], languages: [], variants: [], listingType: "All", limit: 50 }),
+    });
+    if (!res.ok) return null;
+    const d = await res.json();
+    const prices = (d?.data || [])
+      .filter((x: any) => x.condition === want && typeof x.purchasePrice === "number" && x.purchasePrice > 0)
+      .slice(0, 10)
+      .map((x: any) => x.purchasePrice)
+      .sort((a: number, b: number) => a - b);
+    if (prices.length === 0) return null;
+    const mid = Math.floor(prices.length / 2);
+    const median = prices.length % 2 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2;
+    return { price: Math.round(median * 100) / 100, sales: prices.length };
+  } catch {
+    return null;
+  }
+}
+
+export function tcgProductIdFromCardId(id: string): number | null {
+  const m = String(id).match(/^tcg:(\d+):(\d+)$/);
+  return m ? parseInt(m[1]) : null;
+}
