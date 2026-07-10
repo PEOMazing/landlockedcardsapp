@@ -37,7 +37,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   try {
     const singles = await atList(T.singles, { filterByFormula: `AND({Stream Rec Id} = '${params.id}', {Status} = 'In Stream')` });
     for (const s of singles) {
-      await atUpdate(T.singles, s.id, { "Status": "Sold" });
+      await atUpdate(T.singles, s.id, { "Status": "Sold", "Sold Date": new Date().toISOString().slice(0, 10) });
       singlesSold++;
     }
   } catch {} // singles table may not exist yet; nothing to do

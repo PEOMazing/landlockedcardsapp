@@ -31,6 +31,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.name !== undefined) fields["Product Name"] = b.name;
   if (b.category !== undefined) fields["Category"] = b.category;
   if (b.buyPrice !== undefined) fields["Buy Price"] = b.buyPrice;
+  if (b.retailPrice !== undefined) fields["Retail Price"] = b.retailPrice === null || b.retailPrice === "" ? null : Math.max(0, parseFloat(b.retailPrice) || 0);
   if (b.marketPrice !== undefined) {
     fields["Market Price"] = b.marketPrice;
     fields["Price Checked"] = new Date().toISOString().slice(0, 10);

@@ -15,7 +15,7 @@ type SingleT = {
   rarity: string; variant: string; condition: string;
   comp: number | null; compSource: string; compDate: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
-  image: string; qty: number; status: string; salePrice: number | null;
+  image: string; qty: number; status: string; salePrice: number | null; soldDate: string;
   notes: string; addedBy: string; dateAdded: string; buy?: number;
 };
 
@@ -23,6 +23,11 @@ type SearchCard = {
   id: string; name: string; number: string; rarity: string;
   setName: string; image?: string; market: number | null;
 };
+
+function csvEscape(v: any): string {
+  const x = v === null || v === undefined ? "" : String(v);
+  return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x;
+}
 
 export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean; isManager: boolean }) {
   const [singles, setSingles] = useState<SingleT[]>([]);
@@ -183,6 +188,26 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     }
     return { cards, spend, market, profit };
   }, [shown]);
+
+  function exportCsv() {
+    const header = [
+      "Card", "Set", "Number", "Condition", "Rarity", "Qty", "Status",
+      "Comp", "Comp Source", "Comp Date",
+      ...(isAdmin ? ["Buy Price"] : []),
+      "Sale Price", "Sold Date", "Date Added", "Added By", "Notes",
+    ];
+    const rows = shown.map((s) => [
+      s.name, s.setName, s.number, s.condition, s.rarity, s.qty, s.status,
+      s.comp ?? "", s.compSource, s.compDate,
+      ...(isAdmin ? [s.buy ?? ""] : []),
+      s.salePrice ?? "", s.soldDate, s.dateAdded, s.addedBy, s.notes,
+    ]);
+    const csv = [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `singles-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  }
 
   const ebayLink = (s: SingleT) =>
     `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${s.name} ${s.setName} ${s.number} ${s.condition !== "Raw" ? s.condition : ""}`.trim())}&LH_Sold=1&LH_Complete=1`;
@@ -383,6 +408,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
               <option value="price-desc">Price high-low</option>
               <option value="price-asc">Price low-high</option>
             </select>
+            <button className="btn-ghost !py-1.5 text-xs" onClick={exportCsv}>Export CSV</button>
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -515,6 +541,9 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                       />
                     ) : (
                       <span>{s.salePrice ? $(s.salePrice) : "-"}</span>
+                    )}
+                    {s.status === "Sold" && s.soldDate && (
+                      <div className="text-dim text-[10px]">{s.soldDate}</div>
                     )}
                   </td>
                   <td className="text-right whitespace-nowrap">

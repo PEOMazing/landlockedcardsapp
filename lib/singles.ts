@@ -28,6 +28,7 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     status: f["Status"] || "In Stock",
     streamRecId: f["Stream Rec Id"] || "",
     salePrice: f["Sale Price"] ?? null,
+    soldDate: f["Sold Date"] || "",
     notes: f["Notes"] || "",
     addedBy: f["Added By"] || "",
     dateAdded: f["Date Added"] || "",

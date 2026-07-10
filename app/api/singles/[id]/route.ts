@@ -15,7 +15,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.condition !== undefined) fields["Condition"] = b.condition;
   if (b.qty !== undefined) fields["Qty"] = Math.max(0, parseInt(b.qty) || 0);
   if (b.notes !== undefined) fields["Notes"] = b.notes;
-  if (b.status !== undefined && ["In Stock", "In Stream", "Sold"].includes(b.status)) fields["Status"] = b.status;
+  if (b.status !== undefined && ["In Stock", "In Stream", "Sold"].includes(b.status)) {
+    fields["Status"] = b.status;
+    if (b.status === "Sold") fields["Sold Date"] = new Date().toISOString().slice(0, 10);
+    if (b.status === "In Stock") { fields["Sold Date"] = null; fields["Sale Price"] = null; }
+  }
   if (b.salePrice !== undefined) fields["Sale Price"] = Math.max(0, parseFloat(b.salePrice) || 0);
   if (b.comp !== undefined) {
     fields["Comp"] = Math.max(0, parseFloat(b.comp) || 0);

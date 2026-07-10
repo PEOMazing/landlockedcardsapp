@@ -3,12 +3,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Item = {
   id: string; name: string; category: string; buyPrice: number;
-  marketPrice: number; qtyOnHand: number; tcgUrl: string; imageUrl?: string; priceChecked: string | null;
+  marketPrice: number; qtyOnHand: number; tcgUrl: string; imageUrl?: string; retailPrice?: number | null; priceChecked: string | null;
 };
 
 import { CATEGORIES as CATS } from "@/lib/categories";
 import Thumb from "@/components/Thumb";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function csvEscape(v: any): string {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 
 export default function InventoryClient() {
   const [items, setItems] = useState<Item[]>([]);
@@ -28,6 +33,16 @@ export default function InventoryClient() {
     if (!n) return items;
     return items.filter((i) => i.name.toLowerCase().includes(n) || i.category.toLowerCase().includes(n));
   }, [items, q]);
+
+  function exportCsv() {
+    const header = ["Product", "Category", "Buy Price", "Market Price", "Retail Price", "Qty On Hand", "Price Checked", "TCGplayer URL"];
+    const rows = filtered.map((i) => [i.name, i.category, i.buyPrice, i.marketPrice, i.retailPrice ?? "", i.qtyOnHand, i.priceChecked ?? "", i.tcgUrl]);
+    const csv = [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  }
 
   async function add() {
     if (!draft.name) return;
@@ -94,6 +109,7 @@ export default function InventoryClient() {
           <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => refreshPrices()}>
             Refresh all prices
           </button>
+          <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
         </div>
       </div>
 
@@ -131,7 +147,7 @@ export default function InventoryClient() {
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr><th>Product</th><th>Category</th><th>Buy</th><th>Market</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>
+            <tr><th>Product</th><th>Category</th><th>Buy</th><th>Market</th><th>Retail</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>
           </thead>
           <tbody>
             {filtered.map((i) => {
@@ -149,6 +165,18 @@ export default function InventoryClient() {
                   <td>{num(i.id, "buyPrice", i.buyPrice)}</td>
                   <td>{num(i.id, "marketPrice", i.marketPrice)}</td>
                   <td>
+                    <input
+                      type="number" step="0.01" className="input !w-20 !py-1"
+                      key={`${i.id}-retail-${i.retailPrice}`}
+                      defaultValue={i.retailPrice ?? ""}
+                      placeholder="-"
+                      onBlur={(e) => {
+                        const v = e.target.value === "" ? null : parseFloat(e.target.value);
+                        if (v !== (i.retailPrice ?? null)) patch(i.id, { retailPrice: v });
+                      }}
+                    />
+                  </td>
+                  <td>
                     <PriceAge date={i.priceChecked} />
                   </td>
                   <td className={!(i.buyPrice > 0) ? "text-dim" : margin >= 0 ? "text-win" : "text-bad"}>
@@ -165,6 +193,15 @@ export default function InventoryClient() {
                     >
                       {i.category === "Graded Card" ? "Sold comps" : "TCGplayer"}
                     </a>
+                    {!i.tcgUrl && i.category !== "Graded Card" && (
+                      <a
+                        className="text-foil hover:underline ml-2"
+                        target="_blank" rel="noreferrer"
+                        href={`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(i.name)}&LH_Sold=1&LH_Complete=1`}
+                      >
+                        eBay solds
+                      </a>
+                    )}
                     <button className="text-dim text-xs ml-3 hover:text-body" onClick={() => refreshPrices(i.id)}>
                       refresh
                     </button>

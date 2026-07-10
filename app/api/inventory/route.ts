@@ -17,6 +17,7 @@ export async function GET() {
     qtyOnHand: r.fields["Qty On Hand"] ?? 0,
     tcgUrl: r.fields["TCGplayer URL"] || "",
     imageUrl: r.fields["Image URL"] || "",
+    retailPrice: r.fields["Retail Price"] ?? null,
     priceChecked: r.fields["Price Checked"] || null,
     isGiveaway: r.fields["Category"] === "Giveaway",
     // buy price is admin-only
