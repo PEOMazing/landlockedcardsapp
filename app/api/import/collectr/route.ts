@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { atCreateBatch, atList, atUpdate, T } from "@/lib/airtable";
+import { atCreate, atCreateBatch, atList, atUpdate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { categoryForName } from "@/lib/categories";
 
@@ -36,13 +36,27 @@ export async function POST(req: Request) {
       if (!name) continue;
       const hit = byName.get(name.toLowerCase());
       if (hit) {
+        const oldQty = hit.fields["Qty On Hand"] ?? 0;
+        const oldBuy = hit.fields["Buy Price"] ?? 0;
+        const addQty = row.qty || 1;
         const fields: Record<string, any> = {
-          "Qty On Hand": (hit.fields["Qty On Hand"] ?? 0) + (row.qty || 1),
+          "Qty On Hand": oldQty + addQty,
           "Active": true,
         };
-        if (!(hit.fields["Buy Price"] > 0) && row.buy && row.buy > 0) fields["Buy Price"] = row.buy;
+        if (row.buy && row.buy > 0) {
+          fields["Buy Price"] =
+            oldBuy > 0 && oldQty > 0
+              ? Math.round(((oldQty * oldBuy + addQty * row.buy) / (oldQty + addQty)) * 100) / 100
+              : row.buy;
+        }
         if (!(hit.fields["Market Price"] > 0) && row.market && row.market > 0) fields["Market Price"] = row.market;
         await atUpdate(T.inventory, hit.id, fields);
+        if (row.buy && row.buy > 0) {
+          await atCreate(T.purchases, {
+            "Product Name": name, "Product Rec Id": hit.id, "Qty": addQty,
+            "Unit Cost": row.buy, "Date": new Date().toISOString().slice(0, 10), "Source": "collectr import",
+          }).catch(() => {});
+        }
         sealedMerged++;
       } else {
         const create: Record<string, any> = {

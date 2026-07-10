@@ -45,6 +45,25 @@ export default function InventoryClient() {
     a.click();
   }
 
+  const [stockFor, setStockFor] = useState<string | null>(null);
+  const [stockQty, setStockQty] = useState("1");
+  const [stockCost, setStockCost] = useState("");
+  const [stockBusy, setStockBusy] = useState(false);
+
+  async function receiveStock(id: string) {
+    setStockBusy(true);
+    const r = await fetch(`/api/inventory/${id}/purchase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ qty: parseInt(stockQty) || 1, unitCost: parseFloat(stockCost) || 0 }),
+    });
+    setStockBusy(false);
+    if (r.ok) {
+      setStockFor(null); setStockQty("1"); setStockCost("");
+      await load();
+    }
+  }
+
   async function add() {
     if (!draft.name) return;
     setBusy(true);
@@ -149,7 +168,7 @@ export default function InventoryClient() {
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr><th>Product</th><th>Category</th><th>Buy</th><th>Market</th><th>Retail</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>
+            <tr><th>Product</th><th>Category</th><th>Buy (avg)</th><th>Market</th><th>Retail</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>
           </thead>
           <tbody>
             {filtered.map((i) => {
@@ -193,7 +212,31 @@ export default function InventoryClient() {
                   <td className={!(i.buyPrice > 0) ? "text-dim" : margin >= 0 ? "text-win" : "text-bad"}>
                     {!(i.buyPrice > 0) ? "-" : $(margin)}
                   </td>
-                  <td>{num(i.id, "qtyOnHand", i.qtyOnHand, "1")}</td>
+                  <td>
+                    <div className="flex items-center gap-2">
+                      {num(i.id, "qtyOnHand", i.qtyOnHand, "1")}
+                      <button
+                        className="text-foil text-xs hover:underline whitespace-nowrap"
+                        title="Receive stock: adds quantity, logs the lot, and rolls the average buy price"
+                        onClick={() => { setStockFor(stockFor === i.id ? null : i.id); setStockQty("1"); setStockCost(""); }}
+                      >
+                        + stock
+                      </button>
+                    </div>
+                    {stockFor === i.id && (
+                      <div className="mt-2 flex items-center gap-2 rounded-lg border border-foil/40 bg-foil/5 p-2">
+                        <input type="number" min={1} className="input !w-14 !py-1" value={stockQty}
+                          onChange={(e) => setStockQty(e.target.value)} title="Quantity received" />
+                        <span className="text-dim text-xs">x</span>
+                        <input type="number" step="0.01" className="input !w-20 !py-1" placeholder="$ each"
+                          value={stockCost} onChange={(e) => setStockCost(e.target.value)} title="Unit cost paid" />
+                        <button className="btn-foil !px-2 !py-1 text-xs disabled:opacity-40" disabled={stockBusy}
+                          onClick={() => receiveStock(i.id)}>
+                          {stockBusy ? "..." : "Add"}
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td className="whitespace-nowrap">
                     <a
                       className="text-foil text-xs hover:underline"

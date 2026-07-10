@@ -11,6 +11,7 @@ export const T = {
   time: "Time Entries",
   singles: "Singles",
   snapshots: "Price History",
+  purchases: "Purchase Log",
 };
 
 const headers = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
