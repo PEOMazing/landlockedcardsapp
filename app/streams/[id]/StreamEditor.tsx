@@ -237,10 +237,15 @@ export default function StreamEditor({ id }: { id: string }) {
   const afterFeesNum = parseFloat(form.afterFees) || 0;
   const promoNum = parseFloat(form.promotion) || 0;
   const tipsNum = parseFloat(form.tips) || 0;
-  // profit per spin on the same basis as streamer pay: after fees - promo - market value of the set - tips
-  const profitPerSpin = spotsSoldNum > 0 ? (afterFeesNum - promoNum - m.totalValue - tipsNum) / spotsSoldNum : 0;
-  // admin only: same thing over real buy cost
-  const buyProfitPerSpin = spotsSoldNum > 0 && m.buyCost !== null ? (afterFeesNum - promoNum - m.buyCost - tipsNum) / spotsSoldNum : 0;
+  const giveawaysNum = parseInt(form.giveaways) || 0;
+  const giveawayCost = giveawaysNum * (data?.config?.giveawayCost || 0);
+  // stream profit, in plain totals, on the same basis as streamer pay:
+  // revenue after fees minus promotion, tips, giveaways run, and the product cost of the set
+  const streamProfit = afterFeesNum - promoNum - tipsNum - giveawayCost - m.totalValue;
+  // admin only: the same total measured against what the product actually cost to buy
+  const buyStreamProfit = m.buyCost !== null ? afterFeesNum - promoNum - tipsNum - giveawayCost - m.buyCost : null;
+  const packsValue = Math.max(0, m.totalValue - m.hitPoolValue - m.givvyValue);
+  const resultsEntered = afterFeesNum > 0;
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-8">
@@ -263,8 +268,57 @@ export default function StreamEditor({ id }: { id: string }) {
         <CopyShowSet lines={lines.map((l) => ({ qty: l.qty, name: l.name }))} />
       </div>
 
+      {/* Stream P&L in plain totals - the answer to "did this stream make money" */}
+      <section className="card p-5 border-foil/40">
+        <div className="label mb-3">Stream P&L</div>
+        <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
+          <div>
+            <div className="label">Revenue after fees</div>
+            <div className="text-xl font-bold num">{resultsEntered ? $(afterFeesNum) : "-"}</div>
+          </div>
+          <div>
+            <div className="label">Break product cost</div>
+            <div className="text-xl font-bold num">{$(m.totalValue)}</div>
+            <div className="text-dim text-xs num">
+              hits {$(m.hitPoolValue)} - packs and fillers {$(packsValue)}
+              {m.buyCost !== null && <span> - bought for {$(m.buyCost)}</span>}
+            </div>
+          </div>
+          <div>
+            <div className="label">Giveaways</div>
+            <div className="text-xl font-bold num">{giveawaysNum}<span className="text-dim text-sm"> run</span></div>
+            <div className="text-dim text-xs num">
+              {m.givvyQty > 0 ? `${m.givvyQty} product (${$(m.givvyValue)})` : "no giveaway product in set"}
+              {giveawayCost > 0 && ` - cost ${$(giveawayCost)}`}
+            </div>
+          </div>
+          <div>
+            <div className="label">Stream time</div>
+            <div className="text-xl font-bold num">{stream.hours ? `${stream.hours}h` : "-"}</div>
+            {stream.packingHours > 0 && <div className="text-dim text-xs num">+ {stream.packingHours}h packing</div>}
+          </div>
+          <div>
+            <div className="label" title="Revenue after fees minus promotion, tips, giveaways run, and the market value of the set. Same basis as streamer pay.">
+              Stream profit
+            </div>
+            <div className={`text-3xl font-bold num ${!resultsEntered ? "text-dim" : streamProfit >= 0 ? "text-win" : "text-bad"}`}>
+              {resultsEntered ? $(streamProfit) : "-"}
+            </div>
+            {resultsEntered && (
+              <div className="text-dim text-xs num">
+                {buyStreamProfit !== null && (
+                  <span className={buyStreamProfit >= 0 ? "text-win" : "text-bad"}>{$(buyStreamProfit)} over buy (admin)</span>
+                )}
+                {spotsSoldNum > 0 && <span>{buyStreamProfit !== null ? " - " : ""}{$(streamProfit / spotsSoldNum)} per spin across {spotsSoldNum}</span>}
+              </div>
+            )}
+            {!resultsEntered && <div className="text-dim text-xs">enter results below to see it</div>}
+          </div>
+        </div>
+      </section>
+
       {/* Live hit tracker - updates the instant a hit is marked */}
-      <section className="card p-5 flex flex-wrap items-baseline gap-x-8 gap-y-2 border-foil/40">
+      <section className="card p-5 flex flex-wrap items-baseline gap-x-8 gap-y-2">
         <div>
           <div className="label">Total $ hit so far</div>
           <div className="text-3xl font-bold num text-foil">{$(m.hitValueDelivered)}</div>
@@ -290,22 +344,10 @@ export default function StreamEditor({ id }: { id: string }) {
           </div>
         )}
         {spotsSoldNum > 0 && afterFeesNum > 0 && (
-          <>
-            <div>
-              <div className="label">Avg spin value</div>
-              <div className="text-xl font-bold num text-foil">{$(afterFeesNum / spotsSoldNum)}</div>
-            </div>
-            <div>
-              <div className="label">Avg profit per spin</div>
-              <div className={`text-xl font-bold num ${profitPerSpin >= 0 ? "text-win" : "text-bad"}`}>{$(profitPerSpin)}</div>
-            </div>
-            {m.buyCost !== null && (
-              <div>
-                <div className="label">Profit per spin over buy (admin)</div>
-                <div className={`text-xl font-bold num ${buyProfitPerSpin >= 0 ? "text-win" : "text-bad"}`}>{$(buyProfitPerSpin)}</div>
-              </div>
-            )}
-          </>
+          <div>
+            <div className="label">Avg spin value</div>
+            <div className="text-xl font-bold num text-foil">{$(afterFeesNum / spotsSoldNum)}</div>
+          </div>
         )}
       </section>
 
