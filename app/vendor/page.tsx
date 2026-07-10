@@ -95,12 +95,14 @@ export default async function VendorDashboard() {
     if (typeof s.fields["Override %"] === "number") overrideById[s.id] = s.fields["Override %"];
   }
   const costByStream: Record<string, number> = {}, marketCostByStream: Record<string, number> = {};
+  const hitDeliveredByStream: Record<string, number> = {};
   for (const l of lineRows) {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
     costByStream[sid] = (costByStream[sid] || 0) + line.qty * line.buy;
     marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qty * line.market;
+    hitDeliveredByStream[sid] = (hitDeliveredByStream[sid] || 0) + line.qtyHit * line.market;
   }
   const rows: StreamRow[] = streamRows.map((r: any) => ({
     id: r.id,
@@ -123,10 +125,14 @@ export default async function VendorDashboard() {
   const cutoff30 = new Date(); cutoff30.setDate(cutoff30.getDate() - 30);
   const recent = rows.filter((r) => r.status === "Complete" && r.date && new Date(r.date) >= cutoff30);
   const streamRevenue = recent.reduce((a, r) => a + r.afterFees, 0);
-  const streamGross = recent.reduce(
-    (a, r) => a + (r.afterFees - r.promotion - r.tips - (r.giveaways || 0) * settings.giveaway_cost - r.productCost),
-    0
-  );
+  // sold-product basis, matching the stream page waterfall: product not hit
+  // returns to inventory, so a stream is charged only for hits delivered,
+  // giveaway spend, packing, tips, and promotion
+  const streamProfit30 = recent.reduce((a, r) => {
+    const sold = (hitDeliveredByStream[r.id] || 0) + (r.giveaways || 0) * settings.giveaway_cost;
+    const packing = (r.packingHours + (r.managerPackingHours || 0)) * settings.packing_rate;
+    return a + (r.afterFees - sold - packing - r.tips - r.promotion);
+  }, 0);
   const planned = rows.filter((r) => r.status !== "Complete").length;
 
   // labor owed this week
@@ -162,7 +168,7 @@ export default async function VendorDashboard() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Tile label="Streams - 30 day revenue" value={$0(streamRevenue)} sub={`${recent.length} completed streams`} />
-          <Tile label="Streams - 30 day gross" value={$0(streamGross)} tone={streamGross >= 0 ? "text-win" : "text-bad"} sub="after fees, promo, giveaways, product cost - before labor" />
+          <Tile label="Streams - 30 day profit" value={$0(streamProfit30)} tone={streamProfit30 >= 0 ? "text-win" : "text-bad"} sub="sales minus hits delivered, giveaways, packing, tips, promo" />
           <Tile label="Labor owed this week" value={$0(laborThisWeek)} sub="streamer + manager pay, live" />
           <Tile label="Sealed on hand" value={String(sealedUnits)} sub={`${inStock.reduce((a: number, s: any) => a + (s.qty || 1), 0)} singles in stock`} />
         </div>

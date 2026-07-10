@@ -238,7 +238,59 @@ export default function InventoryClient() {
 
       <input className="input" placeholder='Filter - try "ETB"' value={q} onChange={(e) => setQ(e.target.value)} />
 
-      <div className="card overflow-x-auto">
+      {/* mobile: card per product for restocks on the floor */}
+      <div className="md:hidden space-y-2">
+        {filtered.map((i) => {
+          const margin = (i.marketPrice || 0) - (i.buyPrice || 0);
+          return (
+            <div key={i.id} className={`card p-3 ${selected.has(i.id) ? "!border-foil/50" : ""}`}>
+              <div className="flex gap-3 items-start">
+                <input type="checkbox" className="mt-1" checked={selected.has(i.id)} onChange={() => toggleSelect(i.id)} />
+                {i.imageUrl && <Thumb src={i.imageUrl} size={40} />}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold leading-tight" title={i.name}>{displayName(i.name, i.category)}</div>
+                  <div className="text-dim text-xs">{i.category}</div>
+                </div>
+                <div className="text-right">
+                  <div className="label">On hand</div>
+                  <div className="flex items-center gap-2 justify-end">
+                    {num(i.id, "qtyOnHand", i.qtyOnHand, "1")}
+                    <button className="text-foil text-xs" onClick={() => { setStockFor(stockFor === i.id ? null : i.id); setStockQty("1"); setStockCost(""); }}>+ stock</button>
+                  </div>
+                </div>
+              </div>
+              {stockFor === i.id && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-foil/40 bg-foil/5 p-2">
+                  <input type="number" min={1} className="input !w-14 !py-1" value={stockQty} onChange={(e) => setStockQty(e.target.value)} title="Quantity received" />
+                  <span className="text-dim text-xs">x</span>
+                  <input type="number" step="0.01" className="input !w-20 !py-1" placeholder="$ each" value={stockCost} onChange={(e) => setStockCost(e.target.value)} title="Unit cost paid" />
+                  <button className="btn-foil !px-2 !py-1 text-xs disabled:opacity-40" disabled={stockBusy} onClick={() => receiveStock(i.id)}>{stockBusy ? "..." : "Add"}</button>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+                <div>
+                  <div className="label">Buy (avg)</div>
+                  {num(i.id, "buyPrice", i.buyPrice, "0.01")}
+                </div>
+                <div>
+                  <div className="label">Market</div>
+                  <span className="inline-flex items-center gap-1">
+                    {num(i.id, "marketPrice", i.marketPrice)}
+                    <DeltaHover current={i.marketPrice || null} entry={i.entryMarket ?? null} date={i.dateAdded} />
+                  </span>
+                </div>
+                <div>
+                  <div className="label">Margin</div>
+                  <span className={`num text-sm font-semibold ${margin >= 0 ? "text-win" : "text-bad"}`}>{i.buyPrice > 0 ? $(margin) : "-"}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && <div className="text-dim text-sm">No products match</div>}
+      </div>
+
+      <div className="card overflow-x-auto hidden md:block">
         <table className="w-full">
           <thead>
             <tr><th className="!px-2 w-8"><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={() => toggleSelectAll(filtered.map((i) => i.id))} /></th><th>Product</th><th>Category</th><th>Buy (avg)</th><th>Market</th><th>Retail</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>

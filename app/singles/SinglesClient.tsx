@@ -456,7 +456,77 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
             </div>
           )}
         </div>
-        <div className="overflow-x-auto">
+        {/* mobile: one card per item, built for thumbs at a card show */}
+        <div className="md:hidden space-y-2">
+          {shown.map((s) => (
+            <div key={s.id} className="card p-3">
+              <div className="flex gap-3">
+                {s.image && <img src={s.image} alt="" className="w-12 rounded-sm self-start" loading="lazy" />}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold leading-tight">{s.name}</div>
+                  <div className="text-dim text-xs">
+                    {s.setName}{s.number ? ` #${s.number}` : ""}
+                    {s.printing && <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>}
+                  </div>
+                  <div className="flex gap-1.5 mt-1 flex-wrap">
+                    <span className="text-[10px] border border-edge rounded-full px-2 py-0.5 text-dim">{s.condition}</span>
+                    <span className={`text-[10px] border rounded-full px-2 py-0.5 ${s.status === "Sold" ? "border-win/50 text-win" : s.status === "In Stream" ? "border-givvy/50 text-givvy" : "border-edge text-dim"}`}>{s.status}</span>
+                  </div>
+                </div>
+                <button
+                  className="text-dim hover:text-body px-2 self-start"
+                  onClick={() => setMenuFor(menuFor === s.id ? null : s.id)}
+                  aria-label="Row actions"
+                >
+                  {"\u22EF"}
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-center">
+                <div>
+                  <div className="label">Comp</div>
+                  <span className="inline-flex items-center gap-1">
+                    {isManager ? <EditCell value={s.comp} onSave={(v) => patch(s.id, { comp: v })} /> : <span className="num text-sm">{s.comp !== null ? $(s.comp) : "-"}</span>}
+                    <DeltaHover current={s.comp} entry={s.entryComp} date={s.dateAdded} />
+                  </span>
+                </div>
+                {isAdmin && (
+                  <div>
+                    <div className="label">Buy</div>
+                    <EditCell value={s.buy ?? null} highlightEmpty onSave={(v) => patch(s.id, { buyPrice: v })} />
+                  </div>
+                )}
+                <div>
+                  <div className="label">Sale</div>
+                  {isManager && s.status !== "In Stream" ? (
+                    <EditCell value={s.salePrice} onSave={(v) => patch(s.id, { salePrice: v, ...(s.status === "In Stock" ? { status: "Sold" } : {}) })} />
+                  ) : (
+                    <span className="num text-sm">{s.salePrice ? $(s.salePrice) : "-"}</span>
+                  )}
+                </div>
+              </div>
+              {menuFor === s.id && (
+                <div className="mt-2 rounded-lg border border-edge bg-ink/60 py-1">
+                  {["Raw", "NM", "LP", "MP", "HP", "DM"].includes(s.condition) && s.cardId && (
+                    <button className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50 disabled:opacity-40" disabled={busy === s.id} onClick={() => { setMenuFor(null); refreshComp(s.id); }}>
+                      {busy === s.id ? "Refreshing..." : "Refresh comp"}
+                    </button>
+                  )}
+                  <a className="block px-3 py-1.5 text-sm text-body hover:bg-edge/50" target="_blank" rel="noreferrer" href={ebayLink(s)} onClick={() => setMenuFor(null)}>
+                    eBay solds {"\u2197"}
+                  </a>
+                  {isAdmin && s.status !== "In Stream" && (
+                    <button className="block w-full text-left px-3 py-1.5 text-sm text-bad hover:bg-bad/10" onClick={() => { setMenuFor(null); remove(s.id); }}>
+                      Delete card
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+          {shown.length === 0 && <div className="text-dim text-sm">No cards match</div>}
+        </div>
+
+        <div className="overflow-x-auto hidden md:block">
           <table className="w-full">
             <thead>
               <tr>
