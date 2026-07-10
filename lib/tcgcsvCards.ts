@@ -101,7 +101,7 @@ export async function searchTcgcsvCards(q: string): Promise<PokeCard[]> {
     for (const { g, d } of chunk) {
       if (!d) continue;
       for (const p of d.prods) {
-        if (!isCard(p)) continue;
+        if (!isCard(p) || String(p.name).startsWith("Code Card")) continue;
         const n = norm(p.name);
         if (!qTokens.every((t) => n.includes(t))) continue;
         out.push(toCard(p, g, d.market.get(p.productId)));
