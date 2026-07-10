@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import Thumb from "@/components/Thumb";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -182,7 +183,7 @@ export default function BreakChecklist({
                       <td className="text-dim">{c.number}</td>
                       <td className="!font-medium">
                         <span className="inline-flex items-center gap-2">
-                          {c.image && <img src={c.image} alt="" className="w-7 rounded-sm" loading="lazy" />}
+                          {c.image && <Thumb src={c.image} size={28} />}
                           {c.name}
                         </span>
                       </td>

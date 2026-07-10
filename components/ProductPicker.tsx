@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORIES } from "@/lib/categories";
+import Thumb from "@/components/Thumb";
 
 export type PickerItem = {
   id: string;
@@ -146,7 +147,7 @@ export default function ProductPicker({
                   onClick={() => choose(i)}
                 >
                   <span className="flex items-center gap-2 min-w-0">
-                    {i.imageUrl && <img src={i.imageUrl} alt="" className="w-7 h-7 object-contain rounded-sm bg-white/5 shrink-0" loading="lazy" />}
+                    {i.imageUrl && <Thumb src={i.imageUrl} size={28} className="shrink-0" />}
                     <span className="truncate">
                       {i.name}
                       {i.category && <span className="text-dim text-xs ml-2">{i.category}</span>}

@@ -6,6 +6,7 @@ import CopyShowSet from "@/components/CopyShowSet";
 import Timeclock from "@/components/Timeclock";
 import BreakChecklist from "@/components/BreakChecklist";
 import SinglesPicker from "@/components/SinglesPicker";
+import Thumb from "@/components/Thumb";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -353,7 +354,7 @@ export default function StreamEditor({ id }: { id: string }) {
               {lines.map((l) => (
                 <tr key={l.id} className={l.isGiveaway ? "bg-givvy/5" : ""}>
                   <td className="!font-medium">
-                    {l.image && <img src={l.image} alt="" className="w-7 h-7 object-contain rounded-sm inline-block mr-2 align-middle bg-white/5" loading="lazy" />}
+                    {l.image && <Thumb src={l.image} size={28} className="mr-2" />}
                     {l.name}
                     {l.isGiveaway && <span className="text-givvy text-xs ml-2">giveaway</span>}
                     {l.isHit && <span className="text-foil text-xs ml-2 font-bold">HIT</span>}

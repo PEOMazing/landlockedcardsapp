@@ -7,6 +7,7 @@ type Item = {
 };
 
 import { CATEGORIES as CATS } from "@/lib/categories";
+import Thumb from "@/components/Thumb";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function InventoryClient() {
@@ -138,7 +139,7 @@ export default function InventoryClient() {
               return (
                 <tr key={i.id}>
                   <td className="!font-medium">
-                    {i.imageUrl && <img src={i.imageUrl} alt="" className="w-8 h-8 object-contain rounded-sm inline-block mr-2 align-middle bg-white/5" loading="lazy" />}
+                    {i.imageUrl && <Thumb src={i.imageUrl} size={32} className="mr-2" />}
                     {i.name}
                     {!(i.buyPrice > 0) && (
                       <span className="ml-2 text-xs text-givvy border border-givvy/40 rounded px-1.5 py-0.5 whitespace-nowrap">needs buy price</span>

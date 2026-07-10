@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Thumb from "@/components/Thumb";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -78,7 +79,7 @@ export default function SinglesPicker({
       <div className="grid gap-1">
         {filtered.map((s) => (
           <div key={s.id} className="flex items-center gap-3 rounded-lg border border-edge px-3 py-2">
-            {s.image && <img src={s.image} alt="" className="w-7 rounded-sm" loading="lazy" />}
+            {s.image && <Thumb src={s.image} size={28} className="shrink-0" />}
             <div className="min-w-0">
               <div className="text-sm font-medium truncate">{s.name}</div>
               <div className="text-dim text-xs truncate">
