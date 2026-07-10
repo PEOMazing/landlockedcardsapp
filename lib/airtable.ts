@@ -44,6 +44,21 @@ export async function atCreate(table: string, fields: Record<string, any>): Prom
   return res.json();
 }
 
+// create up to 10 records per request (Airtable's batch limit), chunked
+export async function atCreateBatch(table: string, fieldsList: Record<string, any>[]): Promise<AtRecord[]> {
+  const out: AtRecord[] = [];
+  for (let i = 0; i < fieldsList.length; i += 10) {
+    const chunk = fieldsList.slice(i, i + 10);
+    const res = await fetch(`${API}/${encodeURIComponent(table)}`, {
+      method: "POST", headers,
+      body: JSON.stringify({ records: chunk.map((fields) => ({ fields })), typecast: true }),
+    });
+    if (!res.ok) throw new Error(`Airtable batch create ${table}: ${res.status} ${await res.text()}`);
+    out.push(...(await res.json()).records);
+  }
+  return out;
+}
+
 export async function atUpdate(table: string, id: string, fields: Record<string, any>): Promise<AtRecord> {
   const res = await fetch(`${API}/${encodeURIComponent(table)}/${id}`, {
     method: "PATCH", headers, body: JSON.stringify({ fields, typecast: true }),

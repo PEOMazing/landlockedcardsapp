@@ -8,6 +8,7 @@ type Item = {
 
 import { CATEGORIES as CATS } from "@/lib/categories";
 import Thumb from "@/components/Thumb";
+import CollectrImport from "@/components/CollectrImport";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function csvEscape(v: any): string {
@@ -110,6 +111,7 @@ export default function InventoryClient() {
             Refresh all prices
           </button>
           <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
+          <CollectrImport onDone={load} />
         </div>
       </div>
 

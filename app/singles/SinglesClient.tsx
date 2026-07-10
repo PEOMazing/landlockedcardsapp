@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
+import CollectrImport from "@/components/CollectrImport";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
@@ -409,6 +410,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
               <option value="price-asc">Price low-high</option>
             </select>
             <button className="btn-ghost !py-1.5 text-xs" onClick={exportCsv}>Export CSV</button>
+            <CollectrImport onDone={load} />
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
