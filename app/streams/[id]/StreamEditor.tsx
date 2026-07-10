@@ -44,6 +44,7 @@ export default function StreamEditor({ id }: { id: string }) {
       promotion: d.stream.promotion ?? "",
       tips: d.stream.tips ?? "",
       spotsSold: d.stream.spotsSold ?? "",
+      giveaways: d.stream.giveaways ?? "",
     });
   }, [id]);
 
@@ -211,6 +212,7 @@ export default function StreamEditor({ id }: { id: string }) {
         promotion: parseFloat(form.promotion) || 0,
         tips: parseFloat(form.tips) || 0,
         spotsSold: parseInt(form.spotsSold) || 0,
+        giveaways: parseInt(form.giveaways) || 0,
         ...(markComplete ? { status: "Complete" } : {}),
       }),
     });
@@ -511,6 +513,14 @@ export default function StreamEditor({ id }: { id: string }) {
           {field("promotion", "Promotion ($)")}
           {field("tips", "Tips ($)")}
           {field("spotsSold", "Spots sold (spins)", "1")}
+          <div>
+            {field("giveaways", "Giveaways run", "1")}
+            {(parseInt(form.giveaways) || 0) > 0 && (
+              <p className="text-dim text-xs mt-1">
+                {parseInt(form.giveaways) || 0} x {$(m.cfg.giveawayCost ?? 2.5)} = <span className="text-bad">-{$((parseInt(form.giveaways) || 0) * (m.cfg.giveawayCost ?? 2.5))}</span> from profit
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex gap-3 items-center flex-wrap">
           <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => saveResults(false)}>

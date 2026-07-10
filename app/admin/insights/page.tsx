@@ -49,6 +49,7 @@ export default async function InsightsPage() {
     streamerId: r.fields["Streamer Rec Id"] || "unknown",
     streamerName: nameById[r.fields["Streamer Rec Id"]] || "Streamer",
     afterFees: r.fields["After Fees"] || 0,
+    giveaways: r.fields["Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,

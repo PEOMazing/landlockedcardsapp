@@ -75,6 +75,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       hours: stream.fields["Hours Streamed"] ?? null,
       packingHours: stream.fields["Packing Hours"] ?? null,
       spotsSold: stream.fields["Spots Sold"] ?? null,
+      giveaways: stream.fields["Giveaways Run"] ?? null,
       itemsReturned: !!stream.fields["Items Returned"],
       managerPackingHours: stream.fields["Manager Packing Hours"] ?? null,
       managerName,
@@ -96,6 +97,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     config: {
       hitThreshold: settings.hit_threshold,
       breakevenMult: settings.breakeven_mult,
+      giveawayCost: settings.giveaway_cost,
       histDeliveryRate,
     },
   });
@@ -112,6 +114,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.promotion !== undefined) fields["Promotion"] = b.promotion;
   if (b.tips !== undefined) fields["Tips"] = b.tips;
   if (b.spotsSold !== undefined) fields["Spots Sold"] = b.spotsSold;
+  if (b.giveaways !== undefined) fields["Giveaways Run"] = Math.max(0, parseInt(b.giveaways) || 0);
   // hours come from the timeclock (/api/time), not direct edits
   if (b.status !== undefined) fields["Status"] = b.status;
   if (b.notes !== undefined) fields["Notes"] = b.notes;

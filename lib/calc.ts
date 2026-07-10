@@ -85,6 +85,7 @@ export type StreamRow = {
   afterFees: number;
   promotion: number;
   tips: number;
+  giveaways: number;          // count of $-per-giveaway giveaways run on stream
   hours: number;
   packingHours: number;
   managerPackingHours: number;
@@ -133,8 +134,9 @@ export function buildWeekPay(
     const [weekStart, streamerId] = key.split("|");
     // tips are paid through to the streamer, so they come out of profit before commission.
     // Streamer pay is commissioned on profit over MARKET price; buy price never touches their numbers.
-    const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - r.productMarketCost - r.tips), 0);
-    const buyProfit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - r.productCost - r.tips), 0);
+    const giveawayCost = (r: StreamRow) => (r.giveaways || 0) * s.giveaway_cost;
+    const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productMarketCost - r.tips), 0);
+    const buyProfit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productCost - r.tips), 0);
     const packingHours = rows.reduce((a, r) => a + r.packingHours, 0);
     const managerPackingHours = rows.reduce((a, r) => a + (r.managerPackingHours || 0), 0);
     const hours = rows.reduce((a, r) => a + r.hours, 0);
@@ -219,7 +221,7 @@ export function buildManagerPay(
     const commissionable = rows.reduce(
       (a, r) =>
         a +
-        (r.afterFees - r.promotion - r.productMarketCost - r.tips) -
+        (r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost - r.productMarketCost - r.tips) -
         (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
       0
     );
