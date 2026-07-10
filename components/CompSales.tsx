@@ -50,13 +50,11 @@ export default function CompSales({
   return (
     <span onMouseEnter={open} onMouseLeave={close} className="relative">
       <span
-        className={`text-xs cursor-help whitespace-nowrap ${
-          thin
-            ? "text-amber-400 font-semibold border border-amber-400/40 bg-amber-400/10 rounded px-1.5 py-0.5"
-            : "text-dim underline decoration-dotted"
+        className={`text-xs cursor-help whitespace-nowrap underline decoration-dotted ${
+          thin ? "text-amber-400" : "text-dim"
         }`}
       >
-        {thin ? "\u26A0 " : ""}{detail.length} sold{detail.length > 1 ? "s" : ""}
+        {detail.length} sold{detail.length > 1 ? "s" : ""}
       </span>
       {pos && (
         <span

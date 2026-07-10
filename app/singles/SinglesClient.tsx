@@ -138,19 +138,33 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     else setErr((await r.json()).error || "Delete failed");
   }
 
+  const [setFilter, setSetFilter] = useState("All");
+  const [sortBy, setSortBy] = useState("newest");
+
+  const setNames = useMemo(
+    () => Array.from(new Set(singles.map((s) => s.setName).filter(Boolean))).sort(),
+    [singles]
+  );
+
   const shown = useMemo(() => {
     let list = statusFilter === "All" ? singles : singles.filter((s) => s.status === statusFilter);
-    const n = tableQ.trim().toLowerCase();
-    if (n) {
-      list = list.filter(
-        (s) =>
-          s.name.toLowerCase().includes(n) ||
-          s.setName.toLowerCase().includes(n) ||
-          s.condition.toLowerCase().includes(n)
-      );
+    if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
+    // token search: every word must match somewhere, so "umbreon prismatic"
+    // finds Umbreons in Prismatic Evolutions
+    const tokens = tableQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length) {
+      list = list.filter((s) => {
+        const hay = `${s.name} ${s.setName} ${s.number} ${s.condition} ${s.rarity}`.toLowerCase();
+        return tokens.every((t) => hay.includes(t));
+      });
     }
+    list = [...list];
+    if (sortBy === "name") list.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sortBy === "price-desc") list.sort((a, b) => (b.comp || 0) - (a.comp || 0));
+    else if (sortBy === "price-asc") list.sort((a, b) => (a.comp || 0) - (b.comp || 0));
+    // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, tableQ]);
+  }, [singles, statusFilter, setFilter, sortBy, tableQ]);
 
   const stockValue = singles.filter((s) => s.status === "In Stock").reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0);
   const soldTotal = singles.filter((s) => s.status === "Sold").reduce((a, s) => a + (s.salePrice || 0), 0);
@@ -342,7 +356,19 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
               </button>
             ))}
           </div>
-          <input className="input !w-56 ml-auto" placeholder="Filter" value={tableQ} onChange={(e) => setTableQ(e.target.value)} />
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            <input className="input !w-56" placeholder='Search - try "Umbreon Prismatic"' value={tableQ} onChange={(e) => setTableQ(e.target.value)} />
+            <select className="input !w-44" value={setFilter} onChange={(e) => setSetFilter(e.target.value)}>
+              <option value="All">All sets</option>
+              {setNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select className="input !w-40" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="newest">Newest first</option>
+              <option value="name">Name A-Z</option>
+              <option value="price-desc">Price high-low</option>
+              <option value="price-asc">Price low-high</option>
+            </select>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -396,10 +422,10 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                       {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
                       {!s.compDetail && s.comp !== null && s.compSource.includes("est.") && (
                         <span
-                          className="text-amber-400 text-xs font-semibold border border-amber-400/40 bg-amber-400/10 rounded px-1.5 py-0.5 cursor-help whitespace-nowrap"
+                          className="text-amber-400 text-xs cursor-help whitespace-nowrap underline decoration-dotted"
                           title={`${s.compSource} - no recent sales in this condition, comp is a discount off NM market. Verify before pricing.`}
                         >
-                          {"\u26A0"} est.
+                          est.
                         </span>
                       )}
                       {["Raw", "NM", "LP", "MP", "HP", "DM"].includes(s.condition) && s.cardId ? (
