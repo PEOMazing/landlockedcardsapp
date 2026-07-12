@@ -394,9 +394,14 @@ export default function StreamEditor({ id }: { id: string }) {
               return (
                 <>
                   <div className={`text-xs num text-right ${under ? "text-amber-400 font-semibold" : "text-dim"}`}>
-                    break even: {$(primary)} per spin ({m.cfg.breakevenMult}x average spin cost{costBE === null ? ", on market value until buy prices are set" : ""})
+                    break even: {$(primary)} per spin ({m.cfg.breakevenMult}x average spin {costBE === null ? "value" : "cost"})
                     {under && " - current avg is under it"}
                   </div>
+                  {costBE === null && (data?.config?.costMissingQty ?? 0) > 0 && (
+                    <div className="text-amber-400/80 text-[10px] text-right">
+                      market basis for now - {data.config.costMissingQty} items are missing a buy cost, so the true 1.5x cost basis cannot be computed yet
+                    </div>
+                  )}
                   {costBE !== null && (
                     <div className="text-dim text-[10px] num text-right">
                       on market value instead: {$(m.breakEven)} per spin
@@ -625,7 +630,7 @@ export default function StreamEditor({ id }: { id: string }) {
         <Stat label="Giveaways" value={`${m.givvyQty} / ${$(m.givvyValue)}`} accent="givvy" />
         <Stat label="Total product value" value={$(m.totalValue)} />
         <Stat label="Value per spot" value={m.spots ? $(m.valuePerSpot) : "-"} />
-        <Stat label="Break even per spin" value={m.spots ? $(data?.config?.costBreakEvenPerSpot ?? m.breakEven) : "-"} accent="win" warn={m.unpricedQty > 0 ? `${m.unpricedQty} unpriced items understate this` : undefined} />
+        <Stat label="Break even per spin" value={m.spots ? $(data?.config?.costBreakEvenPerSpot ?? m.breakEven) : "-"} accent="win" warn={m.unpricedQty > 0 ? `${m.unpricedQty} unpriced items understate this` : (data?.config?.costBreakEvenPerSpot ?? null) === null && (data?.config?.costMissingQty ?? 0) > 0 ? `market basis - ${data.config.costMissingQty} items missing buy cost` : undefined} />
         <Stat label={`Hit pool (> $${m.cfg.hitThreshold})`} value={`${m.hitPoolQty} items / ${$(m.hitPoolValue)}`} accent="foil" />
         <Stat label="Hit odds per spot" value={m.spots ? (m.hitOddsPerSpot * 100).toFixed(1) + "%" : "-"} accent="foil" />
         {m.expectedHits !== null ? (

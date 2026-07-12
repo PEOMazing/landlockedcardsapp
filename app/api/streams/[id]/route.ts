@@ -102,12 +102,20 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       // average spin cost = total product cost / total items in the set,
       // then x the multiplier = the break-even spin price. Computed here so
       // the finished number ships without any per-item buy prices.
-      costBreakEvenPerSpot: (() => {
-        const spots = lines.filter((l) => !l.isGiveaway).reduce((a, l) => a + l.qty, 0);
+      ...(() => {
+        const sellable = lines.filter((l) => !l.isGiveaway);
+        const spots = sellable.reduce((a, l) => a + l.qty, 0);
+        const missing = sellable.filter((l) => !(l.buy > 0)).reduce((a, l) => a + l.qty, 0);
         const totalCost = lines.reduce((a, l) => a + l.qty * (l.buy || 0), 0);
-        return spots > 0 && totalCost > 0
-          ? Math.round(((totalCost / spots) * settings.breakeven_mult) * 100) / 100
-          : null;
+        // the true 1.5x-on-cost number only exists when every sellable item
+        // carries a real buy cost - a partial cost base understates it badly
+        return {
+          costBreakEvenPerSpot:
+            spots > 0 && missing === 0 && totalCost > 0
+              ? Math.round(((totalCost / spots) * settings.breakeven_mult) * 100) / 100
+              : null,
+          costMissingQty: missing,
+        };
       })(),
     },
     pay: { packingRate: settings.packing_rate },
