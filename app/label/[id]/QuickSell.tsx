@@ -28,7 +28,10 @@ export default function QuickSell({ id, isManager, card }: {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-6">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6 gap-4">
+      <div className="font-bold text-lg" style={{ fontFamily: "var(--font-display)" }}>
+        LandLocked <span className="holo-text">Cards</span>
+      </div>
       <div className="card p-6 w-full max-w-sm text-center space-y-4">
         {card.image && <img src={card.image} alt="" className="h-48 mx-auto rounded-lg" style={{ boxShadow: "0 12px 40px rgba(122,162,255,.25)" }} />}
         <div>
@@ -46,9 +49,7 @@ export default function QuickSell({ id, isManager, card }: {
           </div>
         )}
         {sold ? (
-          <div className="text-win font-bold text-lg">
-            {"\u2713"} Sold{card.salePrice !== null && !busy ? "" : price ? ` for ${$(parseFloat(price) || 0)}` : ""}
-          </div>
+          <div className="text-win font-bold text-lg">{"\u2713"} Sold</div>
         ) : isManager ? (
           <div className="space-y-2">
             <input
@@ -64,7 +65,7 @@ export default function QuickSell({ id, isManager, card }: {
             <a href="/singles" className="block text-dim text-xs hover:text-body">open full singles page</a>
           </div>
         ) : (
-          <div className="text-dim text-sm">Ask at the table to purchase</div>
+          <div className="text-dim text-sm">Available now - ask at the table to purchase</div>
         )}
       </div>
     </main>

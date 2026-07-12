@@ -8,16 +8,17 @@ export const dynamic = "force-dynamic";
 // The page a printed label's QR resolves to: the card, its price, and one
 // button to book the sale. The sticker is a point of sale.
 export default async function LabelPage({ params }: { params: { id: string } }) {
-  const me = await getMe();
-  if (!me) redirect("/sign-in");
-  if (!isRecId(params.id)) redirect("/singles");
+  // public read-only: a customer scanning the sticker sees the card and its
+  // live price. Only signed-in managers get the sell button.
+  const me = await getMe().catch(() => null);
+  if (!isRecId(params.id)) redirect(me ? "/singles" : "/sign-in");
   const rec = await atGet(T.singles, params.id).catch(() => null);
-  if (!rec) redirect("/singles");
+  if (!rec) redirect(me ? "/singles" : "/sign-in");
   const f = rec.fields;
   return (
     <QuickSell
       id={params.id}
-      isManager={me.isManager}
+      isManager={!!me?.isManager}
       card={{
         name: String(f["Card Name"] || "").replace(/\s*-\s*[\w]+\/[\w]+\s*$/, ""),
         setName: f["Set Name"] || "",
