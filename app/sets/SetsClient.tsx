@@ -16,6 +16,40 @@ export default function SetsClient() {
   const [sets, setSets] = useState<SetT[]>([]);
   const [q, setQ] = useState("");
   const [active, setActive] = useState<SetT | null>(null);
+  const [customSets, setCustomSets] = useState<{ id: string; name: string; query: string }[]>([]);
+  const [newPokemon, setNewPokemon] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  function loadCustomSets() {
+    fetch("/api/custom-sets").then((r) => r.json()).then((d) => setCustomSets(d.customSets || [])).catch(() => {});
+  }
+
+  async function createCustomSet() {
+    const q = newPokemon.trim();
+    if (!q) return;
+    setCreating(true);
+    const r = await fetch("/api/custom-sets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: q }),
+    });
+    setCreating(false);
+    if (r.ok) {
+      const d = await r.json();
+      setNewPokemon("");
+      loadCustomSets();
+      toast(`Created ${d.name}`);
+      setActive({ id: `custom:${d.query}`, name: d.name } as any);
+    } else {
+      toast((await r.json()).error || "Could not create master set", "bad");
+    }
+  }
+
+  async function deleteCustomSet(id: string, name: string) {
+    if (!confirm(`Delete "${name}"? Your cards are untouched - this only removes the saved master set.`)) return;
+    const r = await fetch(`/api/custom-sets/${id}`, { method: "DELETE" });
+    if (r.ok) { loadCustomSets(); toast("Master set deleted"); }
+  }
   const [cards, setCards] = useState<CardT[]>([]);
   const [loading, setLoading] = useState(false);
   const [cardQ, setCardQ] = useState("");
@@ -49,7 +83,7 @@ export default function SetsClient() {
       })
       .catch(() => setOwned(new Map()));
   }
-  useEffect(() => { loadOwned(); }, []);
+  useEffect(() => { loadOwned(); loadCustomSets(); }, []);
 
   const ownedQty = (c: CardT) => (owned ? owned.get(ownKey(c.name, c.number)) || 0 : 0);
 
@@ -64,7 +98,9 @@ export default function SetsClient() {
     if (!active) return;
     setLoading(true); setCards([]); setCardQ(""); setPrinting(""); setAdded(new Set());
     loadOwned();
-    fetch(`/api/pokemon/cards?setId=${encodeURIComponent(active.id)}`)
+    fetch(active.id.startsWith("custom:")
+      ? `/api/pokemon/cards?nameQuery=${encodeURIComponent(active.id.slice(7))}`
+      : `/api/pokemon/cards?setId=${encodeURIComponent(active.id)}`)
       .then((r) => r.json())
       .then((d) => (d.cards ? setCards(d.cards) : setErr(d.error || "Could not load cards")))
       .catch(() => setErr("Could not load cards"))

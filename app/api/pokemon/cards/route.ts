@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
-import { listSetCards, searchCards } from "@/lib/pokemon";
+import { listSetCards, searchCards, searchCardsByName } from "@/lib/pokemon";
 import { printingKey, searchTcgcsvCards, vintagePrintings } from "@/lib/tcgcsvCards";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,8 @@ export async function GET(req: Request) {
   const setId = url.searchParams.get("setId");
   const q = url.searchParams.get("q");
   try {
+    const nameQuery = url.searchParams.get("nameQuery");
+    if (nameQuery) return NextResponse.json({ cards: await searchCardsByName(nameQuery) });
     if (setId) {
       let cards = await listSetCards(setId);
       // vintage sets get per-printing prices layered from TCGplayer, since the

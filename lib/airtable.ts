@@ -12,6 +12,7 @@ export const T = {
   singles: "Singles",
   snapshots: "Price History",
   purchases: "Purchase Log",
+  customSets: "Custom Sets",
 };
 
 const headers = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };

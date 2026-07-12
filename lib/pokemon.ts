@@ -131,6 +131,22 @@ export async function listSetCards(setId: string): Promise<PokeCard[]> {
   return data;
 }
 
+// Every printing of a pokemon across every set, for custom master sets.
+// name:raichu token-matches "Raichu", "Alolan Raichu", "Raichu ex" and so on.
+export async function searchCardsByName(term: string): Promise<PokeCard[]> {
+  const key = `name:${term.toLowerCase()}`;
+  const hit = cache.cards.get(key);
+  if (hit && Date.now() - hit.at < TTL) return hit.data;
+  const rows = await pgetAll("/cards", {
+    q: `name:${term.trim().replace(/"/g, "")}`,
+    orderBy: "-set.releaseDate,number",
+    select: "id,name,number,rarity,images,tcgplayer,set",
+  });
+  const data = rows.map(toCard);
+  cache.cards.set(key, { at: Date.now(), data });
+  return data;
+}
+
 export async function searchCards(q: string): Promise<PokeCard[]> {
   const term = q.trim().replace(/"/g, "");
   if (!term) return [];
