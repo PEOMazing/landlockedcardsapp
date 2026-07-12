@@ -312,6 +312,37 @@ export default function SetsClient() {
       </p>
       <input className="input !max-w-md" placeholder='Search sets - try "Prismatic" or "Scarlet"' value={q} onChange={(e) => setQ(e.target.value)} />
       {err && <div className="text-bad text-sm">{err}</div>}
+      <section className="card p-4 space-y-3">
+        <div className="flex items-baseline justify-between flex-wrap gap-2">
+          <span className="label">My master sets</span>
+          <span className="text-dim text-xs">every printing of one pokemon, across every set</span>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <input
+            className="input !w-44 !py-1.5"
+            placeholder="Pokemon name, e.g. raichu"
+            value={newPokemon}
+            onChange={(e) => setNewPokemon(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") createCustomSet(); }}
+          />
+          <button className="btn-foil !py-1.5 text-sm disabled:opacity-40" disabled={creating || !newPokemon.trim()} onClick={createCustomSet}>
+            {creating ? "Creating..." : "Create master set"}
+          </button>
+        </div>
+        {customSets.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            {customSets.map((c) => (
+              <span key={c.id} className="inline-flex items-center gap-1.5 rounded-full border border-foil/40 bg-foil/5 pl-3 pr-1.5 py-1 text-sm">
+                <button className="hover:text-foil font-medium" onClick={() => setActive({ id: `custom:${c.query}`, name: c.name } as any)}>
+                  {c.name}
+                </button>
+                <button className="text-dim hover:text-bad px-1" title="Delete master set" onClick={() => deleteCustomSet(c.id, c.name)}>{"\u2715"}</button>
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
         {filteredSets.map((s) => (
           <button key={s.id} className="card p-4 text-left hover:border-foil/50 transition-colors" onClick={() => setActive(s)}>
