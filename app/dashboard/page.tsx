@@ -15,7 +15,7 @@ export default async function Dashboard() {
   if (!me.streamer) {
     return (
       <>
-        <Nav isAdmin={me.isAdmin} />
+        <Nav isAdmin={me.isAdmin} isManager={me.isManager} />
         <main className="max-w-3xl mx-auto p-6">
           <div className="card p-6">
             <h1 className="text-lg font-bold mb-2">Almost there</h1>
@@ -95,7 +95,7 @@ export default async function Dashboard() {
 
   return (
     <>
-      <Nav isAdmin={me.isAdmin} name={name} />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={name} />
       <main className="max-w-6xl mx-auto p-6 space-y-8">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>

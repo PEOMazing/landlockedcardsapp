@@ -10,7 +10,7 @@ export default async function SetsPage() {
   if (!me) redirect("/sign-in");
   return (
     <>
-      <Nav isAdmin={me.isAdmin} name={me.streamer?.fields?.["Name"] || ""} />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || ""} />
       <SetsClient />
     </>
   );

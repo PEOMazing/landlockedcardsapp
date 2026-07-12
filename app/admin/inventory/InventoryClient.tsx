@@ -26,7 +26,7 @@ function displayName(name: string, category: string): string {
   return stripped.length >= 3 ? stripped : name;
 }
 
-export default function InventoryClient() {
+export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean }) {
   const [items, setItems] = useState<Item[]>([]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);

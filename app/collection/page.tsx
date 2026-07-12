@@ -76,7 +76,7 @@ export default async function CollectionDashboard() {
 
   return (
     <>
-      <Nav isAdmin={me.isAdmin} name={me.streamer?.fields?.["Name"] || "Collector"} />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || "Collector"} />
       <main className="max-w-6xl mx-auto p-6 space-y-6">
         <div className="flex items-baseline justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Collection</h1>

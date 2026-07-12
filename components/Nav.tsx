@@ -25,7 +25,7 @@ function Icon({ d }: { d: React.ReactNode }) {
   );
 }
 
-type Item = { href: string; label: string; icon: React.ReactNode; admin?: boolean };
+type Item = { href: string; label: string; icon: React.ReactNode; admin?: boolean; manager?: boolean };
 type Group = { title: string; items: Item[] };
 
 const GROUPS: Group[] = [
@@ -47,7 +47,7 @@ const GROUPS: Group[] = [
   {
     title: "Stock",
     items: [
-      { href: "/admin/inventory", label: "Inventory", icon: I.inventory, admin: true },
+      { href: "/admin/inventory", label: "Inventory", icon: I.inventory, manager: true },
       { href: "/sets", label: "Set Lists", icon: I.sets },
     ],
   },
@@ -61,11 +61,11 @@ const GROUPS: Group[] = [
   },
 ];
 
-function NavLinks({ isAdmin, pathname, onNavigate }: { isAdmin: boolean; pathname: string; onNavigate?: () => void }) {
+function NavLinks({ isAdmin, isManager, pathname, onNavigate }: { isAdmin: boolean; isManager: boolean; pathname: string; onNavigate?: () => void }) {
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
       {GROUPS.map((g) => {
-        const items = g.items.filter((i) => !i.admin || isAdmin);
+        const items = g.items.filter((i) => (i.admin ? isAdmin : i.manager ? isManager || isAdmin : true));
         if (items.length === 0) return null;
         return (
           <div key={g.title}>
@@ -95,7 +95,7 @@ function NavLinks({ isAdmin, pathname, onNavigate }: { isAdmin: boolean; pathnam
   );
 }
 
-export default function Nav({ isAdmin, name }: { isAdmin: boolean; name?: string }) {
+export default function Nav({ isAdmin, isManager = false, name }: { isAdmin: boolean; isManager?: boolean; name?: string }) {
   const pathname = usePathname() || "/";
   const [open, setOpen] = useState(false);
 
@@ -121,7 +121,7 @@ export default function Nav({ isAdmin, name }: { isAdmin: boolean; name?: string
     <>
       <nav className="sidebar hidden md:flex fixed inset-y-0 left-0 w-56 flex-col border-r border-edge bg-panel/70 backdrop-blur z-30">
         <div className="h-14 flex items-center px-3 border-b border-edge">{brand}</div>
-        <NavLinks isAdmin={isAdmin} pathname={pathname} />
+        <NavLinks isAdmin={isAdmin} isManager={isManager} pathname={pathname} />
         {footer}
       </nav>
 
@@ -141,7 +141,7 @@ export default function Nav({ isAdmin, name }: { isAdmin: boolean; name?: string
               {brand}
               <button aria-label="Close" onClick={() => setOpen(false)} className="text-dim px-2">{"\u2715"}</button>
             </div>
-            <NavLinks isAdmin={isAdmin} pathname={pathname} onNavigate={() => setOpen(false)} />
+            <NavLinks isAdmin={isAdmin} isManager={isManager} pathname={pathname} onNavigate={() => setOpen(false)} />
             {footer}
           </nav>
         </div>

@@ -25,7 +25,7 @@ async function backfillSnapshots(productId: string, buyPrice: number) {
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
-  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!me?.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json();
   const fields: Record<string, any> = {};
   if (b.name !== undefined) fields["Product Name"] = b.name;

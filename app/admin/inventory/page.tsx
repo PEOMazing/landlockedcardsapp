@@ -8,11 +8,11 @@ export const dynamic = "force-dynamic";
 export default async function InventoryPage() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
-  if (!me.isAdmin) redirect("/dashboard");
+  if (!me.isManager) redirect("/dashboard");
   return (
     <>
-      <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
-      <InventoryClient />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || "Admin"} />
+      <InventoryClient isAdmin={me.isAdmin} />
     </>
   );
 }

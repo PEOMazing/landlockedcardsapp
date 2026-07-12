@@ -51,7 +51,7 @@ const PROVIDERS: Record<string, (name: string) => Promise<PriceResult>> = {
 
 export async function POST(req: Request) {
   const me = await getMe();
-  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!me?.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   let providerName = (process.env.PRICE_PROVIDER || "tcgcsv").toLowerCase();
   // graceful fallback: pricecharting configured but no token means use the free provider

@@ -5,7 +5,7 @@ import { getMe } from "@/lib/auth";
 // Purchase history for one product: every lot ever received, newest first.
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
-  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!me?.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (!isRecId(params.id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const rows = await atList(T.purchases, {
     filterByFormula: `{Product Rec Id} = '${params.id}'`,

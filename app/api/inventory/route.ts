@@ -22,15 +22,15 @@ export async function GET() {
     dateAdded: r.fields["Date Added"] || "",
     priceChecked: r.fields["Price Checked"] || null,
     isGiveaway: r.fields["Category"] === "Giveaway",
-    // buy price is admin-only
-    ...(me.isAdmin ? { buyPrice: r.fields["Buy Price"] ?? 0 } : {}),
+    // buy prices: admins and managers only - streamers never receive them
+    ...(me.isManager ? { buyPrice: r.fields["Buy Price"] ?? 0 } : {}),
   }));
   return NextResponse.json({ items });
 }
 
 export async function POST(req: Request) {
   const me = await getMe();
-  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!me?.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json();
   const rec = await atCreate(T.inventory, {
     "Product Name": b.name,

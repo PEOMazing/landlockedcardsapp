@@ -8,7 +8,7 @@ import { getMe } from "@/lib/auth";
 // the new lot's cost becomes the basis rather than blending against zero.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
-  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!me?.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (!isRecId(params.id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const b = await req.json();
   const qty = Math.max(1, parseInt(b.qty) || 0);
