@@ -108,6 +108,21 @@ export default function SetsClient() {
   const setValue = cards.reduce((a, c) => a + (priceFor(c) || 0), 0);
   const pricedCount = cards.filter((c) => priceFor(c) !== null).length;
 
+  function exportSetCsv() {
+    if (!active || cards.length === 0) return;
+    const esc = (v: any) => {
+      const t = String(v ?? "");
+      return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    const header = ["Card", "Number", "Rarity", hasPrintings ? `Price (${activePrinting})` : "Price", "Owned Qty"];
+    const rows = shownCards.map((c) => [c.name, c.number, c.rarity, priceFor(c) ?? "", ownedQty(c)]);
+    const csv = [header, ...rows].map((r) => r.map(esc).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `${active.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-checklist.csv`;
+    a.click();
+  }
+
   async function quickAdd(c: CardT) {
     setAdding(c.id);
     const body: Record<string, any> = { cardId: c.id, condition: "Raw" };
@@ -194,6 +209,7 @@ export default function SetsClient() {
               ))}
             </div>
           )}
+          <button className="btn-ghost !py-1.5 text-xs" onClick={exportSetCsv}>Export CSV</button>
           <div className="flex rounded-lg border border-edge overflow-hidden text-sm">
             {(["all", "owned", "missing"] as const).map((f) => (
               <button

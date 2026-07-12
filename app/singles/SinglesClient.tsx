@@ -203,7 +203,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
       "Sale Price", "Sold Date", "Date Added", "Added By", "Notes",
     ];
     const rows = shown.map((s) => [
-      s.name, s.setName, s.number, s.condition, s.printing, s.rarity, s.qty, s.status,
+      s.name.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, ""), s.setName, s.number, s.condition, s.printing, s.rarity, s.qty, s.status,
       s.comp ?? "", s.compSource, s.compDate,
       ...(isAdmin ? [s.buy ?? ""] : []),
       s.salePrice ?? "", s.soldDate, s.dateAdded, s.addedBy, s.notes,
