@@ -64,10 +64,11 @@ export default function StreamEditor({ id }: { id: string }) {
     const hitValueDelivered = hitLines.reduce((a, l) => a + l.qtyHit * l.market, 0);
     const hitCostDelivered = hitLines.reduce((a, l) => a + l.qtyHit * (l.buy ?? 0), 0);
     const hitValueRemaining = hitLines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0) * l.market, 0);
+    const unpricedQty = lines.filter((l) => !l.isGiveaway && !(l.market > 0)).reduce((a, l) => a + l.qty, 0);
     const showBuy = lines.some((l) => typeof l.buy === "number"); // admin only
     const buyCost = lines.reduce((a, l) => a + l.qty * (l.buy ?? 0), 0);
     return {
-      cfg, spots, givvyQty, givvyValue, totalValue, showBuy,
+      cfg, spots, unpricedQty, givvyQty, givvyValue, totalValue, showBuy,
       buyCost: showBuy ? buyCost : null,
       valuePerSpot: spots > 0 ? totalValue / spots : 0,
       breakEven: spots > 0 ? (totalValue / spots) * cfg.breakevenMult : 0,
@@ -381,6 +382,11 @@ export default function StreamEditor({ id }: { id: string }) {
                 {$(afterFeesNum / spotsSoldNum)} avg per spin - {$(netProfit / spotsSoldNum)} profit per spin so far
               </div>
             )}
+            {m.unpricedQty > 0 && (
+              <div className="text-xs text-amber-400 text-right">
+                {m.unpricedQty} items in this set have no price - set value and break even are understated. Set a per-item price on those lines in the set builder.
+              </div>
+            )}
             {m.spots > 0 && (() => {
               const costBE = data?.config?.costBreakEvenPerSpot ?? null;
               const primary = costBE ?? m.breakEven;
@@ -619,7 +625,7 @@ export default function StreamEditor({ id }: { id: string }) {
         <Stat label="Giveaways" value={`${m.givvyQty} / ${$(m.givvyValue)}`} accent="givvy" />
         <Stat label="Total product value" value={$(m.totalValue)} />
         <Stat label="Value per spot" value={m.spots ? $(m.valuePerSpot) : "-"} />
-        <Stat label="Break even per spin" value={m.spots ? $(data?.config?.costBreakEvenPerSpot ?? m.breakEven) : "-"} accent="win" />
+        <Stat label="Break even per spin" value={m.spots ? $(data?.config?.costBreakEvenPerSpot ?? m.breakEven) : "-"} accent="win" warn={m.unpricedQty > 0 ? `${m.unpricedQty} unpriced items understate this` : undefined} />
         <Stat label={`Hit pool (> $${m.cfg.hitThreshold})`} value={`${m.hitPoolQty} items / ${$(m.hitPoolValue)}`} accent="foil" />
         <Stat label="Hit odds per spot" value={m.spots ? (m.hitOddsPerSpot * 100).toFixed(1) + "%" : "-"} accent="foil" />
         {m.expectedHits !== null ? (
@@ -701,12 +707,13 @@ export default function StreamEditor({ id }: { id: string }) {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: "win" | "givvy" | "foil" }) {
+function Stat({ label, value, accent, warn }: { label: string; value: string; accent?: "win" | "givvy" | "foil"; warn?: string }) {
   const color = accent === "win" ? "text-win" : accent === "givvy" ? "text-givvy" : accent === "foil" ? "text-foil" : "text-body";
   return (
     <div className="card p-4">
       <div className="label">{label}</div>
       <div className={`text-lg font-bold num mt-1 ${color}`}>{value}</div>
+      {warn && <div className="text-amber-400 text-[10px] mt-1">{warn}</div>}
     </div>
   );
 }
