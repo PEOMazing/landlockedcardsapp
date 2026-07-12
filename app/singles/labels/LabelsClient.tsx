@@ -12,6 +12,7 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 
 export default function LabelsClient() {
   const [labels, setLabels] = useState<L[] | null>(null);
+  const [includePrice, setIncludePrice] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -60,7 +61,11 @@ export default function LabelsClient() {
             <div className="font-bold">{labels.length} labels - Avery 5160 (30 per sheet)</div>
             <div className="text-dim text-xs">Scan a label to open the card&apos;s quick-sell page. Load 1in x 2 5/8in label sheets and print at 100% scale.</div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-dim flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={includePrice} onChange={(e) => setIncludePrice(e.target.checked)} />
+              include price (comps drift - the QR always shows the live comp)
+            </label>
             <a href="/singles" className="btn-ghost">Back</a>
             <button className="btn-foil" onClick={() => window.print()}>Print</button>
           </div>
@@ -75,7 +80,7 @@ export default function LabelsClient() {
                   {l.setName}{l.number ? ` #${l.number}` : ""}{l.printing ? ` ${l.printing}` : ""}
                 </div>
                 <div style={{ fontSize: "7pt" }}>{l.condition}</div>
-                <div style={{ fontWeight: 800, fontSize: "12pt" }}>{l.comp !== null ? $(l.comp) : ""}</div>
+                {includePrice && <div style={{ fontWeight: 800, fontSize: "12pt" }}>{l.comp !== null ? $(l.comp) : ""}</div>}
               </div>
             </div>
           ))}
