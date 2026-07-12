@@ -19,7 +19,7 @@ const cache: { groups?: { at: number; data: any[] }; byGroup: Map<number, GroupC
 };
 
 async function jget(url: string): Promise<any> {
-  const res = await fetch(url, { cache: "no-store", headers: HEADERS });
+  const res = await fetch(url, { next: { revalidate: 43200 }, headers: HEADERS });
   if (!res.ok) throw new Error(`tcgcsv ${url}: ${res.status}`);
   return res.json();
 }

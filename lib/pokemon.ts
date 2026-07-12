@@ -44,7 +44,7 @@ const TTL = 1000 * 60 * 60 * 12; // 12 hours
 
 async function pget(path: string, params: Record<string, string>): Promise<any> {
   const q = new URLSearchParams(params);
-  const res = await fetch(`${API}${path}?${q}`, { headers: headers(), cache: "no-store" });
+  const res = await fetch(`${API}${path}?${q}`, { headers: headers(), next: { revalidate: 86400 } });
   if (!res.ok) throw new Error(`pokemontcg.io ${path}: ${res.status} ${await res.text()}`);
   return res.json();
 }
