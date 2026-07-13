@@ -6,6 +6,9 @@ export type Me = {
   email: string;
   isAdmin: boolean;
   isManager: boolean; // managers can create streams for others and earn override + packing
+  isTeam: boolean; // admin, manager, or streamer - the business itself. External signups (collectors, vendors) are not team.
+  role: string;
+  signupStatus: string;
   streamer: AtRecord | null;
 };
 
@@ -27,7 +30,13 @@ export async function getMe(): Promise<Me | null> {
   const role = streamer?.fields?.["Role"];
   const isAdmin = (user.publicMetadata as any)?.role === "admin" || role === "admin";
   const isManager = isAdmin || role === "manager";
-  return { clerkId: user.id, email, isAdmin, isManager, streamer };
+  const isTeam = isAdmin || role === "manager" || role === "streamer";
+  return {
+    clerkId: user.id, email, isAdmin, isManager, isTeam,
+    role: role || "",
+    signupStatus: streamer?.fields?.["Signup Status"]?.name || streamer?.fields?.["Signup Status"] || "",
+    streamer,
+  };
 }
 
 // streamer of record, assigned manager, or admin

@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function Dashboard() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
+  if (!me.isTeam) redirect("/welcome");
 
   if (!me.streamer) {
     return (

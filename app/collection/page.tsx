@@ -28,6 +28,7 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
 export default async function CollectionDashboard() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
+  if (!me.isTeam) redirect("/welcome");
 
   const [inventoryRows, singlesRows, snaps] = await Promise.all([
     atList(T.inventory, { filterByFormula: "{Active} = TRUE()" }),

@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const me = await getMe();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me?.isTeam) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
   const params: Record<string, string> = { "sort[0][field]": "Date Added", "sort[0][direction]": "desc" };
@@ -33,7 +33,7 @@ export async function GET(req: Request) {
 // - manual: caller supplies name (and whatever else they know)
 export async function POST(req: Request) {
   const me = await getMe();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me?.isTeam) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json();
 
   let fields: Record<string, any> = {

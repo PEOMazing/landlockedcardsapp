@@ -1,17 +1,17 @@
-import { SignIn } from "@clerk/nextjs";
+import { SignUp } from "@clerk/nextjs";
 
-export default function SignInPage() {
+export default function SignUpPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6">
       <div className="text-center">
         <div className="text-3xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
           LandLocked <span className="holo-text">Cards</span>
         </div>
-        <div className="text-dim text-sm mt-1">Stream ops - sign in to continue</div>
+        <div className="text-dim text-sm mt-1">Create your account - you will pick collector or vendor next</div>
       </div>
-      <SignIn routing="hash" />
+      <SignUp routing="hash" signInUrl="/sign-in" forceRedirectUrl="/welcome" />
       <div className="text-dim text-sm">
-        New here? <a className="text-foil hover:underline" href="/sign-up">Create an account</a> - collectors and vendors welcome
+        Already have an account? <a className="text-foil hover:underline" href="/sign-in">Sign in</a>
       </div>
     </main>
   );

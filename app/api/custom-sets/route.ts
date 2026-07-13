@@ -6,7 +6,7 @@ import { getMe } from "@/lib/auth";
 // full checklist with mastery, owned badges, and quick-add.
 export async function GET() {
   const me = await getMe();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me?.isTeam) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const mine = me.streamer?.id || "";
   const rows = await atList(T.customSets, {
     filterByFormula: `{Owner Rec Id} = '${mine}'`,
@@ -24,7 +24,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const me = await getMe();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me?.isTeam) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json();
   const query = String(b.query || "").trim();
   if (!query) return NextResponse.json({ error: "pokemon name required" }, { status: 400 });

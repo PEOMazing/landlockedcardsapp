@@ -6,6 +6,7 @@ export default async function Home() {
   if (!me) redirect("/sign-in");
   // dashboards first: each role lands on the view built for it
   if (me.isAdmin) redirect("/vendor");
-  if (me.streamer?.fields?.["Role"] === "collector") redirect("/collection");
-  redirect("/dashboard");
+  if (me.isTeam) redirect("/dashboard");
+  // external signups (collectors and vendors) and brand new accounts
+  redirect("/welcome");
 }
