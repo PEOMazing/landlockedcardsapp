@@ -54,6 +54,9 @@ export default async function WelcomePage() {
             Your collector account is approved. Your collection workspace is being finished - we will email you the moment it opens.
           </p>
         )}
+        <p className="text-dim text-xs border-t border-edge pt-3 mt-1">
+          Trying to reach a business you work with? Membership is invite-only - ask the business owner to add your email to their team, and this account will unlock their workspace automatically.
+        </p>
         <a href="/sign-in" className="text-dim text-xs hover:text-body block">sign out and back in anytime - your spot is saved</a>
       </div>
     </main>
