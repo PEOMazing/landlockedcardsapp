@@ -139,7 +139,7 @@ export async function searchCardsByName(term: string): Promise<PokeCard[]> {
   if (hit && Date.now() - hit.at < TTL) return hit.data;
   const rows = await pgetAll("/cards", {
     q: `name:${term.trim().replace(/"/g, "")}`,
-    orderBy: "-set.releaseDate,number",
+    orderBy: "-set.releaseDate",
     select: "id,name,number,rarity,images,tcgplayer,set",
   });
   const data = rows.map(toCard);

@@ -4,7 +4,7 @@ import { listSetCards, searchCards, searchCardsByName } from "@/lib/pokemon";
 import { printingKey, searchTcgcsvCards, vintagePrintings } from "@/lib/tcgcsvCards";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 // ?setId=xyz -> full checklist for a set
 // ?q=charizard -> name search across all sets
