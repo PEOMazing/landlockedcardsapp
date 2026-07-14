@@ -9,7 +9,7 @@ import { CATEGORIES } from "@/lib/categories";
 // and open-stream snapshots backfill via the inventory PATCH route.
 export async function POST(req: Request) {
   const me = await getMe();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me?.isTeam) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json();
   const name = String(b.name || "").trim();
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });

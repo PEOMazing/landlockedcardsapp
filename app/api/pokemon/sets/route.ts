@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const me = await getMe();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me || (!me.isTeam && !me.isCollector)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     return NextResponse.json({ sets: await listSets() });
   } catch (e: any) {

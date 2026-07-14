@@ -41,17 +41,17 @@ export default async function WelcomePage() {
         {isVendor && pending && (
           <p className="text-dim text-sm">
             Thanks for applying as a vendor{me.streamer.fields["Company"] ? ` with ${me.streamer.fields["Company"]}` : ""}.
-            We review every vendor personally - expect access within 1 to 2 days. We will reach out by email.
+            We review every vendor personally - expect access within 1 to 2 days. Check back here, or watch for a text or email from us.
           </p>
         )}
         {isVendor && !pending && (
           <p className="text-dim text-sm">
-            Your vendor account is approved. Your workspace is being finished - we will email you the moment it opens.
+            Your vendor account is approved. Your workspace is being finished - check back here, we will reach out the moment it opens.
           </p>
         )}
         {!isVendor && (
           <p className="text-dim text-sm">
-            Your collector account is approved. Your collection workspace is being finished - we will email you the moment it opens.
+            Your collector account is approved - your workspace is ready. Head to your collection to start adding cards.
           </p>
         )}
         <p className="text-dim text-xs border-t border-edge pt-3 mt-1">

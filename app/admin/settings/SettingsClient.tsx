@@ -194,6 +194,13 @@ export default function SettingsClient() {
         </div>
       </div>
       {addErr && <div className="text-bad text-sm">{addErr}</div>}
+      <section className="card p-4 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <div className="font-semibold">Full business backup</div>
+          <div className="text-dim text-xs">Every table and record as one JSON file. The whole business lives in Airtable - download this weekly and keep it somewhere safe.</div>
+        </div>
+        <a className="btn-ghost !py-2" href="/api/admin/backup" download>Download backup</a>
+      </section>
     </main>
   );
 }

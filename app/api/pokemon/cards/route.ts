@@ -10,7 +10,7 @@ export const maxDuration = 60;
 // ?q=charizard -> name search across all sets
 export async function GET(req: Request) {
   const me = await getMe();
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me || (!me.isTeam && !me.isCollector)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const url = new URL(req.url);
   const setId = url.searchParams.get("setId");
   const q = url.searchParams.get("q");

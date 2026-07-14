@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import Nav from "@/components/Nav";
+import PendingVendors from "@/components/PendingVendors";
 import Thumb from "@/components/Thumb";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
@@ -154,7 +155,8 @@ export default async function VendorDashboard() {
     <>
       <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-6xl mx-auto p-6 space-y-6">
-        <div className="flex items-baseline justify-between flex-wrap gap-2">
+                <PendingVendors />
+<div className="flex items-baseline justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Vendor dashboard</h1>
           <span className="text-dim text-sm">The whole operation at a glance</span>
         </div>
