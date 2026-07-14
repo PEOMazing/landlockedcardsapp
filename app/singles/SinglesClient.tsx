@@ -363,6 +363,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                 <select className="input mt-1" value={draft.condition} onChange={(e) => setDraft({ ...draft, condition: e.target.value })}>
                   {CONDITIONS.map((c) => <option key={c}>{c}</option>)}
                 </select>
+              <a href="/conditions" target="_blank" className="text-dim text-[11px] hover:text-foil block mt-0.5">condition guide</a>
               </div>
               <div>
                 <label className="label">Printing</label>
