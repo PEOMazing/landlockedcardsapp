@@ -5,7 +5,7 @@ import { toast } from "@/components/Toaster";
 // Scan-to-quote: a scanner gun in keyboard-wedge mode types the label's URL
 // and hits Enter. The listener input parses out the record id, pulls the card
 // with its live comp, and builds a running quote. One button books it all.
-type Line = { id: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; price: string };
+type Line = { id: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; price: string; location: string };
 
 const clean = (n: string) => n.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, "");
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -37,7 +37,7 @@ export default function QuoteClient() {
     if (s.status === "Sold") { toast(`${clean(s.name)} is already sold`, "bad"); return; }
     setLines((prev) => [...prev, {
       id, name: clean(s.name), setName: s.setName, number: s.number, condition: s.condition,
-      printing: s.printing, image: s.image, comp: s.comp,
+      printing: s.printing, image: s.image, comp: s.comp, location: s.location || "",
       price: s.comp !== null ? String(s.comp) : "",
     }]);
   }
@@ -95,7 +95,7 @@ export default function QuoteClient() {
           <div key={l.id} className="card p-3 flex items-center gap-3">
             {l.image && <img src={l.image} alt="" className="w-10 rounded-sm" />}
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold truncate">{l.name}</div>
+              <div className="text-sm font-semibold truncate">{l.name}{l.location ? <span className="ml-2 text-xs font-bold text-foil">#{l.location}</span> : null}</div>
               <div className="text-dim text-xs truncate">
                 {l.setName}{l.number ? ` #${l.number}` : ""} - {l.condition}
                 {l.printing ? ` - ${l.printing}` : ""}

@@ -24,6 +24,7 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
         setName: f["Set Name"] || "",
         number: f["Number"] || "",
         condition: f["Condition"] || "",
+        location: f["Location"] || "",
         printing: f["Printing"] || "",
         image: f["Image URL"] || "",
         comp: f["Comp"] ?? null,

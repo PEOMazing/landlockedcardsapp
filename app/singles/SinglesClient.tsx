@@ -16,7 +16,7 @@ const CONDITION_LABELS: Record<string, string> = {
 };
 
 type SingleT = {
-  id: string; name: string; setName: string; number: string; cardId: string;
+  id: string; name: string; setName: string; number: string; cardId: string; location?: string;
   rarity: string; variant: string; condition: string;
   comp: number | null; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
@@ -130,6 +130,25 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     if (!r.ok) setErr(d.error || "Comp refresh failed");
     else setSingles((prev) => prev.map((s) => (s.id === id ? d.single : s)));
     setBusy("");
+  }
+
+  async function assignLocations() {
+    if (shown.length === 0) { toast("Nothing shown to number", "bad"); return; }
+    const prefix = (window.prompt("Location prefix - our recommended scheme: B1 for binder 1, C1 for case 1, BOX1 for a box", "B1") || "").trim().toUpperCase();
+    if (!prefix) return;
+    const startRaw = window.prompt("Start numbering at", "1") || "";
+    const start = Math.max(1, parseInt(startRaw) || 1);
+    const end = start + shown.length - 1;
+    if (!window.confirm(`Number all ${shown.length} shown cards as ${prefix}-${start} through ${prefix}-${end}, top to bottom in the current order? This overwrites existing locations on these cards. Tip: filter or search first to number one binder at a time.`)) return;
+    toast(`Numbering ${shown.length} cards...`);
+    let n = start, ok = 0;
+    for (const s of shown) {
+      const code = `${prefix}-${n++}`;
+      const r = await fetch(`/api/singles/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: code }) });
+      if (r.ok) ok++;
+    }
+    toast(`${ok} cards numbered ${prefix}-${start} to ${prefix}-${end}`);
+    load();
   }
 
   async function patch(id: string, body: any) {
@@ -431,6 +450,9 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
               <option value="price-desc">Price high-low</option>
               <option value="price-asc">Price low-high</option>
             </select>
+            {isManager && (
+              <button className="btn-ghost !py-1.5 text-xs" onClick={assignLocations} title="Number every card currently shown, in the order shown">Assign locations</button>
+            )}
             <button className="btn-ghost !py-1.5 text-xs" onClick={exportCsv}>Export CSV</button>
             <CollectrImport onDone={load} />
           </div>
@@ -463,6 +485,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
             <div key={s.id} className="card p-3">
               <div className="flex gap-3">
                 {s.image && <Thumb src={s.image} size={48} className="self-start" />}
+                {s.location && <span className="text-[10px] font-bold text-foil border border-foil/40 rounded px-1 py-px self-start">#{s.location}</span>}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold leading-tight">{s.name}</div>
                   <div className="text-dim text-xs">
@@ -532,6 +555,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
             <thead>
               <tr>
                 <th>Card</th><th>Condition</th><th>Qty</th>
+                <th className="whitespace-nowrap">Loc</th>
                 {isAdmin && <th>Buy</th>}
                 <th>Comp</th><th>Status</th><th>Sale</th><th></th>
               </tr>
@@ -555,6 +579,9 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                   </td>
                   <td className="text-dim text-xs">{s.condition}</td>
                   <td>{s.qty}</td>
+                  <td>
+                    <LocCell value={s.location || ""} canEdit={isManager} onSave={(v) => patch(s.id, { location: v })} />
+                  </td>
                   {isAdmin && (
                     <td>
                       <EditCell value={s.buy ?? null} highlightEmpty onSave={(v) => patch(s.id, { buyPrice: v })} />
@@ -650,7 +677,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                 </tr>
               ))}
               {shown.length === 0 && (
-                <tr><td colSpan={isAdmin ? 8 : 7} className="text-dim">No cards here yet - add one above</td></tr>
+                <tr><td colSpan={isAdmin ? 9 : 8} className="text-dim">No cards here yet - add one above</td></tr>
               )}
             </tbody>
           </table>
@@ -661,5 +688,30 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
         </p>
       </section>
     </main>
+  );
+}
+
+// Physical location code cell: click to edit, shows #B1-12 style badges.
+function LocCell({ value, canEdit, onSave }: { value: string; canEdit: boolean; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  if (!canEdit) return value ? <span className="text-xs font-bold text-foil">#{value}</span> : <span className="text-dim">-</span>;
+  if (!editing)
+    return (
+      <button className="text-xs hover:bg-white/5 rounded px-1 py-0.5 -mx-1" onClick={() => setEditing(true)} title="Click to set a location code like B1-12">
+        {value ? <span className="font-bold text-foil">#{value}</span> : <span className="text-dim">set</span>}
+      </button>
+    );
+  return (
+    <input
+      autoFocus
+      className="input !py-0.5 !px-1.5 w-20 text-xs uppercase"
+      value={v}
+      placeholder="B1-12"
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { setEditing(false); if (v.trim() !== value) onSave(v.trim()); }}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setV(value); setEditing(false); } }}
+    />
   );
 }

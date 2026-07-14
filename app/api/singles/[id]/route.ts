@@ -26,6 +26,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.condition !== undefined) fields["Condition"] = b.condition;
   if (b.qty !== undefined) fields["Qty"] = Math.max(0, parseInt(b.qty) || 0);
   if (b.notes !== undefined) fields["Notes"] = b.notes;
+  if (b.location !== undefined) fields["Location"] = String(b.location).trim().toUpperCase();
   if (b.status !== undefined && ["In Stock", "In Stream", "Sold"].includes(b.status)) {
     fields["Status"] = b.status;
     if (b.status === "Sold") fields["Sold Date"] = new Date().toISOString().slice(0, 10);

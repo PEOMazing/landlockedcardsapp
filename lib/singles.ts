@@ -10,6 +10,7 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     setName: f["Set Name"] || "",
     number: f["Card Number"] || "",
     cardId: f["Card ID"] || "",
+    location: f["Location"] || "",
     rarity: f["Rarity"] || "",
     variant: f["Variant"] || "",
     condition: f["Condition"] || "Raw",

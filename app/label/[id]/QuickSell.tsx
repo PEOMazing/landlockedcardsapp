@@ -7,7 +7,7 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 export default function QuickSell({ id, isManager, card }: {
   id: string;
   isManager: boolean;
-  card: { name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; status: string; salePrice: number | null };
+  card: { name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; status: string; salePrice: number | null; location?: string };
 }) {
   const [price, setPrice] = useState(card.comp !== null ? String(card.comp) : "");
   const [busy, setBusy] = useState(false);
@@ -40,7 +40,7 @@ export default function QuickSell({ id, isManager, card }: {
             {card.setName}{card.number ? ` #${card.number}` : ""}
             {card.printing && <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px align-middle">{card.printing}</span>}
           </div>
-          <div className="text-dim text-sm">{card.condition}</div>
+          <div className="text-dim text-sm">{card.condition}{card.location ? <span className="ml-2 font-bold text-foil">#{card.location}</span> : null}</div>
         </div>
         {card.comp !== null && (
           <div>

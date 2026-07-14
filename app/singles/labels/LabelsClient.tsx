@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 // Printable QR label sheet on the Avery 5160 grid (30 labels, 2.625in x 1in).
 // Each QR resolves to the card's quick-sell page, so scanning a label at the
 // table opens the record ready to be marked sold.
-type L = { id: string; name: string; setName: string; number: string; condition: string; printing: string; comp: number | null; qr: string };
+type L = { id: string; name: string; setName: string; number: string; condition: string; printing: string; comp: number | null; qr: string; location: string };
 
 const clean = (n: string) => n.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, "");
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -27,7 +27,7 @@ export default function LabelsClient() {
           const s: any = byId.get(id);
           if (!s) continue;
           const qr = await QRCode.toDataURL(`${window.location.origin}/label/${id}`, { margin: 0, width: 96 });
-          out.push({ id, name: clean(s.name), setName: s.setName, number: s.number, condition: s.condition, printing: s.printing, comp: s.comp, qr });
+          out.push({ id, name: clean(s.name), setName: s.setName, number: s.number, condition: s.condition, printing: s.printing, comp: s.comp, qr, location: s.location || "" });
         }
         setLabels(out);
       } catch {
@@ -79,7 +79,7 @@ export default function LabelsClient() {
                 <div style={{ fontSize: "7pt", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {l.setName}{l.number ? ` #${l.number}` : ""}{l.printing ? ` ${l.printing}` : ""}
                 </div>
-                <div style={{ fontSize: "7pt" }}>{l.condition}</div>
+                <div style={{ fontSize: "7pt" }}>{l.condition}{l.location ? <b style={{ marginLeft: 4 }}>#{l.location}</b> : null}</div>
                 {includePrice && <div style={{ fontWeight: 800, fontSize: "12pt" }}>{l.comp !== null ? $(l.comp) : ""}</div>}
               </div>
             </div>
