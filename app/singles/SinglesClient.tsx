@@ -4,6 +4,7 @@ import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
 import DeltaHover from "@/components/DeltaHover";
 import { toast } from "@/components/Toaster";
+import Thumb from "@/components/Thumb";
 import CollectrImport from "@/components/CollectrImport";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -461,7 +462,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
           {shown.map((s) => (
             <div key={s.id} className="card p-3">
               <div className="flex gap-3">
-                {s.image && <img src={s.image} alt="" className="w-12 rounded-sm self-start" loading="lazy" />}
+                {s.image && <Thumb src={s.image} size={48} className="self-start" />}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold leading-tight">{s.name}</div>
                   <div className="text-dim text-xs">
@@ -540,7 +541,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                 <tr key={s.id}>
                   <td className="!font-medium">
                     <span className="inline-flex items-center gap-2">
-                      {s.image && <img src={s.image} alt="" className="w-7 rounded-sm" loading="lazy" />}
+                      {s.image && <Thumb src={s.image} size={28} />}
                       <span>
                         {s.name}
                         <span className="block text-dim text-xs font-normal">

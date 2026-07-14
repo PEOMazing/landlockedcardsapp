@@ -16,7 +16,11 @@ export default function Thumb({
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   if (!src) return null;
-  const big = src.includes("_200w") ? src.replace("_200w", "_400w") : src;
+  const big = src.includes("_200w")
+    ? src.replace("_200w", "_400w")
+    : src.includes("images.pokemontcg.io") && src.endsWith(".png") && !src.endsWith("_hires.png")
+      ? src.replace(".png", "_hires.png")
+      : src;
 
   // keep the preview on screen: flip to the left of the cursor near the right edge
   const previewW = 260;
