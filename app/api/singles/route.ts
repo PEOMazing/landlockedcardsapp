@@ -9,12 +9,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const me = await getMe();
-  if (!me?.isTeam) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me?.isTeam && !me?.isCollector) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
   const params: Record<string, string> = { "sort[0][field]": "Date Added", "sort[0][direction]": "desc" };
+  // team sees the company's cards; a collector sees only their own
+  const ownerClause = me.isTeam ? `{Owner Rec Id} = ''` : `{Owner Rec Id} = '${me.streamer?.id}'`;
+  params.filterByFormula = ownerClause;
   if (status && ["In Stock", "In Stream", "Sold"].includes(status)) {
-    params.filterByFormula = `{Status} = '${status}'`;
+    params.filterByFormula = `AND(${ownerClause}, {Status} = '${status}')`;
   }
   try {
     const rows = await atList(T.singles, params);
@@ -33,13 +36,15 @@ export async function GET(req: Request) {
 // - manual: caller supplies name (and whatever else they know)
 export async function POST(req: Request) {
   const me = await getMe();
-  if (!me?.isTeam) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me?.isTeam && !me?.isCollector) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json();
 
   let fields: Record<string, any> = {
     "Condition": b.condition || "Raw",
     "Qty": Math.max(1, parseInt(b.qty) || 1),
     "Status": "In Stock",
+    // collector cards live in their own walled collection
+    ...(me.isCollector ? { "Owner Rec Id": me.streamer?.id || "" } : {}),
     "Notes": b.notes || "",
     "Added By": me.streamer?.fields?.["Name"] || me.email,
     "Date Added": new Date().toISOString().slice(0, 10),

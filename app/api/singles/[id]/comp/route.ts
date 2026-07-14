@@ -10,6 +10,7 @@ import { toSingle } from "@/lib/singles";
 export async function POST(_: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!me.isTeam && !me.isCollector) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (!isRecId(params.id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
   const rec = await atGet(T.singles, params.id);
   const cardId = rec.fields["Card ID"];

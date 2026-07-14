@@ -7,6 +7,7 @@ export default async function Home() {
   // dashboards first: each role lands on the view built for it
   if (me.isAdmin) redirect("/vendor");
   if (me.isTeam) redirect("/dashboard");
-  // external signups (collectors and vendors) and brand new accounts
+  if (me.isCollector) redirect("/collection");
+  // pending vendors and brand new accounts
   redirect("/welcome");
 }

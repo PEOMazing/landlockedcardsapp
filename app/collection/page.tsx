@@ -28,12 +28,17 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
 export default async function CollectionDashboard() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
-  if (!me.isTeam) redirect("/welcome");
+  if (!me.isTeam && !me.isCollector) redirect("/welcome");
+  const collectorMode = me.isCollector;
 
+  // team sees the company collection with sealed inventory and price history.
+  // A collector sees only their own cards - no company data enters this page.
   const [inventoryRows, singlesRows, snaps] = await Promise.all([
-    atList(T.inventory, { filterByFormula: "{Active} = TRUE()" }),
-    atList(T.singles),
-    getSnapshots(30),
+    collectorMode ? Promise.resolve([]) : atList(T.inventory, { filterByFormula: "{Active} = TRUE()" }),
+    atList(T.singles, {
+      filterByFormula: collectorMode ? `{Owner Rec Id} = '${me.streamer?.id}'` : `{Owner Rec Id} = ''`,
+    }),
+    collectorMode ? Promise.resolve([]) : getSnapshots(30),
   ]);
 
   const singles = singlesRows.map((r) => toSingle(r, me.isAdmin));
@@ -77,7 +82,7 @@ export default async function CollectionDashboard() {
 
   return (
     <>
-      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || "Collector"} />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} isCollector={me.isCollector} name={me.streamer?.fields?.["Name"] || "Collector"} />
       <main className="max-w-6xl mx-auto p-6 space-y-6">
         <div className="flex items-baseline justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Collection</h1>
@@ -85,9 +90,9 @@ export default async function CollectionDashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <ValueDelta snaps={snaps} fallback={collectionValue} label="Collection value" sub={`${$0(singlesValue)} singles - ${$0(sealedMarket)} sealed`} />
+          <ValueDelta snaps={snaps} fallback={collectionValue} label="Collection value" sub={collectorMode ? "singles at live market" : `${$0(singlesValue)} singles - ${$0(sealedMarket)} sealed`} />
           <Tile label="Cards" value={String(cards)} sub={`${slabs.reduce((a: number, s: any) => a + (s.qty || 1), 0)} slabs worth ${$0(slabValue)}`} />
-          <Tile label="Sealed products" value={String(sealedUnits)} sub="boxes, bundles, ETBs, and more" />
+          {!collectorMode && <Tile label="Sealed products" value={String(sealedUnits)} sub="boxes, bundles, ETBs, and more" />}
           {invested !== null ? (
             <Tile
               label="Invested"

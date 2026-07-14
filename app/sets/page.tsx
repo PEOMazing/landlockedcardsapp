@@ -8,10 +8,10 @@ export const dynamic = "force-dynamic";
 export default async function SetsPage() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
-  if (!me.isTeam) redirect("/welcome");
+  if (!me.isTeam && !me.isCollector) redirect("/welcome");
   return (
     <>
-      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || ""} />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} isCollector={me.isCollector} name={me.streamer?.fields?.["Name"] || ""} />
       <SetsClient />
     </>
   );
