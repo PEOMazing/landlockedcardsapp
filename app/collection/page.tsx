@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import Nav from "@/components/Nav";
+import CollectrImport from "@/components/CollectrImport";
+import CollectionRefresh from "@/components/CollectionRefresh";
 import Thumb from "@/components/Thumb";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
@@ -41,7 +43,7 @@ export default async function CollectionDashboard() {
     collectorMode ? Promise.resolve([]) : getSnapshots(30),
   ]);
 
-  const singles = singlesRows.map((r) => toSingle(r, me.isAdmin));
+  const singles = singlesRows.map((r) => toSingle(r, me.isAdmin || collectorMode));
   const held = singles.filter((s: any) => s.status !== "Sold");
 
   let sealedUnits = 0, sealedMarket = 0;
@@ -55,7 +57,7 @@ export default async function CollectionDashboard() {
   const slabs = held.filter((s: any) => GRADED.includes(s.condition));
   const slabValue = slabs.reduce((a: number, s: any) => a + (s.comp || 0) * (s.qty || 1), 0);
   const singlesValue = held.reduce((a: number, s: any) => a + (s.comp || 0) * (s.qty || 1), 0);
-  const invested = me.isAdmin
+  const invested = (me.isAdmin || collectorMode)
     ? held.reduce((a: number, s: any) => a + (s.buy || 0) * (s.qty || 1), 0)
     : null;
 
@@ -87,6 +89,7 @@ export default async function CollectionDashboard() {
         <div className="flex items-baseline justify-between flex-wrap gap-2">
           <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Collection</h1>
           <span className="text-dim text-sm">Everything you hold, at today&apos;s market</span>
+          {collectorMode && <CollectionRefresh />}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

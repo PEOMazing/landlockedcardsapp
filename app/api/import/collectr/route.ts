@@ -18,10 +18,16 @@ type SingleRow = {
 
 export async function POST(req: Request) {
   const me = await getMe();
-  if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // managers and admins import into the business; approved collectors import
+  // into their own collection. Everyone else stays out.
+  if (!me?.isManager && !me?.isCollector) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json();
-  const sealed: SealedRow[] = Array.isArray(b.sealed) ? b.sealed.slice(0, 200) : [];
+  let sealed: SealedRow[] = Array.isArray(b.sealed) ? b.sealed.slice(0, 200) : [];
   const singles: SingleRow[] = Array.isArray(b.singles) ? b.singles.slice(0, 200) : [];
+  // collectors have no sealed inventory yet - counted, reported, not imported
+  const sealedSkipped = me.isCollector ? sealed.length : 0;
+  if (me.isCollector) sealed = [];
+  const ownerRecId = me.isCollector ? me.streamer?.id || "" : "";
 
   let sealedCreated = 0, sealedMerged = 0, singlesCreated = 0;
 
@@ -96,6 +102,8 @@ export async function POST(req: Request) {
           "Added By": addedBy,
           "Date Added": r.dateAdded || today,
         };
+        if ((r as any).printing) fields["Printing"] = (r as any).printing;
+        if (ownerRecId) fields["Owner Rec Id"] = ownerRecId;
         if (r.buy && r.buy > 0) fields["Buy Price"] = r.buy;
         if (r.comp && r.comp > 0) {
           fields["Comp"] = r.comp;
@@ -111,5 +119,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ sealedCreated, sealedMerged, singlesCreated });
+  return NextResponse.json({ sealedCreated, sealedMerged, singlesCreated, sealedSkipped });
 }

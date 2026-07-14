@@ -1,5 +1,6 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { classifyCollectrCsv } from "@/lib/collectr";
 
 // CSV importer for Collectr exports (and similar files). Parses locally,
 // splits rows into sealed vs singles by whether a card number is present,
@@ -10,52 +11,6 @@ type Parsed = {
   skipped: number;
 };
 
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [], cell = "", inQ = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQ) {
-      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (c === '"') inQ = false;
-      else cell += c;
-    } else if (c === '"') inQ = true;
-    else if (c === ",") { row.push(cell); cell = ""; }
-    else if (c === "\n" || c === "\r") {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell); cell = "";
-      if (row.some((x) => x.trim() !== "")) rows.push(row);
-      row = [];
-    } else cell += c;
-  }
-  row.push(cell);
-  if (row.some((x) => x.trim() !== "")) rows.push(row);
-  return rows;
-}
-
-const money = (v: string) => {
-  const n = parseFloat(String(v || "").replace(/[$,]/g, ""));
-  return isNaN(n) || n <= 0 ? undefined : Math.round(n * 100) / 100;
-};
-
-function mapCondition(grade: string, cardCondition: string): string {
-  const g = String(grade || "").toUpperCase();
-  if (g && !g.startsWith("UNGRADED")) {
-    if (g.startsWith("PSA 10")) return "PSA 10";
-    if (g.startsWith("PSA 9")) return "PSA 9";
-    if (g.startsWith("PSA 8")) return "PSA 8";
-    if (g.startsWith("CGC 10")) return "CGC 10";
-    if (g.startsWith("CGC 9.5")) return "CGC 9.5";
-    if (g.startsWith("BGS 9.5")) return "BGS 9.5";
-    return "Other";
-  }
-  const c = String(cardCondition || "").toLowerCase();
-  if (c.includes("light")) return "LP";
-  if (c.includes("moderate")) return "MP";
-  if (c.includes("heav")) return "HP";
-  if (c.includes("damag")) return "DM";
-  return "NM";
-}
 
 export default function CollectrImport({ onDone }: { onDone: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -64,56 +19,26 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
   const [progress, setProgress] = useState("");
   const [summary, setSummary] = useState("");
   const [err, setErr] = useState("");
+  const [showStart, setShowStart] = useState(false);
+  const [code, setCode] = useState<{ code: string; email: string } | null>(null);
+  function loadCode() {
+    if (code) return;
+    fetch("/api/import/code").then((r) => r.json()).then((d) => d.code && setCode(d)).catch(() => {});
+  }
+  function copy(text: string) {
+    navigator.clipboard?.writeText(text);
+  }
 
   function handleFile(f: File) {
     setErr(""); setSummary(""); setParsed(null);
     const reader = new FileReader();
     reader.onload = () => {
-      const grid = parseCsv(String(reader.result || ""));
-      if (grid.length < 2) { setErr("No data rows found in that file"); return; }
-      const header = grid[0].map((h) => h.trim());
-      const col = (want: string[]) => header.findIndex((h) => want.some((w) => h.toLowerCase().startsWith(w)));
-      const iName = col(["product name", "card name", "name"]);
-      const iQty = col(["quantity", "qty"]);
-      if (iName < 0) { setErr("Could not find a Product Name column"); return; }
-      const iPortfolio = col(["portfolio"]);
-      const iSet = col(["set"]);
-      const iNumber = col(["card number", "number"]);
-      const iRarity = col(["rarity"]);
-      const iGrade = col(["grade"]);
-      const iCond = col(["card condition", "condition"]);
-      const iBuy = col(["average cost paid", "cost paid", "buy price", "cost", "price paid"]);
-      const iMarket = col(["market price", "market value"]);
-      const iNotes = col(["notes"]);
-      const iAdded = col(["date added"]);
-
-      const portfolios: Parsed["portfolios"] = {};
-      let skipped = 0;
-      for (const r of grid.slice(1)) {
-        const name = (r[iName] || "").trim();
-        if (!name) { skipped++; continue; }
-        const pf = iPortfolio >= 0 ? (r[iPortfolio] || "").trim() || "default" : "default";
-        if (!portfolios[pf]) portfolios[pf] = { sealed: [], singles: [] };
-        const qty = Math.max(1, parseInt(r[iQty]) || 1);
-        const buy = iBuy >= 0 ? money(r[iBuy]) : undefined;
-        const market = iMarket >= 0 ? money(r[iMarket]) : undefined;
-        const number = iNumber >= 0 ? (r[iNumber] || "").trim() : "";
-        if (number) {
-          portfolios[pf].singles.push({
-            name, qty, buy, comp: market, number,
-            setName: iSet >= 0 ? (r[iSet] || "").trim() : "",
-            rarity: iRarity >= 0 ? (r[iRarity] || "").trim() : "",
-            condition: mapCondition(iGrade >= 0 ? r[iGrade] : "", iCond >= 0 ? r[iCond] : ""),
-            notes: iNotes >= 0 ? (r[iNotes] || "").trim() : "",
-            dateAdded: iAdded >= 0 ? (r[iAdded] || "").trim() : "",
-          });
-        } else {
-          portfolios[pf].sealed.push({ name, qty, buy, market, dateAdded: iAdded >= 0 ? (r[iAdded] || "").trim() : "" });
-        }
-      }
-      setParsed({ portfolios, skipped });
+      const c = classifyCollectrCsv(String(reader.result || ""));
+      if (Object.keys(c.portfolios).length === 0) { setErr("No importable rows found - is this a Collectr export?"); return; }
+      setParsed({ portfolios: c.portfolios, skipped: c.skipped + c.nonPokemon });
+      if (c.nonPokemon > 0) setSummary(`${c.nonPokemon} non-Pokemon rows set aside - One Piece support is coming`);
       const init: Record<string, boolean> = {};
-      for (const k of Object.keys(portfolios)) init[k] = true;
+      for (const k of Object.keys(c.portfolios)) init[k] = true;
       setChecked(init);
     };
     reader.readAsText(f);
@@ -129,7 +54,7 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
     }
     if (sealed.length + singles.length === 0) { setErr("Nothing selected"); return; }
     setErr("");
-    let sc = 0, sm = 0, sg = 0;
+    let sc = 0, sm = 0, sg = 0, sk = 0;
     const CHUNK = 60;
     const total = Math.ceil(sealed.length / CHUNK) + Math.ceil(singles.length / CHUNK);
     let done = 0;
@@ -141,14 +66,14 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
       });
       if (!r.ok) throw new Error((await r.json()).error || "Import failed");
       const d = await r.json();
-      sc += d.sealedCreated; sm += d.sealedMerged; sg += d.singlesCreated;
+      sc += d.sealedCreated; sm += d.sealedMerged; sg += d.singlesCreated; sk += d.sealedSkipped || 0;
       done++;
       setProgress(`Importing... ${done}/${total}`);
     };
     try {
       for (let i = 0; i < sealed.length; i += CHUNK) await send({ sealed: sealed.slice(i, i + CHUNK) });
       for (let i = 0; i < singles.length; i += CHUNK) await send({ singles: singles.slice(i, i + CHUNK) });
-      setSummary(`Done: ${sc} sealed created, ${sm} sealed merged into existing, ${sg} singles created.`);
+      setSummary(`Done: ${sg} cards imported${sc + sm > 0 ? `, ${sc} sealed created, ${sm} sealed merged` : ""}${sk > 0 ? `. ${sk} sealed products set aside - collector sealed tracking is coming` : ""}.`);
       setParsed(null);
       setProgress("");
       onDone();
@@ -163,10 +88,44 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
         ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
         onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
       />
-      <button className="btn-ghost" onClick={() => fileRef.current?.click()}>Import CSV</button>
+      <button className="btn-ghost" onClick={() => { setShowStart(true); loadCode(); }}>Import from Collectr</button>
       {err && <span className="text-bad text-xs ml-2">{err}</span>}
       {summary && <span className="text-win text-xs ml-2">{summary}</span>}
       {progress && <span className="text-dim text-xs ml-2">{progress}</span>}
+
+      {showStart && !parsed && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowStart(false)}>
+          <div className="card p-5 space-y-4 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h2 className="label">Import your Collectr portfolio</h2>
+            <div className="rounded-lg border border-foil/40 p-3 space-y-2">
+              <div className="font-semibold text-sm">Easiest on your phone: email it</div>
+              <ol className="text-dim text-xs space-y-1 list-decimal list-inside">
+                <li>In Collectr, open your portfolio and choose Export</li>
+                <li>Send the export email to:</li>
+              </ol>
+              <button className="w-full text-left font-mono text-sm border border-edge rounded-lg px-3 py-2 hover:border-foil" onClick={() => copy("import@cardquarters.com")}>
+                import@cardquarters.com <span className="text-dim text-[10px] float-right mt-0.5">tap to copy</span>
+              </button>
+              <p className="text-dim text-xs">
+                Send it from <b>{code?.email || "your account email"}</b> and it imports automatically.
+                Sending from a different email? Put your code in the subject:
+              </p>
+              <button className="w-full text-left font-mono text-sm border border-edge rounded-lg px-3 py-2 hover:border-foil" onClick={() => code && copy(code.code)}>
+                {code?.code || "..."} <span className="text-dim text-[10px] float-right mt-0.5">tap to copy</span>
+              </button>
+              <p className="text-dim text-[11px]">Your cards appear in your collection within a couple of minutes of sending.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-px bg-edge flex-1" />
+              <span className="text-dim text-xs">or</span>
+              <div className="h-px bg-edge flex-1" />
+            </div>
+            <button className="btn-ghost w-full" onClick={() => { setShowStart(false); fileRef.current?.click(); }}>
+              Upload the CSV file instead
+            </button>
+          </div>
+        </div>
+      )}
 
       {parsed && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setParsed(null)}>

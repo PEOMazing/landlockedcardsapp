@@ -38,13 +38,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     fields["Comp Source"] = b.compSource || "manual";
     fields["Comp Date"] = new Date().toISOString().slice(0, 10);
   }
-  // buy price is admin-only, matching the sealed inventory
+  // buy price: admin for company cards, the owner for their own collection
   if (b.buyPrice !== undefined) {
-    if (!me.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    if (!me.isAdmin && !(ownsIt && me.isCollector)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     fields["Buy Price"] = Math.max(0, parseFloat(b.buyPrice) || 0);
   }
   const rec = await atUpdate(T.singles, params.id, fields);
-  return NextResponse.json({ single: toSingle(rec, me.isAdmin) });
+  return NextResponse.json({ single: toSingle(rec, me.isAdmin || me.isCollector) });
 }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {

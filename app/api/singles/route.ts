@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   }
   try {
     const rows = await atList(T.singles, params);
-    return NextResponse.json({ singles: rows.map((r) => toSingle(r, me.isAdmin)) });
+    return NextResponse.json({ singles: rows.map((r) => toSingle(r, me.isAdmin || me.isCollector)) });
   } catch (e: any) {
     // table missing means setup has not been run yet
     if (String(e.message).includes("404") || String(e.message).includes("TABLE_NOT_FOUND")) {
