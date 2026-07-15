@@ -12,6 +12,7 @@ import CollectrImport from "@/components/CollectrImport";
 import EditCell from "@/components/EditCell";
 import DeltaHover from "@/components/DeltaHover";
 import { toast } from "@/components/Toaster";
+import { msrpForName } from "@/lib/msrp";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function csvEscape(v: any): string {
@@ -277,6 +278,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                   <span className="inline-flex items-center gap-1">
                     {num(i.id, "marketPrice", i.marketPrice)}
                     <DeltaHover current={i.marketPrice || null} entry={i.entryMarket ?? null} date={i.dateAdded} />
+                    <MsrpTag name={i.name} market={i.marketPrice} />
                   </span>
                 </div>
                 <div>
@@ -322,6 +324,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                   <td>
                     <span className="inline-flex items-center gap-1.5">
                       {num(i.id, "marketPrice", i.marketPrice)}
+                      <MsrpTag name={i.name} market={i.marketPrice} />
                       <DeltaHover current={i.marketPrice || null} entry={i.entryMarket ?? null} date={i.dateAdded} />
                     </span>
                   </td>
@@ -445,4 +448,19 @@ function PriceAge({ date }: { date: string | null }) {
   const label = days <= 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`;
   const cls = days > 14 ? "text-givvy" : "text-dim";
   return <span className={`text-xs ${cls}`}>{label}</span>;
+}
+
+// MSRP context under the market price: what the product retails for, and how
+// far above or below retail the market sits. Silent when the category is not
+// confidently matched - never guess a retail price.
+function MsrpTag({ name, market }: { name: string; market: number }) {
+  const hit = msrpForName(name || "");
+  if (!hit) return null;
+  const x = market > 0 ? market / hit.msrp : null;
+  const cls = x === null ? "text-dim" : x >= 1.5 ? "text-win" : x < 0.95 ? "text-bad" : "text-dim";
+  return (
+    <div className="text-[10px] text-dim whitespace-nowrap">
+      MSRP ${hit.msrp.toFixed(2)}{x !== null && <span className={cls}> - {x.toFixed(1)}x</span>}
+    </div>
+  );
 }
