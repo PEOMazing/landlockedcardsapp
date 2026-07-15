@@ -41,6 +41,7 @@ const GROUPS: Group[] = [
     title: "Sell",
     items: [
       { href: "/singles", label: "Singles", icon: I.singles },
+      { href: "/graded", label: "Graded", icon: I.singles },
       { href: "/quote", label: "Quote", icon: I.pay, manager: true },
       { href: "/admin/streams", label: "All Streams", icon: I.streams, admin: true },
     ],

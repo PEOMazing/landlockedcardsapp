@@ -35,12 +35,11 @@ function csvEscape(v: any): string {
   return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x;
 }
 
-export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean; isManager: boolean }) {
+export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { isAdmin: boolean; isManager: boolean; mode?: "raw" | "graded" }) {
   const [singles, setSingles] = useState<SingleT[]>([]);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [setupMsg, setSetupMsg] = useState("");
   const [statusFilter, setStatusFilter] = useState("In Stock");
-  const [gradeView, setGradeView] = useState<"All" | "Raw" | "Graded">("All");
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
   const [qrFor, setQrFor] = useState<SingleT | null>(null);
@@ -183,8 +182,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
 
   const shown = useMemo(() => {
     let list = statusFilter === "All" ? singles : singles.filter((s) => s.status === statusFilter);
-    if (gradeView === "Graded") list = list.filter((s) => GRADED.includes(s.condition));
-    if (gradeView === "Raw") list = list.filter((s) => !GRADED.includes(s.condition));
+    list = mode === "graded" ? list.filter((s) => GRADED.includes(s.condition)) : list.filter((s) => !GRADED.includes(s.condition));
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
     // token search: every word must match somewhere, so "umbreon prismatic"
     // finds Umbreons in Prismatic Evolutions
@@ -201,7 +199,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     else if (sortBy === "price-asc") list.sort((a, b) => (a.comp || 0) - (b.comp || 0));
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortBy, tableQ, gradeView]);
+  }, [singles, statusFilter, setFilter, sortBy, tableQ, mode]);
 
   const stockValue = singles.filter((s) => s.status === "In Stock").reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0);
   const soldTotal = singles.filter((s) => s.status === "Sold").reduce((a, s) => a + (s.salePrice || 0), 0);
@@ -277,7 +275,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
       {/* Add a card */}
       <section className="card p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="label">Add a card</h2>
+          <h2 className="label">{mode === "graded" ? "Add a graded card" : "Add a card"}</h2>
           <button className="text-foil text-xs hover:underline" onClick={() => { setManual(!manual); setPicked(null); setResults([]); }}>
             {manual ? "Back to card search" : "Card not found? Add manually"}
           </button>
@@ -288,7 +286,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
             <div>
               <label className="label">Condition first</label>
               <div className="flex gap-1 flex-wrap mt-1">
-                {CONDITIONS.map((c) => (
+                {(mode === "graded" ? CONDITIONS.filter((c) => GRADED.includes(c)) : CONDITIONS.filter((c) => !GRADED.includes(c))).map((c) => (
                   <button
                     key={c}
                     type="button"
@@ -367,7 +365,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
               <div>
                 <label className="label">Condition</label>
                 <select className="input mt-1" value={draft.condition} onChange={(e) => setDraft({ ...draft, condition: e.target.value })}>
-                  {CONDITIONS.map((c) => <option key={c}>{c}</option>)}
+                  {(mode === "graded" ? CONDITIONS.filter((c) => GRADED.includes(c)) : CONDITIONS.filter((c) => !GRADED.includes(c))).map((c) => <option key={c}>{c}</option>)}
                 </select>
               <a href="/conditions" target="_blank" className="text-dim text-[11px] hover:text-foil block mt-0.5">condition guide</a>
               </div>
@@ -431,7 +429,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
       {/* Inventory table */}
       <section className="card p-5 space-y-3">
         <div className="flex items-center gap-3 flex-wrap">
-          <h2 className="label">Cards</h2>
+          <h2 className="label">{mode === "graded" ? "Graded cards" : "Cards"}</h2>
           <div className="flex gap-1">
             {["In Stock", "In Stream", "Sold", "All"].map((s) => (
               <button
@@ -442,19 +440,6 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                 onClick={() => setStatusFilter(s)}
               >
                 {s}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-1">
-            {(["All", "Raw", "Graded"] as const).map((g) => (
-              <button
-                key={g}
-                className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
-                  gradeView === g ? "border-win text-win bg-win/10" : "border-edge text-dim hover:text-body"
-                }`}
-                onClick={() => setGradeView(g)}
-              >
-                {g === "Graded" ? `Graded (${singles.filter((x) => GRADED.includes(x.condition) && (statusFilter === "All" || x.status === statusFilter)).length})` : g}
               </button>
             ))}
           </div>
