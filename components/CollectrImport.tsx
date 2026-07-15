@@ -101,19 +101,19 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
               <div className="font-semibold text-sm">Easiest on your phone: email it</div>
               <ol className="text-dim text-xs space-y-1 list-decimal list-inside">
                 <li>In Collectr, open your portfolio and choose Export</li>
-                <li>Send the export email to:</li>
+                <li>Email the export to the address below</li>
+                <li>Put your personal code in the subject line</li>
               </ol>
               <button className="w-full text-left font-mono text-sm border border-edge rounded-lg px-3 py-2 hover:border-foil" onClick={() => copy("import@cardquarters.com")}>
                 import@cardquarters.com <span className="text-dim text-[10px] float-right mt-0.5">tap to copy</span>
               </button>
               <p className="text-dim text-xs">
-                Send it from <b>{code?.email || "your account email"}</b> and it imports automatically.
-                Sending from a different email? Put your code in the subject:
+                Your code links the email to your account - the import will not run without it:
               </p>
               <button className="w-full text-left font-mono text-sm border border-edge rounded-lg px-3 py-2 hover:border-foil" onClick={() => code && copy(code.code)}>
                 {code?.code || "..."} <span className="text-dim text-[10px] float-right mt-0.5">tap to copy</span>
               </button>
-              <p className="text-dim text-[11px]">Your cards appear in your collection within a couple of minutes of sending.</p>
+              <p className="text-dim text-[11px]">Subject example: &quot;My portfolio {"{"}code{"}"}&quot; - anywhere in the subject works. Cards appear in your collection within a couple of minutes.</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="h-px bg-edge flex-1" />

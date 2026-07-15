@@ -36,13 +36,13 @@ export async function POST(req: Request) {
   );
   if (!csvAtt) return ok("no csv attachment", { from });
 
-  // match a profile: sender email, then import code in the subject
-  const rows = await atList(T.streamers).catch(() => []);
+  // the import code in the subject is the only matcher. Sender addresses can
+  // be spoofed, so they are logged but never trusted for account matching.
   const codeMatch = subject.toUpperCase().match(/CQ-[A-Z0-9]{4}/);
-  let profile =
-    rows.find((r) => String(r.fields["Email"] || "").toLowerCase().trim() === from && from !== "") ||
-    (codeMatch ? rows.find((r) => String(r.fields["Import Code"] || "").toUpperCase() === codeMatch[0]) : undefined);
-  if (!profile) return ok("no matching profile", { from, subjectHadCode: !!codeMatch });
+  if (!codeMatch) return ok("no import code in subject", { from });
+  const rows = await atList(T.streamers).catch(() => []);
+  const profile = rows.find((r) => String(r.fields["Import Code"] || "").toUpperCase() === codeMatch[0]);
+  if (!profile) return ok("unknown import code", { from, code: codeMatch[0] });
 
   const role = profile.fields["Role"]?.name || profile.fields["Role"] || "";
   const status = profile.fields["Signup Status"]?.name || profile.fields["Signup Status"] || "";
