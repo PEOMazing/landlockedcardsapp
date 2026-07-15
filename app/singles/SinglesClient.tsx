@@ -17,7 +17,7 @@ const CONDITION_LABELS: Record<string, string> = {
 };
 
 type SingleT = {
-  id: string; name: string; setName: string; number: string; cardId: string; location?: string;
+  id: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
   rarity: string; variant: string; condition: string;
   comp: number | null; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
@@ -53,7 +53,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<SearchCard | null>(null);
   const [manual, setManual] = useState(false);
-  const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "" });
+  const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "", language: "English" });
   const debounce = useRef<any>(null);
 
   async function load() {
@@ -96,6 +96,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     setBusy("add"); setErr("");
     const body: any = {
       condition: draft.condition,
+      ...(draft.language !== "English" ? { language: draft.language } : {}),
       qty: parseInt(draft.qty) || 1,
       notes: draft.notes,
       ...(draft.printing.trim() ? { printing: draft.printing.trim() } : {}),
@@ -120,7 +121,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     if (!r.ok) setErr(d.error || "Could not add card");
     else {
       setPicked(null); setManual(false); setQ(""); setResults([]);
-      setDraft({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "" });
+      setDraft({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "", language: draft.language });
       await load();
     }
     setBusy("");
@@ -189,7 +190,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     const tokens = tableQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (tokens.length) {
       list = list.filter((s) => {
-        const hay = `${s.name} ${s.setName} ${s.number} ${s.condition} ${s.rarity}`.toLowerCase();
+        const hay = `${s.name} ${s.setName} ${s.number} ${s.condition} ${s.rarity} ${s.language || ""}`.toLowerCase();
         return tokens.every((t) => hay.includes(t));
       });
     }
@@ -240,7 +241,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   }
 
   const ebayLink = (s: SingleT) =>
-    `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${s.name} ${s.setName} ${s.number} ${s.condition !== "Raw" ? s.condition : ""}`.trim())}&LH_Sold=1&LH_Complete=1`;
+    `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(`${s.name} ${s.setName} ${s.number} ${s.condition !== "Raw" ? s.condition : ""} ${s.language && s.language !== "English" ? s.language : ""}`.replace(/\s+/g, " ").trim())}&LH_Sold=1&LH_Complete=1`;
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
@@ -305,6 +306,20 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   ? "Graded card: comp is manual, use the eBay sold link after adding."
                   : "Comp pulls the TCGplayer market price" + (draft.condition !== "NM" ? " with a condition discount" : "") + "."}
               </p>
+              <div className="flex gap-1 mt-2 flex-wrap items-center">
+                <span className="label !text-[10px]">Language</span>
+                {["English", "Japanese", "Chinese", "Korean", "Spanish", "Other"].map((lg) => (
+                  <button
+                    key={lg}
+                    className={`rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${
+                      draft.language === lg ? "border-givvy text-givvy bg-givvy/10" : "border-edge text-dim hover:text-body"
+                    }`}
+                    onClick={() => setDraft({ ...draft, language: lg })}
+                  >
+                    {lg}
+                  </button>
+                ))}
+              </div>
             </div>
             <input
               className="input"
@@ -496,6 +511,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   <div className="text-dim text-xs">
                     {s.setName}{s.number ? ` #${s.number}` : ""}
                     {s.printing && <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>}
+                    {s.language && s.language !== "English" && <span className="ml-1.5 text-[10px] text-givvy border border-givvy/40 rounded px-1 py-px">{s.language === "Japanese" ? "JP" : s.language === "Chinese" ? "CN" : s.language === "Korean" ? "KR" : s.language === "Spanish" ? "ES" : s.language}</span>}
                   </div>
                   <div className="flex gap-1.5 mt-1 flex-wrap">
                     <span className="text-[10px] border border-edge rounded-full px-2 py-0.5 text-dim">{s.condition}</span>
@@ -577,6 +593,9 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                           {s.setName}{s.number ? ` #${s.number}` : ""}{s.rarity ? ` - ${s.rarity}` : ""}
                           {s.printing && (
                             <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>
+                          )}
+                          {s.language && s.language !== "English" && (
+                            <span className="ml-1.5 text-[10px] text-givvy border border-givvy/40 rounded px-1 py-px">{s.language === "Japanese" ? "JP" : s.language === "Chinese" ? "CN" : s.language === "Korean" ? "KR" : s.language === "Spanish" ? "ES" : s.language}</span>
                           )}
                         </span>
                       </span>
@@ -661,6 +680,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                             {busy === s.id ? "Refreshing..." : "Refresh comp"}
                           </button>
                         )}
+                        <button
+                          className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50"
+                          onClick={async () => {
+                            setMenuFor(null);
+                            const next = s.language === "Japanese" ? "English" : "Japanese";
+                            await fetch(`/api/singles/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ language: next }) });
+                            await load();
+                          }}
+                        >
+                          Mark {s.language === "Japanese" ? "English" : "Japanese"}
+                        </button>
                         <button
                           className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50"
                           onClick={async () => {

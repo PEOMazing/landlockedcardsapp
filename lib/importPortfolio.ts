@@ -67,6 +67,10 @@ export async function importPortfolio(opts: {
           "Card Number": r.number || "",
           "Rarity": r.rarity || "",
           "Condition": r.condition || "NM",
+      "Language": /japan|\bjpn\b|\bjp\b/i.test(`${r.name} ${r.setName || ""}`) ? "Japanese" :
+        /chinese|\bcn\b/i.test(`${r.name} ${r.setName || ""}`) ? "Chinese" :
+        /korean|\bkr\b/i.test(`${r.name} ${r.setName || ""}`) ? "Korean" :
+        /spanish|\bes\b/i.test(`${r.name} ${r.setName || ""}`) ? "Spanish" : "English",
           "Qty": Math.max(1, r.qty || 1),
           "Status": "In Stock",
           "Notes": r.notes || "",

@@ -11,6 +11,7 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     number: f["Card Number"] || "",
     cardId: f["Card ID"] || "",
     location: f["Location"] || "",
+    language: f["Language"] || "English",
     rarity: f["Rarity"] || "",
     variant: f["Variant"] || "",
     condition: f["Condition"] || "Raw",
