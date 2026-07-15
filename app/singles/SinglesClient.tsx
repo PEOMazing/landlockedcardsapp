@@ -1,4 +1,5 @@
 "use client";
+import QRCode from "qrcode";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
@@ -41,6 +42,8 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
   const [statusFilter, setStatusFilter] = useState("In Stock");
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
+  const [qrFor, setQrFor] = useState<SingleT | null>(null);
+  const [qrData, setQrData] = useState("");
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [err, setErr] = useState("");
 
@@ -657,6 +660,16 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                             {busy === s.id ? "Refreshing..." : "Refresh comp"}
                           </button>
                         )}
+                        <button
+                          className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50"
+                          onClick={async () => {
+                            setMenuFor(null);
+                            setQrFor(s);
+                            setQrData(await QRCode.toDataURL(`${window.location.origin}/label/${s.id}`, { margin: 1, width: 280 }));
+                          }}
+                        >
+                          View QR code
+                        </button>
                         <a
                           className="block px-3 py-1.5 text-sm text-body hover:bg-edge/50"
                           target="_blank" rel="noreferrer" href={ebayLink(s)}
@@ -688,6 +701,25 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
           the card flips to Sold here automatically. Removing it from the stream puts it back In Stock.
         </p>
       </section>
+      {qrFor && qrData && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setQrFor(null)}>
+          <div className="card p-6 max-w-sm w-full text-center space-y-3" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold">{qrFor.name.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, "")}</h3>
+            <p className="text-dim text-xs">{qrFor.setName} #{qrFor.number} - {qrFor.condition}{qrFor.location ? ` - ${qrFor.location}` : ""}</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qrData} alt="QR code" className="mx-auto rounded bg-white p-2" style={{ width: 280, height: 280 }} />
+            <p className="text-dim text-xs">
+              This code is permanent for this card - it always resolves to the same quick-sell page,
+              so reprints and old stickers keep working. Scan it to open the card.
+            </p>
+            <div className="flex gap-2 justify-center flex-wrap">
+              <a className="btn-ghost !py-1.5 text-sm" href={qrData} download={"qr-" + qrFor.id + ".png"}>Download PNG</a>
+              <a className="btn-ghost !py-1.5 text-sm" href={"/label/" + qrFor.id} target="_blank" rel="noreferrer">Open quick-sell {"\u2197"}</a>
+              <button className="btn-ghost !py-1.5 text-sm" onClick={() => setQrFor(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
