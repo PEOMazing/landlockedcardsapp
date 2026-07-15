@@ -44,21 +44,61 @@ export default function StreamsAdminClient({
     router.refresh();
   }
 
+  const [editing, setEditing] = useState<string>("");
+  const [eTitle, setETitle] = useState("");
+  const [eDate, setEDate] = useState("");
+  async function saveMeta(id: string) {
+    setBusy(id);
+    const r = await fetch(`/api/streams/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: eTitle.trim(), date: eDate }),
+    });
+    setBusy("");
+    if (r.ok) { setEditing(""); router.refresh(); }
+  }
+  // titles carry the date already, and the date column repeats it - show the clean name
+  const displayTitle = (r: StreamRowT) => r.title.replace(/^\d{4}-\d{2}-\d{2}\s*-\s*/, "");
+
   return (
     <>
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr>
-              <th>Date</th><th>Title</th><th>Streamer</th><th>Manager</th>
+              <th>Date</th><th>Title</th><th>Streamer</th><th>Packaging</th>
               <th>Status</th><th>After fees</th><th>Hours</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
             </tr>
           </thead>
           <tbody>
             {streams.map((r) => (
               <tr key={r.id}>
-                <td>{r.date}</td>
-                <td className="!font-medium">{r.title}</td>
+                {editing === r.id ? (
+                  <>
+                    <td><input type="date" className="input !py-1 text-sm" value={eDate} onChange={(e) => setEDate(e.target.value)} /></td>
+                    <td>
+                      <span className="flex items-center gap-2">
+                        <input className="input !py-1 text-sm w-56" value={eTitle} onChange={(e) => setETitle(e.target.value)} />
+                        <button className="text-win text-xs hover:underline disabled:opacity-40" disabled={busy === r.id || !eTitle.trim() || !eDate} onClick={() => saveMeta(r.id)}>save</button>
+                        <button className="text-dim text-xs hover:underline" onClick={() => setEditing("")}>cancel</button>
+                      </span>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td>{r.date}</td>
+                    <td className="!font-medium">
+                      {displayTitle(r)}
+                      <button
+                        className="text-dim hover:text-foil text-xs ml-2"
+                        title="Edit the title or move the date"
+                        onClick={() => { setEditing(r.id); setETitle(displayTitle(r)); setEDate(r.date); }}
+                      >
+                        edit
+                      </button>
+                    </td>
+                  </>
+                )}
                 <td>{r.streamer || "-"}</td>
                 <td className="text-dim">{r.manager || "-"}</td>
                 <td>

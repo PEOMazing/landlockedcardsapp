@@ -336,7 +336,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             {stream.streamType || "Surprise Set"}
           </span>
           {stream.managerName && (
-            <span className="text-dim text-sm ml-3">Managed by {stream.managerName}</span>
+            <span className="text-dim text-sm ml-3">Packaging: {stream.managerName}</span>
           )}
         </div>
         <CopyShowSet lines={lines.map((l) => ({ qty: l.qty, name: l.name }))} />
@@ -501,7 +501,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         canAssign={canManage}
         people={[
           stream.streamerRecId ? { id: stream.streamerRecId, name: stream.streamerName || "Streamer" } : null,
-          stream.managerRecId ? { id: stream.managerRecId, name: (stream.managerName || "Manager") + " (manager)" } : null,
+          stream.managerRecId ? { id: stream.managerRecId, name: (stream.managerName || "Packaging") + " (packaging)" } : null,
         ].filter(Boolean) as { id: string; name: string }[]}
       />
 
