@@ -25,6 +25,7 @@ export default function StreamEditor({ id }: { id: string }) {
   const [saved, setSaved] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [showPaste, setShowPaste] = useState(false);
+  const [setSort, setSetSort] = useState<"board" | "name" | "price">("board");
   const [pasteText, setPasteText] = useState("");
   const [pasteMsg, setPasteMsg] = useState("");
   const [returnArmed, setReturnArmed] = useState(false);
@@ -463,7 +464,17 @@ export default function StreamEditor({ id }: { id: string }) {
       {/* Show set builder */}
       <section className="card p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="label">Show set</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="label">Show set</h2>
+            <div className="flex gap-1 text-[11px]">
+              {([["board", "Board"], ["name", "A-Z"], ["price", "Price"]] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setSetSort(k)}
+                  className={`px-2 py-0.5 rounded border ${setSort === k ? "border-foil text-foil" : "border-edge text-dim hover:text-paper"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           {stream.streamType !== "Single Stream" && (
             <button className="text-foil text-xs hover:underline" onClick={() => setShowPaste(!showPaste)}>
               {showPaste ? "Hide paste" : "Paste a list"}
@@ -504,7 +515,9 @@ export default function StreamEditor({ id }: { id: string }) {
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => (
+              {(setSort === "board" ? lines : [...lines].sort((a, b) =>
+                setSort === "name" ? a.name.localeCompare(b.name) : (b.market || 0) - (a.market || 0)
+              )).map((l) => (
                 <tr key={l.id} className={l.isGiveaway ? "bg-givvy/5" : ""}>
                   <td className="!font-medium">
                     {l.image && <Thumb src={l.image} size={28} className="mr-2" />}
