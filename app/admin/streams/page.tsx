@@ -62,7 +62,6 @@ export default async function AllStreamsPage() {
       hours: r.fields["Hours Streamed"] ?? null,
       spots: r.fields["Spots Sold"] ?? null,
       payroll: afterFees === null && payroll === 0 ? null : payroll,
-      commissionEligible: profitMarket === null ? null : profitMarket - packing > 0,
       netProfit: profitMarket === null ? null : profitMarket - hourlyEst - packing,
     };
   };

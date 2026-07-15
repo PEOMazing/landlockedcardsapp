@@ -8,7 +8,7 @@ const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractio
 export type StreamRowT = {
   id: string; date: string; title: string; streamer: string; manager: string;
   status: string; afterFees: number | null; hours: number | null; spots: number | null;
-  payroll: number | null; commissionEligible: boolean | null; netProfit: number | null;
+  payroll: number | null; netProfit: number | null;
 };
 export type DeletedRowT = StreamRowT & { deletedAt: string; hoursLeft: number };
 
@@ -51,7 +51,7 @@ export default function StreamsAdminClient({
           <thead>
             <tr>
               <th>Date</th><th>Title</th><th>Streamer</th><th>Manager</th>
-              <th>Status</th><th>After fees</th><th>Hours</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Profit over market minus packing is positive">Comm?</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
+              <th>Status</th><th>After fees</th><th>Hours</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -67,7 +67,6 @@ export default function StreamsAdminClient({
                 <td>{r.afterFees !== null ? $(r.afterFees) : "-"}</td>
                 <td>{r.hours !== null ? r.hours.toFixed(1) : "-"}</td>
                 <td>{r.payroll !== null && r.payroll > 0 ? $(r.payroll) : "-"}</td>
-                <td>{r.commissionEligible === null ? "-" : r.commissionEligible ? <span className="text-win">Y</span> : <span className="text-bad">N</span>}</td>
                 <td>{r.netProfit === null ? "-" : <span className={r.netProfit >= 0 ? "text-win" : "text-bad"}>{$(r.netProfit)}</span>}</td>
                 <td className="text-right whitespace-nowrap">
                   <Link className="text-foil hover:underline" href={`/streams/${r.id}`}>Open</Link>
