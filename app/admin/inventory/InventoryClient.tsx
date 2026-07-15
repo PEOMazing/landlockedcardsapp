@@ -203,7 +203,8 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
           <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => refreshPrices()}>
             Refresh all prices
           </button>
-          <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
+          <a className="btn-ghost !py-1.5 text-xs" href="/msrp" target="_blank">MSRP guide</a>
+            <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
           <CollectrImport onDone={load} />
         </div>
       </div>
