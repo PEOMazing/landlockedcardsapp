@@ -25,6 +25,9 @@ export default function StreamEditor({ id }: { id: string }) {
   const [saved, setSaved] = useState(false);
   const [loadErr, setLoadErr] = useState("");
   const [showPaste, setShowPaste] = useState(false);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [metaTitle, setMetaTitle] = useState("");
+  const [metaDate, setMetaDate] = useState("");
   const [setSort, setSetSort] = useState<"board" | "name" | "price">("board");
   const [pasteText, setPasteText] = useState("");
   const [pasteMsg, setPasteMsg] = useState("");
@@ -265,9 +268,38 @@ export default function StreamEditor({ id }: { id: string }) {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <Link href="/dashboard" className="text-dim text-sm hover:text-body">&larr; My streams</Link>
-          <h1 className="text-2xl font-bold mt-1" style={{ fontFamily: "var(--font-display)" }}>
-            {stream.title}
-          </h1>
+          {editingMeta ? (
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <input className="input !py-1.5 text-lg font-bold w-72" value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} />
+              <input type="date" className="input !py-1.5" value={metaDate} onChange={(e) => setMetaDate(e.target.value)} />
+              <button
+                className="btn-win !py-1.5 text-sm disabled:opacity-40"
+                disabled={busy || !metaTitle.trim() || !metaDate}
+                onClick={async () => {
+                  setBusy(true);
+                  const r = await fetch(`/api/streams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: metaTitle.trim(), date: metaDate }) });
+                  setBusy(false);
+                  if (r.ok) { setEditingMeta(false); await load(); }
+                }}
+              >
+                Save
+              </button>
+              <button className="btn-ghost !py-1.5 text-sm" onClick={() => setEditingMeta(false)}>Cancel</button>
+            </div>
+          ) : (
+            <h1 className="text-2xl font-bold mt-1" style={{ fontFamily: "var(--font-display)" }}>
+              {stream.title}
+              {canManage && (
+                <button
+                  className="text-dim hover:text-foil text-sm ml-2 align-middle"
+                  title="Rename or move this show"
+                  onClick={() => { setMetaTitle(stream.title || ""); setMetaDate(stream.date || ""); setEditingMeta(true); }}
+                >
+                  edit
+                </button>
+              )}
+            </h1>
+          )}
           <span className={`text-sm ${stream.status === "Complete" ? "text-win" : "text-foil"}`}>
             {stream.status}
           </span>

@@ -148,6 +148,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json();
   const fields: Record<string, any> = {};
+  // rename or move a show - managers only
+  if (b.title !== undefined || b.date !== undefined) {
+    if (!me.isManager && !me.isAdmin) return NextResponse.json({ error: "only managers can rename or move a stream" }, { status: 403 });
+    const oldDate = stream.fields["Stream Date"] || "";
+    if (b.date !== undefined) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date))) return NextResponse.json({ error: "date must be YYYY-MM-DD" }, { status: 400 });
+      fields["Stream Date"] = b.date;
+    }
+    if (b.title !== undefined) {
+      const t = String(b.title).trim();
+      if (!t) return NextResponse.json({ error: "title cannot be empty" }, { status: 400 });
+      fields["Title"] = t.slice(0, 120);
+    } else if (b.date !== undefined && String(stream.fields["Title"] || "").startsWith(oldDate)) {
+      // the show moved and the title still leads with the old date - keep them in step
+      fields["Title"] = String(stream.fields["Title"]).replace(oldDate, b.date);
+    }
+  }
   if (b.afterFees !== undefined) fields["After Fees"] = b.afterFees;
   if (b.promotion !== undefined) fields["Promotion"] = b.promotion;
   if (b.tips !== undefined) fields["Tips"] = b.tips;
