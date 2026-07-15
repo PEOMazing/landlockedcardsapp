@@ -40,6 +40,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
   const [needsSetup, setNeedsSetup] = useState(false);
   const [setupMsg, setSetupMsg] = useState("");
   const [statusFilter, setStatusFilter] = useState("In Stock");
+  const [gradeView, setGradeView] = useState<"All" | "Raw" | "Graded">("All");
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
   const [qrFor, setQrFor] = useState<SingleT | null>(null);
@@ -182,6 +183,8 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
 
   const shown = useMemo(() => {
     let list = statusFilter === "All" ? singles : singles.filter((s) => s.status === statusFilter);
+    if (gradeView === "Graded") list = list.filter((s) => GRADED.includes(s.condition));
+    if (gradeView === "Raw") list = list.filter((s) => !GRADED.includes(s.condition));
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
     // token search: every word must match somewhere, so "umbreon prismatic"
     // finds Umbreons in Prismatic Evolutions
@@ -198,7 +201,7 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
     else if (sortBy === "price-asc") list.sort((a, b) => (a.comp || 0) - (b.comp || 0));
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortBy, tableQ]);
+  }, [singles, statusFilter, setFilter, sortBy, tableQ, gradeView]);
 
   const stockValue = singles.filter((s) => s.status === "In Stock").reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0);
   const soldTotal = singles.filter((s) => s.status === "Sold").reduce((a, s) => a + (s.salePrice || 0), 0);
@@ -439,6 +442,19 @@ export default function SinglesClient({ isAdmin, isManager }: { isAdmin: boolean
                 onClick={() => setStatusFilter(s)}
               >
                 {s}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {(["All", "Raw", "Graded"] as const).map((g) => (
+              <button
+                key={g}
+                className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+                  gradeView === g ? "border-win text-win bg-win/10" : "border-edge text-dim hover:text-body"
+                }`}
+                onClick={() => setGradeView(g)}
+              >
+                {g === "Graded" ? `Graded (${singles.filter((x) => GRADED.includes(x.condition) && (statusFilter === "All" || x.status === statusFilter)).length})` : g}
               </button>
             ))}
           </div>
