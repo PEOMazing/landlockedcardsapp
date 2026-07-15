@@ -49,8 +49,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   let streamerName = "";
   const managerId = stream.fields["Manager Rec Id"];
   const streamerRecId = stream.fields["Streamer Rec Id"] || null;
+  let streamerRow: any = null;
   if (streamerRecId) {
-    try { streamerName = (await atGet(T.streamers, streamerRecId)).fields["Name"] || ""; } catch {}
+    try { streamerRow = await atGet(T.streamers, streamerRecId); streamerName = streamerRow.fields["Name"] || ""; } catch {}
   }
   if (managerId) {
     try { managerName = (await atGet(T.streamers, managerId)).fields["Name"] || ""; } catch {}
@@ -126,7 +127,17 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
         };
       })(),
     },
-    pay: { packingRate: settings.packing_rate },
+    pay: {
+      packingRate: settings.packing_rate,
+      hourlyRate: (() => {
+        const sid = stream.fields["Streamer Rec Id"];
+        if (!sid) return settings.default_hourly_rate;
+        try {
+          const rate = streamerRow?.fields?.["Hourly Rate"];
+          return typeof rate === "number" && rate > 0 ? rate : settings.default_hourly_rate;
+        } catch { return settings.default_hourly_rate; }
+      })(),
+    },
   });
 }
 

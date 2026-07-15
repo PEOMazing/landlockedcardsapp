@@ -252,9 +252,12 @@ export default function StreamEditor({ id }: { id: string }) {
   const grossProfit = afterFeesNum - productSold;
 
   const packingPay = data?.pay ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * data.pay.packingRate : 0;
-  const netProfit = grossProfit - packingPay - tipsNum - promoNum;
+  // streaming labor at the streamer's hourly rate. Weekly settlement pays the
+  // higher of hourly or commission, so this is the floor of true labor cost.
+  const streamPay = data?.pay?.hourlyRate ? (stream?.hours || 0) * data.pay.hourlyRate : 0;
+  const netProfit = grossProfit - streamPay - packingPay - tipsNum - promoNum;
   const buyNet = m.hitCostDelivered !== null
-    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend) - packingPay - tipsNum - promoNum
+    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend) - streamPay - packingPay - tipsNum - promoNum
     : null;
 
   return (
@@ -348,6 +351,10 @@ export default function StreamEditor({ id }: { id: string }) {
               <span className={`num ${!resultsEntered ? "text-dim" : grossProfit >= 0 ? "text-win" : "text-bad"}`}>
                 {resultsEntered ? $(grossProfit) : "-"}
               </span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-dim">Streaming time ({(stream?.hours || 0).toFixed(1)}h hourly est)</span>
+              <span className="num">-{$(streamPay)}</span>
             </div>
             <div className="flex justify-between gap-6">
               <span className="text-dim">Packing time</span>
