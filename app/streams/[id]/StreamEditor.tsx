@@ -17,7 +17,7 @@ type LineT = {
   singleRecId?: string; salePrice?: number | null;
 };
 
-export default function StreamEditor({ id }: { id: string }) {
+export default function StreamEditor({ id, isAdmin = false }: { id: string; isAdmin?: boolean }) {
   const [data, setData] = useState<any>(null);
   const [lines, setLines] = useState<LineT[]>([]);
   const [busy, setBusy] = useState(false);
@@ -277,7 +277,9 @@ export default function StreamEditor({ id }: { id: string }) {
     <main className="max-w-6xl mx-auto p-6 space-y-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <Link href="/dashboard" className="text-dim text-sm hover:text-body">&larr; My streams</Link>
+          <Link href={isAdmin ? "/admin/streams" : "/dashboard"} className="text-dim text-sm hover:text-body">
+            &larr; {isAdmin ? "All streams" : "My streams"}
+          </Link>
           {editingMeta ? (
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <input className="input !py-1.5 text-lg font-bold w-72" value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} />

@@ -25,7 +25,7 @@ function Icon({ d }: { d: React.ReactNode }) {
   );
 }
 
-type Item = { href: string; label: string; icon: React.ReactNode; admin?: boolean; manager?: boolean };
+type Item = { href: string; label: string; icon: React.ReactNode; admin?: boolean; manager?: boolean; nonAdmin?: boolean };
 type Group = { title: string; items: Item[] };
 
 const GROUPS: Group[] = [
@@ -34,7 +34,7 @@ const GROUPS: Group[] = [
     items: [
       { href: "/vendor", label: "Vendor", icon: I.vendor, admin: true },
       { href: "/collection", label: "Collection", icon: I.collection },
-      { href: "/dashboard", label: "My Streams", icon: I.streams },
+      { href: "/dashboard", label: "My Streams", icon: I.streams, nonAdmin: true },
     ],
   },
   {
@@ -69,6 +69,7 @@ function NavLinks({ isAdmin, isManager, isCollector = false, pathname, onNavigat
       {GROUPS.map((g) => {
         const items = g.items.filter((i) => {
           if (isCollector) return i.href === "/collection" || i.href === "/sets";
+          if ((i as any).nonAdmin && isAdmin) return false; // admins do not stream
           return i.admin ? isAdmin : i.manager ? isManager || isAdmin : true;
         });
         if (items.length === 0) return null;

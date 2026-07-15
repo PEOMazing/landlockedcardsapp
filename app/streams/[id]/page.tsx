@@ -11,7 +11,7 @@ export default async function StreamPage({ params }: { params: { id: string } })
   return (
     <>
       <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"]} />
-      <StreamEditor id={params.id} />
+      <StreamEditor id={params.id} isAdmin={me.isAdmin} />
     </>
   );
 }
