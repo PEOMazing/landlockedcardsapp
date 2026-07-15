@@ -56,6 +56,7 @@ const GROUPS: Group[] = [
     title: "Business",
     items: [
       { href: "/admin", label: "Pay", icon: I.pay, admin: true },
+      { href: "/admin/payroll", label: "Payroll", icon: I.pay, admin: true },
       { href: "/admin/analytics", label: "Analytics", icon: I.analytics, admin: true },
       { href: "/admin/insights", label: "Insights", icon: I.insights, admin: true },
     ],

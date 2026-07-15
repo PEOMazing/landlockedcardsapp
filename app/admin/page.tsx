@@ -33,8 +33,9 @@ export default async function AdminDashboard() {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
-    costByStream[sid] = (costByStream[sid] || 0) + line.qty * line.buy;
-    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qty * line.market;
+    // delivered hits only: unhit product returns to stock, so it is not a stream cost
+    costByStream[sid] = (costByStream[sid] || 0) + line.qtyHit * line.buy;
+    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qtyHit * line.market;
   }
   const rows: StreamRow[] = streamRows.map((r) => ({
     id: r.id,

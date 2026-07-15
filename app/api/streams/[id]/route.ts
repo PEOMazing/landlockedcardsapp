@@ -170,7 +170,29 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.tips !== undefined) fields["Tips"] = b.tips;
   if (b.spotsSold !== undefined) fields["Spots Sold"] = b.spotsSold;
   if (b.giveaways !== undefined) fields["Giveaways Run"] = Math.max(0, parseInt(b.giveaways) || 0);
+  // reassign the show to a different streamer - managers only
+  if (b.streamerId !== undefined) {
+    if (!me.isManager && !me.isAdmin) return NextResponse.json({ error: "only managers can reassign a stream" }, { status: 403 });
+    if (!isRecId(String(b.streamerId))) return NextResponse.json({ error: "bad streamer id" }, { status: 400 });
+    try { await atGet(T.streamers, b.streamerId); } catch { return NextResponse.json({ error: "unknown streamer" }, { status: 400 }); }
+    fields["Streamer Rec Id"] = b.streamerId;
+  }
   // hours come from the timeclock (/api/time), not direct edits
+  if (b.status === "Complete") {
+    if (!me.isManager && !me.isAdmin) return NextResponse.json({ error: "only managers can mark a stream complete" }, { status: 403 });
+    const afterFees = b.afterFees !== undefined ? b.afterFees : stream.fields["After Fees"];
+    const spots = b.spotsSold !== undefined ? b.spotsSold : stream.fields["Spots Sold"];
+    const hours = stream.fields["Hours Streamed"] || 0;
+    const returned = !!stream.fields["Items Returned"];
+    const missing: string[] = [];
+    if (!(afterFees > 0)) missing.push("after fees");
+    if (!(spots >= 0) || spots === null || spots === undefined) missing.push("spots sold");
+    if (!(hours > 0)) missing.push("hours on the timeclock");
+    if (!returned) missing.push("unsold items returned");
+    if (missing.length) {
+      return NextResponse.json({ error: "cannot mark complete - still needed: " + missing.join(", ") }, { status: 400 });
+    }
+  }
   if (b.status !== undefined) fields["Status"] = b.status;
   if (b.notes !== undefined) fields["Notes"] = b.notes;
   if (b.checklist !== undefined) fields["Checklist"] = b.checklist === null ? "" : JSON.stringify(b.checklist);

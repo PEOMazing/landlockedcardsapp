@@ -63,9 +63,16 @@ export function tierCommission(profit: number, s: Settings): number {
 
 // ---- weeks run Sunday through Saturday ----
 export function weekStartOf(dateStr: string): string {
+  // pay weeks run Monday through Sunday, paid the following Tuesday
   const d = new Date(dateStr + "T00:00:00Z");
-  const dow = d.getUTCDay(); // 0 = Sunday
+  const dow = (d.getUTCDay() + 6) % 7; // 0 = Monday
   d.setUTCDate(d.getUTCDate() - dow);
+  return d.toISOString().slice(0, 10);
+}
+
+export function payDateOf(weekStart: string): string {
+  const d = new Date(weekStart + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 8); // Monday start + 8 = Tuesday after the Sunday close
   return d.toISOString().slice(0, 10);
 }
 

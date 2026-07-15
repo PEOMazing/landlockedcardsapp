@@ -28,6 +28,9 @@ export default function StreamEditor({ id }: { id: string }) {
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaTitle, setMetaTitle] = useState("");
   const [metaDate, setMetaDate] = useState("");
+  const [metaStreamer, setMetaStreamer] = useState("");
+  const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
+  const [resultsErr, setResultsErr] = useState("");
   const [setSort, setSetSort] = useState<"board" | "name" | "price">("board");
   const [pasteText, setPasteText] = useState("");
   const [pasteMsg, setPasteMsg] = useState("");
@@ -209,7 +212,8 @@ export default function StreamEditor({ id }: { id: string }) {
 
   async function saveResults(markComplete: boolean) {
     setBusy(true);
-    await fetch(`/api/streams/${id}`, {
+    setResultsErr("");
+    const res = await fetch(`/api/streams/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -221,6 +225,12 @@ export default function StreamEditor({ id }: { id: string }) {
         ...(markComplete ? { status: "Complete" } : {}),
       }),
     });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setResultsErr(d.error || "Could not save");
+      setBusy(false);
+      return;
+    }
     await load();
     setBusy(false);
     setSaved(true);
@@ -272,12 +282,19 @@ export default function StreamEditor({ id }: { id: string }) {
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <input className="input !py-1.5 text-lg font-bold w-72" value={metaTitle} onChange={(e) => setMetaTitle(e.target.value)} />
               <input type="date" className="input !py-1.5" value={metaDate} onChange={(e) => setMetaDate(e.target.value)} />
+              {teamOptions.length > 0 && (
+                <select className="input !py-1.5" value={metaStreamer} onChange={(e) => setMetaStreamer(e.target.value)}>
+                  {teamOptions.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
               <button
                 className="btn-win !py-1.5 text-sm disabled:opacity-40"
                 disabled={busy || !metaTitle.trim() || !metaDate}
                 onClick={async () => {
                   setBusy(true);
-                  const r = await fetch(`/api/streams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: metaTitle.trim(), date: metaDate }) });
+                  const r = await fetch(`/api/streams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: metaTitle.trim(), date: metaDate, ...(metaStreamer && metaStreamer !== stream.streamerRecId ? { streamerId: metaStreamer } : {}) }) });
                   setBusy(false);
                   if (r.ok) { setEditingMeta(false); await load(); }
                 }}
@@ -293,7 +310,17 @@ export default function StreamEditor({ id }: { id: string }) {
                 <button
                   className="text-dim hover:text-foil text-sm ml-2 align-middle"
                   title="Rename or move this show"
-                  onClick={() => { setMetaTitle(stream.title || ""); setMetaDate(stream.date || ""); setEditingMeta(true); }}
+                  onClick={async () => {
+                    setMetaTitle(stream.title || ""); setMetaDate(stream.date || "");
+                    setMetaStreamer(stream.streamerRecId || ""); setEditingMeta(true);
+                    try {
+                      const r = await fetch("/api/streamers");
+                      if (r.ok) {
+                        const d = await r.json();
+                        setTeamOptions((d.streamers || []).map((p: any) => ({ id: p.id, name: p.name })));
+                      }
+                    } catch {}
+                  }}
                 >
                   edit
                 </button>
@@ -497,9 +524,12 @@ export default function StreamEditor({ id }: { id: string }) {
           <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => saveResults(false)}>
             Save
           </button>
-          <button className="btn-win disabled:opacity-40" disabled={busy} onClick={() => saveResults(true)}>
-            Save and mark complete
-          </button>
+          {canManage && (
+            <button className="btn-win disabled:opacity-40" disabled={busy} onClick={() => saveResults(true)}>
+              Save and mark complete
+            </button>
+          )}
+          {resultsErr && <span className="text-bad text-sm">{resultsErr}</span>}
           {saved && <span className="text-win text-sm">Saved</span>}
           <span className="mx-2 text-edge">|</span>
           {stream.itemsReturned ? (
