@@ -18,6 +18,8 @@ export default function Timeclock({
   streamerPacking,
   managerPacking,
   hasManager,
+  people = [],
+  canAssign = false,
 }: {
   streamId: string;
   streamDate: string;
@@ -27,8 +29,11 @@ export default function Timeclock({
   streamerPacking: number;
   managerPacking: number;
   hasManager: boolean;
+  people?: { id: string; name: string }[];
+  canAssign?: boolean;
 }) {
   const [type, setType] = useState<"Streaming" | "Packing">("Streaming");
+  const [who, setWho] = useState("");
   const [date, setDate] = useState(streamDate || new Date().toISOString().slice(0, 10));
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -41,7 +46,7 @@ export default function Timeclock({
     const res = await fetch("/api/time", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ streamId, type, date, start, end }),
+      body: JSON.stringify({ streamId, type, date, start, end, personId: who || undefined }),
     });
     const d = await res.json();
     if (!res.ok) { setErr(d.error || "Could not save time entry"); setBusy(false); return; }
@@ -74,7 +79,18 @@ export default function Timeclock({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+      <div className={`grid grid-cols-2 gap-2 items-end ${canAssign && people.length ? "md:grid-cols-6" : "md:grid-cols-5"}`}>
+        {canAssign && people.length > 0 && (
+          <div>
+            <label className="label">For</label>
+            <select className="input mt-1" value={who} onChange={(e) => setWho(e.target.value)}>
+              <option value="">Me</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="label">Type</label>
           <select className="input mt-1" value={type} onChange={(e) => setType(e.target.value as any)}>

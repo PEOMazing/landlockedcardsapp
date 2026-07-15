@@ -420,6 +420,76 @@ export default function StreamEditor({ id }: { id: string }) {
         </div>
       </section>
 
+      {/* Timeclock */}
+      <Timeclock
+        streamId={id}
+        streamDate={stream.date}
+        entries={timeEntries || []}
+        onChanged={load}
+        hoursStreamed={stream.hours || 0}
+        streamerPacking={stream.packingHours || 0}
+        managerPacking={stream.managerPackingHours || 0}
+        hasManager={!!stream.managerName}
+        canAssign={canManage}
+        people={[
+          stream.streamerRecId ? { id: stream.streamerRecId, name: stream.streamerName || "Streamer" } : null,
+          stream.managerRecId ? { id: stream.managerRecId, name: (stream.managerName || "Manager") + " (manager)" } : null,
+        ].filter(Boolean) as { id: string; name: string }[]}
+      />
+
+      {/* Post-stream results */}
+      <section className="card p-5 space-y-4">
+        <h2 className="label">After the stream</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {field("afterFees", "After fees ($)")}
+          {field("promotion", "Promotion ($)")}
+          {field("tips", "Tips ($)")}
+          {field("spotsSold", "Spots sold (spins)", "1")}
+          <div>
+            {field("giveaways", "Giveaways run", "1")}
+            {(parseInt(form.giveaways) || 0) > 0 && (
+              <p className="text-dim text-xs mt-1">
+                {parseInt(form.giveaways) || 0} x {$(m.cfg.giveawayCost ?? 2.5)} = <span className="text-bad">-{$((parseInt(form.giveaways) || 0) * (m.cfg.giveawayCost ?? 2.5))}</span> from profit
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-3 items-center flex-wrap">
+          <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => saveResults(false)}>
+            Save
+          </button>
+          <button className="btn-win disabled:opacity-40" disabled={busy} onClick={() => saveResults(true)}>
+            Save and mark complete
+          </button>
+          {saved && <span className="text-win text-sm">Saved</span>}
+          <span className="mx-2 text-edge">|</span>
+          {stream.itemsReturned ? (
+            <span className="text-win text-sm">✓ Unsold items returned to inventory - show set locked</span>
+          ) : !returnArmed ? (
+            <button
+              className="btn-ghost disabled:opacity-40"
+              disabled={busy || lines.length === 0}
+              onClick={() => setReturnArmed(true)}
+            >
+              Return unsold items to inventory
+            </button>
+          ) : (
+            <span className="flex items-center gap-2">
+              <span className="text-givvy text-sm">
+                Return {lines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0), 0)} items? Hits must be final - this locks the show set.
+              </span>
+              <button className="btn-win" disabled={busy} onClick={returnItems}>Yes, return</button>
+              <button className="btn-ghost" onClick={() => setReturnArmed(false)}>Cancel</button>
+            </span>
+          )}
+          {returnMsg && <span className="text-win text-sm">{returnMsg}</span>}
+          <span className="text-dim text-xs">
+            Hours come from the timeclock above. Pay settles weekly: profit is netted first, then you get
+            the higher of hourly or commission.
+          </span>
+        </div>
+      </section>
+
       {/* Live hit tracker - updates the instant a hit is marked */}
       <section className="card p-5 flex flex-wrap items-baseline gap-x-8 gap-y-2">
         <div>
@@ -657,70 +727,6 @@ export default function StreamEditor({ id }: { id: string }) {
         )}
       </section>
 
-      {/* Timeclock */}
-      <Timeclock
-        streamId={id}
-        streamDate={stream.date}
-        entries={timeEntries || []}
-        onChanged={load}
-        hoursStreamed={stream.hours || 0}
-        streamerPacking={stream.packingHours || 0}
-        managerPacking={stream.managerPackingHours || 0}
-        hasManager={!!stream.managerName}
-      />
-
-      {/* Post-stream results */}
-      <section className="card p-5 space-y-4">
-        <h2 className="label">After the stream</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {field("afterFees", "After fees ($)")}
-          {field("promotion", "Promotion ($)")}
-          {field("tips", "Tips ($)")}
-          {field("spotsSold", "Spots sold (spins)", "1")}
-          <div>
-            {field("giveaways", "Giveaways run", "1")}
-            {(parseInt(form.giveaways) || 0) > 0 && (
-              <p className="text-dim text-xs mt-1">
-                {parseInt(form.giveaways) || 0} x {$(m.cfg.giveawayCost ?? 2.5)} = <span className="text-bad">-{$((parseInt(form.giveaways) || 0) * (m.cfg.giveawayCost ?? 2.5))}</span> from profit
-              </p>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-3 items-center flex-wrap">
-          <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => saveResults(false)}>
-            Save
-          </button>
-          <button className="btn-win disabled:opacity-40" disabled={busy} onClick={() => saveResults(true)}>
-            Save and mark complete
-          </button>
-          {saved && <span className="text-win text-sm">Saved</span>}
-          <span className="mx-2 text-edge">|</span>
-          {stream.itemsReturned ? (
-            <span className="text-win text-sm">✓ Unsold items returned to inventory - show set locked</span>
-          ) : !returnArmed ? (
-            <button
-              className="btn-ghost disabled:opacity-40"
-              disabled={busy || lines.length === 0}
-              onClick={() => setReturnArmed(true)}
-            >
-              Return unsold items to inventory
-            </button>
-          ) : (
-            <span className="flex items-center gap-2">
-              <span className="text-givvy text-sm">
-                Return {lines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0), 0)} items? Hits must be final - this locks the show set.
-              </span>
-              <button className="btn-win" disabled={busy} onClick={returnItems}>Yes, return</button>
-              <button className="btn-ghost" onClick={() => setReturnArmed(false)}>Cancel</button>
-            </span>
-          )}
-          {returnMsg && <span className="text-win text-sm">{returnMsg}</span>}
-          <span className="text-dim text-xs">
-            Hours come from the timeclock above. Pay settles weekly: profit is netted first, then you get
-            the higher of hourly or commission.
-          </span>
-        </div>
-      </section>
     </main>
   );
 }

@@ -46,7 +46,12 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const histDeliveryRate = histPool > 0 ? histDelivered / histPool : null;
 
   let managerName = "";
+  let streamerName = "";
   const managerId = stream.fields["Manager Rec Id"];
+  const streamerRecId = stream.fields["Streamer Rec Id"] || null;
+  if (streamerRecId) {
+    try { streamerName = (await atGet(T.streamers, streamerRecId)).fields["Name"] || ""; } catch {}
+  }
   if (managerId) {
     try { managerName = (await atGet(T.streamers, managerId)).fields["Name"] || ""; } catch {}
   }
@@ -79,6 +84,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       itemsReturned: !!stream.fields["Items Returned"],
       managerPackingHours: stream.fields["Manager Packing Hours"] ?? null,
       managerName,
+      streamerName,
+      streamerRecId,
+      managerRecId: managerId || null,
       notes: stream.fields["Notes"] || "",
       streamType: stream.fields["Stream Type"] || "Surprise Set",
       checklist: (() => {

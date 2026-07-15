@@ -18,8 +18,21 @@ export async function POST(req: Request) {
   const hours = computeHours(b.start, b.end);
   if (hours > 20) return NextResponse.json({ error: "entry is over 20 hours - check the times" }, { status: 400 });
   const { startISO, endISO } = entryDateTimes(b.date, b.start, b.end);
-  const personId = me.streamer?.id || "admin";
-  const personName = me.streamer?.fields?.["Name"] || "Admin";
+  // managers and admins can log time for someone else - streamers forget to punch
+  let personId = me.streamer?.id || "admin";
+  let personName = me.streamer?.fields?.["Name"] || "Admin";
+  if (b.personId && isRecId(String(b.personId)) && b.personId !== personId) {
+    if (!me.isManager && !me.isAdmin) {
+      return NextResponse.json({ error: "only managers can log time for someone else" }, { status: 403 });
+    }
+    try {
+      const person = await atGet(T.streamers, b.personId);
+      personId = person.id;
+      personName = person.fields["Name"] || "Teammate";
+    } catch {
+      return NextResponse.json({ error: "unknown person" }, { status: 400 });
+    }
+  }
 
   await atCreate(T.time, {
     "Entry": `${b.type} ${b.date} ${fmt12(b.start)}-${fmt12(b.end)} - ${personName}`,
