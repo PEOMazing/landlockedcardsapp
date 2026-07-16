@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { UserButton } from "@clerk/nextjs";
+import { SignOutButton, UserButton } from "@clerk/nextjs";
 
 const I = {
   vendor: <path d="M3 13h4v8H3zM10 9h4v12h-4zM17 3h4v18h-4z" />,
@@ -115,7 +115,12 @@ export default function Nav({ isAdmin, isManager = false, isCollector = false, n
   const footer = (
     <div className="border-t border-edge px-4 py-3 flex items-center gap-3">
       <UserButton afterSignOutUrl="/sign-in" />
-      {name && <span className="text-sm text-dim truncate">{name}</span>}
+      <span className="min-w-0">
+        {name && <span className="block text-sm text-dim truncate">{name}</span>}
+        <SignOutButton redirectUrl="/sign-in">
+          <button className="text-xs text-dim hover:text-bad">Sign out</button>
+        </SignOutButton>
+      </span>
       {isAdmin && (
         <Link href="/admin/settings" title="Settings" className={`ml-auto ${pathname.startsWith("/admin/settings") ? "text-foil" : "text-dim hover:text-body"}`}>
           <Icon d={I.settings} />
