@@ -7,6 +7,7 @@ import Timeclock from "@/components/Timeclock";
 import BreakChecklist from "@/components/BreakChecklist";
 import SinglesPicker from "@/components/SinglesPicker";
 import Thumb from "@/components/Thumb";
+import { toast } from "@/components/Toaster";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -666,7 +667,41 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                     {l.isGiveaway && <span className="text-givvy text-xs ml-2">giveaway</span>}
                     {l.isHit && <span className="text-foil text-xs ml-2 font-bold">HIT</span>}
                   </td>
-                  <td>{l.qty}</td>
+                  <td>
+                    {canManage && !stream.itemsReturned ? (
+                      <span className="inline-flex items-center gap-1">
+                        <button
+                          className="w-5 h-5 rounded border border-edge text-dim hover:text-body leading-none disabled:opacity-30"
+                          disabled={busy || l.qty <= Math.max(1, l.qtyHit || 0)}
+                          title="One fewer - the unit goes back to inventory"
+                          onClick={async () => {
+                            setBusy(true);
+                            const r = await fetch(`/api/lines/${l.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty: l.qty - 1 }) });
+                            if (!r.ok) toast((await r.json().catch(() => ({}))).error || "Could not adjust");
+                            await load(); setBusy(false);
+                          }}
+                        >
+                          -
+                        </button>
+                        <span className="num min-w-[2ch] text-center">{l.qty}</span>
+                        <button
+                          className="w-5 h-5 rounded border border-edge text-dim hover:text-body leading-none disabled:opacity-30"
+                          disabled={busy}
+                          title="One more - pulled from inventory"
+                          onClick={async () => {
+                            setBusy(true);
+                            const r = await fetch(`/api/lines/${l.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty: l.qty + 1 }) });
+                            if (!r.ok) toast((await r.json().catch(() => ({}))).error || "Could not adjust");
+                            await load(); setBusy(false);
+                          }}
+                        >
+                          +
+                        </button>
+                      </span>
+                    ) : (
+                      l.qty
+                    )}
+                  </td>
                   <td>
                     {canManage ? (
                       <div>

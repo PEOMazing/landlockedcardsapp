@@ -43,6 +43,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (returned) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
     const newQty = Math.max(1, parseInt(b.qty) || 1);
     const oldQty = g.line.fields["Qty"] || 0;
+    const hits = g.line.fields["Qty Hit"] || 0;
+    if (newQty < hits) return NextResponse.json({ error: `quantity cannot go below the ${hits} already hit` }, { status: 400 });
     fields["Qty"] = newQty;
     fields["Line"] = `${newQty}x ${(g.line.fields["Line"] || "").replace(/^\d+x\s+/, "")}`;
     const productId = g.line.fields["Product"]?.[0];
