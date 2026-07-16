@@ -339,7 +339,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             <span className="text-dim text-sm ml-3">Packaging: {stream.managerName}</span>
           )}
         </div>
-        <CopyShowSet lines={lines.map((l) => ({ qty: l.qty, name: l.name }))} />
+        <CopyShowSet lines={lines.map((l) => ({ qty: l.qty, name: l.name }))} streamTitle={stream.title || "show-set"} />
       </div>
 
       {/* Stream P&L: product that was not hit goes back to inventory, so the
