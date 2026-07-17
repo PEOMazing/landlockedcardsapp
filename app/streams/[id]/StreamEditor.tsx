@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import ProductPicker, { PickerItem } from "@/components/ProductPicker";
 import CopyShowSet from "@/components/CopyShowSet";
@@ -24,6 +24,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<any>({});
   const [saved, setSaved] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const baselineRef = useRef("");
   const [loadErr, setLoadErr] = useState("");
   const [showPaste, setShowPaste] = useState(false);
   const [editingMeta, setEditingMeta] = useState(false);
@@ -47,16 +49,49 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const d = await res.json();
     setData(d);
     setLines(d.lines || []);
-    setForm({
+    const f = {
       afterFees: d.stream.afterFees ?? "",
       promotion: d.stream.promotion ?? "",
       tips: d.stream.tips ?? "",
       spotsSold: d.stream.spotsSold ?? "",
       giveaways: d.stream.giveaways ?? "",
-    });
+    };
+    setForm(f);
+    baselineRef.current = JSON.stringify(f);
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // results auto-save: whatever changes is on Airtable a moment later. No
+  // reload on save - the P&L reads these fields from local state already.
+  useEffect(() => {
+    const now = JSON.stringify(form);
+    if (!baselineRef.current || now === baselineRef.current) return;
+    const t = setTimeout(async () => {
+      setSaveState("saving");
+      const r = await fetch(`/api/streams/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          afterFees: parseFloat(form.afterFees) || 0,
+          promotion: parseFloat(form.promotion) || 0,
+          tips: parseFloat(form.tips) || 0,
+          spotsSold: parseInt(form.spotsSold) || 0,
+          giveaways: parseInt(form.giveaways) || 0,
+        }),
+      });
+      if (r.ok) {
+        baselineRef.current = now;
+        setSaveState("saved");
+        setTimeout(() => setSaveState("idle"), 1800);
+      } else {
+        setSaveState("idle");
+        const d = await r.json().catch(() => ({}));
+        setResultsErr(d.error || "Could not save");
+      }
+    }, 900);
+    return () => clearTimeout(t);
+  }, [form, id]);
 
   // live metrics computed locally - hit marking updates instantly, no reload
   const m = useMemo(() => {
@@ -364,14 +399,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                 onChange={(e) => setForm({ ...form, spotsSold: e.target.value })}
                 placeholder="0"
               />
-              <button
-                className="btn-ghost !py-1 text-xs disabled:opacity-40"
-                disabled={busy}
-                onClick={() => saveResults(false)}
-                title="Save running numbers without marking the stream complete"
-              >
-                {busy ? "..." : "Save"}
-              </button>
+              <SaveChip state={saveState} />
             </div>
           )}
         </div>
@@ -524,16 +552,13 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           </div>
         </div>
         <div className="flex gap-3 items-center flex-wrap">
-          <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => saveResults(false)}>
-            Save
-          </button>
+          <SaveChip state={saveState} />
           {canManage && (
             <button className="btn-win disabled:opacity-40" disabled={busy} onClick={() => saveResults(true)}>
               Save and mark complete
             </button>
           )}
           {resultsErr && <span className="text-bad text-sm">{resultsErr}</span>}
-          {saved && <span className="text-win text-sm">Saved</span>}
           <span className="mx-2 text-edge">|</span>
           {stream.itemsReturned ? (
             <span className="text-win text-sm">✓ Unsold items returned to inventory - show set locked</span>
@@ -846,4 +871,10 @@ function Stat({ label, value, accent, warn }: { label: string; value: string; ac
       {warn && <div className="text-amber-400 text-[10px] mt-1">{warn}</div>}
     </div>
   );
+}
+
+function SaveChip({ state }: { state: "idle" | "saving" | "saved" }) {
+  if (state === "idle") return <span className="text-dim text-xs">changes save automatically</span>;
+  if (state === "saving") return <span className="text-givvy text-xs">saving...</span>;
+  return <span className="text-win text-xs">saved</span>;
 }
