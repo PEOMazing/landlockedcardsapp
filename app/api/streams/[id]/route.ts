@@ -88,6 +88,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       streamerName,
       streamerRecId,
       managerRecId: managerId || null,
+      overrideExcluded: !!stream.fields["Override Excluded"],
       notes: stream.fields["Notes"] || "",
       streamType: stream.fields["Stream Type"] || "Surprise Set",
       checklist: (() => {
@@ -176,6 +177,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (!isRecId(String(b.streamerId))) return NextResponse.json({ error: "bad streamer id" }, { status: 400 });
     try { await atGet(T.streamers, b.streamerId); } catch { return NextResponse.json({ error: "unknown streamer" }, { status: 400 }); }
     fields["Streamer Rec Id"] = b.streamerId;
+  }
+  // assign the packaging person - managers only
+  if (b.managerId !== undefined) {
+    if (!me.isManager && !me.isAdmin) return NextResponse.json({ error: "only managers can assign packaging" }, { status: 403 });
+    if (b.managerId === null || b.managerId === "") {
+      fields["Manager Rec Id"] = "";
+    } else {
+      if (!isRecId(String(b.managerId))) return NextResponse.json({ error: "bad person id" }, { status: 400 });
+      try { await atGet(T.streamers, b.managerId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
+      fields["Manager Rec Id"] = b.managerId;
+    }
+  }
+  // commission override eligibility - admin only, stored inverted so old streams stay eligible
+  if (b.overrideEligible !== undefined) {
+    if (!me.isAdmin) return NextResponse.json({ error: "only the admin can change override eligibility" }, { status: 403 });
+    fields["Override Excluded"] = !b.overrideEligible;
   }
   // hours come from the timeclock (/api/time), not direct edits
   if (b.status === "Complete") {

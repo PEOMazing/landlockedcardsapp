@@ -56,6 +56,7 @@ export default async function PayrollPage() {
     productCost: costByStream[r.id] || 0,
     productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
+    overrideExcluded: !!r.fields["Override Excluded"],
   }));
 
   const weeks = buildWeekPay(rows, settings, rateById);

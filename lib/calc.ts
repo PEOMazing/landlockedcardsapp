@@ -100,6 +100,7 @@ export type StreamRow = {
   productCost: number;        // buy-price snapshots x qty: the company's real cost
   productMarketCost: number;  // market-price snapshots x qty: what streamer pay is measured against
   status: string;
+  overrideExcluded?: boolean;
 };
 
 export type WeekPay = {
@@ -227,9 +228,11 @@ export function buildManagerPay(
     // profit minus ALL packing on them
     const commissionable = rows.reduce(
       (a, r) =>
-        a +
-        (r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost - r.productMarketCost - r.tips) -
-        (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
+        r.overrideExcluded
+          ? a // admin excluded this stream from the override base; packing pay still counts
+          : a +
+            (r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost - r.productMarketCost - r.tips) -
+            (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
       0
     );
     // the streamer's pay on these streams: same greater-of rule (hours x rate vs tiers)
