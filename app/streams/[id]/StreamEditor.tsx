@@ -34,6 +34,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [metaStreamer, setMetaStreamer] = useState("");
   const [metaManager, setMetaManager] = useState("");
   const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
+  const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
   const [resultsErr, setResultsErr] = useState("");
   const [setSort, setSetSort] = useState<"board" | "name" | "price">("board");
   const [pasteText, setPasteText] = useState("");
@@ -62,6 +63,19 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // the whole team for the timeclock For selector - managers log anyone's hours
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/streamers");
+        if (r.ok) {
+          const d = await r.json();
+          setTeam((d.streamers || []).map((p: any) => ({ id: p.id, name: p.name })));
+        }
+      } catch {}
+    })();
+  }, []);
 
   // results auto-save: whatever changes is on Airtable a moment later. No
   // reload on save - the P&L reads these fields from local state already.
@@ -537,10 +551,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         managerPacking={stream.managerPackingHours || 0}
         hasManager={!!stream.managerName}
         canAssign={canManage}
-        people={[
+        people={(team.length ? team : [
           stream.streamerRecId ? { id: stream.streamerRecId, name: stream.streamerName || "Streamer" } : null,
           stream.managerRecId ? { id: stream.managerRecId, name: (stream.managerName || "Packaging") + " (packaging)" } : null,
-        ].filter(Boolean) as { id: string; name: string }[]}
+        ].filter(Boolean)) as { id: string; name: string }[]}
       />
 
       {/* Post-stream results */}

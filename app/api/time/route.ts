@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { atCreate, atGet, isRecId, T } from "@/lib/airtable";
+import { atCreate, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { computeHours, entryDateTimes, fmt12, recomputeStreamHours } from "@/lib/time";
 
@@ -45,6 +45,13 @@ export async function POST(req: Request) {
     "End": endISO,
     "Hours": hours,
   });
-  await recomputeStreamHours(b.streamId, stream.fields["Manager Rec Id"] || null);
+  // packing time for someone who is not the streamer makes them the packaging
+  // person when the stream has none - hours then attribute to their pay bucket
+  let managerRecId = stream.fields["Manager Rec Id"] || null;
+  if (b.type === "Packing" && personId !== (stream.fields["Streamer Rec Id"] || "") && personId !== "admin" && !managerRecId) {
+    managerRecId = personId;
+    await atUpdate(T.streams, b.streamId, { "Manager Rec Id": personId });
+  }
+  await recomputeStreamHours(b.streamId, managerRecId);
   return NextResponse.json({ ok: true, hours });
 }
