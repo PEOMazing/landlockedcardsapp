@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stockAlert } from "@/lib/alerts";
 import { atCreate, atGet, atList, atUpdate, isRecId, T, AtRecord } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
   const added: string[] = [];
   const created: string[] = [];
   const skipped: string[] = [];
+  const stockChanges: { name: string; qtyNow: number; delta: number }[] = [];
 
   for (const item of items) {
     let product = match(item.name);
@@ -71,11 +73,13 @@ export async function POST(req: Request) {
       "Stream Rec Id": b.streamId,
       "Product": [product.id],
     });
+    stockChanges.push({ name, qtyNow: (product.fields["Qty On Hand"] ?? 0) - item.qty, delta: -item.qty });
     await atUpdate(T.inventory, product.id, {
       "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) - item.qty,
     });
     added.push(`${item.qty}x ${name}`);
   }
 
+  await stockAlert(stockChanges, "set build").catch(() => {});
   return NextResponse.json({ added, created, skipped });
 }

@@ -1,4 +1,5 @@
 "use client";
+import AlertsBanner from "./AlertsBanner";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -158,6 +159,7 @@ export default function Nav({ isAdmin, isManager = false, isCollector = false, n
           </nav>
         </div>
       )}
+      <AlertsBanner />
     </>
   );
 }

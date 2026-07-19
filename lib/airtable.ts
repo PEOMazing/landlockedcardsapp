@@ -10,6 +10,7 @@ export const T = {
   settings: "Settings",
   time: "Time Entries",
   singles: "Singles",
+  alerts: "Alerts",
   snapshots: "Price History",
   purchases: "Purchase Log",
   customSets: "Custom Sets",

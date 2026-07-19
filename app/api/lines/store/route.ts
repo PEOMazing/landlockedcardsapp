@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { stockAlert } from "@/lib/alerts";
 
 // A store purchase: a customer bought an in-stock item off the shelf during
 // the stream. Creates a line flagged Is Store Purchase with the actual sold
@@ -40,5 +41,6 @@ export async function POST(req: Request) {
   await atUpdate(T.inventory, product.id, {
     "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) - 1,
   });
+  await stockAlert([{ name, qtyNow: (product.fields["Qty On Hand"] ?? 0) - 1, delta: -1 }], "store sale").catch(() => {});
   return NextResponse.json({ ok: true, id: line.id, name, soldPrice });
 }

@@ -1,4 +1,5 @@
 import { atCreate, atList, atUpdate, T, AtRecord } from "./airtable";
+import { recordAlert } from "./alerts";
 import { conditionSoldComp, tcgProductIdFromCardId } from "./tcgcsvCards";
 
 // ---------------- tcgcsv (free nightly TCGplayer mirror) ----------------
@@ -117,9 +118,14 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
     }
   }
 
+  const jumps: { name: string; old: number; now: number; pct: number }[] = [];
   for (const [recId, rec] of pending) {
     const hit = priced.get(recId);
     if (hit) {
+      const old = rec.fields["Market Price"] ?? 0;
+      if (old > 0 && hit.price >= old * 1.03 && (rec.fields["Qty On Hand"] ?? 0) > 0) {
+        jumps.push({ name: rec.fields["Product Name"], old, now: hit.price, pct: (hit.price / old - 1) * 100 });
+      }
       const fields: Record<string, any> = {
         "Market Price": hit.price,
         "Price Checked": new Date().toISOString().slice(0, 10),
@@ -132,6 +138,16 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       await atUpdate(T.inventory, recId, fields);
     }
     results.push({ id: recId, name: rec.fields["Product Name"], matched: hit?.matched ?? null, price: hit?.price ?? null });
+  }
+  if (jumps.length > 0) {
+    jumps.sort((a, b) => b.pct - a.pct);
+    await recordAlert(
+      "price",
+      jumps.length === 1
+        ? `${jumps[0].name} up ${jumps[0].pct.toFixed(1)}%`
+        : `${jumps.length} sealed prices up 3%+ - top: ${jumps[0].name} +${jumps[0].pct.toFixed(1)}%`,
+      { items: jumps }
+    ).catch(() => {});
   }
   return results;
 }
@@ -294,7 +310,11 @@ export function topMovers(prev: Snapshot, latest: Snapshot, count = 3) {
 // on streams that have not returned items follow the current inventory market.
 // Hit lines keep the price they carried when they were delivered.
 export async function resnapshotOpenLines() {
-  const streams = await atList(T.streams, { filterByFormula: "AND({Deleted At} = BLANK(), {Items Returned} != TRUE())" });
+  // once a stream's day arrives its prices are locked - a later market move
+  // never rewrites the P&L of a show that already ran
+  const streams = await atList(T.streams, {
+    filterByFormula: "AND({Deleted At} = BLANK(), {Items Returned} != TRUE(), IS_AFTER({Stream Date}, TODAY()))",
+  });
   if (streams.length === 0) return { updated: 0, streams: 0 };
   const openIds = new Set(streams.map((s) => s.id));
   const [lines, inventory] = await Promise.all([atList(T.lines), atList(T.inventory)]);

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stockAlert } from "@/lib/alerts";
 import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 
@@ -18,6 +19,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   const lines = await atList(T.lines, { filterByFormula: `{Stream Rec Id} = '${params.id}'` });
   let itemsReturned = 0;
   const detail: string[] = [];
+  const stockChanges: { name: string; qtyNow: number; delta: number }[] = [];
   for (const l of lines) {
     const qty = l.fields["Qty"] || 0;
     const hit = l.fields["Qty Hit"] || 0;
@@ -28,6 +30,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       await atUpdate(T.inventory, productId, {
         "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) + back,
       });
+      stockChanges.push({ name: product.fields["Product Name"], qtyNow: (product.fields["Qty On Hand"] ?? 0) + back, delta: back });
       itemsReturned += back;
       detail.push(`${back}x ${product.fields["Product Name"]}`);
     }
@@ -42,5 +45,6 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     }
   } catch {} // singles table may not exist yet; nothing to do
   await atUpdate(T.streams, params.id, { "Items Returned": true });
+  await stockAlert(stockChanges, "items returned - relist on Whatnot").catch(() => {});
   return NextResponse.json({ itemsReturned, detail, singlesSold });
 }
