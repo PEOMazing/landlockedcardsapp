@@ -289,3 +289,28 @@ export function topMovers(prev: Snapshot, latest: Snapshot, count = 3) {
   moves.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   return moves.slice(0, count);
 }
+
+// Re-snapshot market prices on live boards: lines with nothing delivered yet
+// on streams that have not returned items follow the current inventory market.
+// Hit lines keep the price they carried when they were delivered.
+export async function resnapshotOpenLines() {
+  const streams = await atList(T.streams, { filterByFormula: "AND({Deleted At} = BLANK(), {Items Returned} != TRUE())" });
+  if (streams.length === 0) return { updated: 0, streams: 0 };
+  const openIds = new Set(streams.map((s) => s.id));
+  const [lines, inventory] = await Promise.all([atList(T.lines), atList(T.inventory)]);
+  const marketByProduct = new Map(inventory.map((i) => [i.id, i.fields["Market Price"] ?? 0]));
+  let updated = 0;
+  for (const l of lines) {
+    const sid = l.fields["Stream Rec Id"];
+    if (!sid || !openIds.has(sid)) continue;
+    if ((l.fields["Qty Hit"] || 0) > 0) continue; // delivered value stays as delivered
+    const pid = l.fields["Product"]?.[0];
+    if (!pid) continue;
+    const fresh = marketByProduct.get(pid);
+    if (typeof fresh !== "number" || fresh <= 0) continue;
+    if (Math.abs((l.fields["Market Price Snapshot"] || 0) - fresh) < 0.005) continue;
+    await atUpdate(T.lines, l.id, { "Market Price Snapshot": fresh });
+    updated++;
+  }
+  return { updated, streams: streams.length };
+}

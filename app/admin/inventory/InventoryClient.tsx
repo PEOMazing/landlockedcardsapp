@@ -34,6 +34,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   const [msg, setMsg] = useState("");
   const [draft, setDraft] = useState({ name: "", category: "Elite Trainer Box", buyPrice: "", marketPrice: "", qtyOnHand: "", tcgUrl: "" });
 
+  const [refreshingAll, setRefreshingAll] = useState(false);
   const load = useCallback(async () => {
     const d = await fetch("/api/inventory").then((r) => r.json());
     setItems(d.items || []);
@@ -203,7 +204,28 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
           <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => refreshPrices()}>
             Refresh all prices
           </button>
-          <a className="btn-ghost !py-1.5 text-xs" href="/msrp" target="_blank">MSRP guide</a>
+          {isAdmin && (
+              <button
+                className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
+                disabled={refreshingAll}
+                onClick={async () => {
+                  setRefreshingAll(true);
+                  toast("Refreshing every price - this takes a minute or two");
+                  const r = await fetch("/api/admin/refresh-prices", { method: "POST" });
+                  setRefreshingAll(false);
+                  if (r.ok) {
+                    const d = await r.json();
+                    toast(`Prices refreshed: ${d.sealed.priced} of ${d.sealed.total} sealed, ${d.singles?.refreshed ?? d.singles ?? 0} singles comps, ${d.openLines?.updated ?? 0} live board lines`);
+                    await load();
+                  } else {
+                    toast("Refresh failed - try again in a minute");
+                  }
+                }}
+              >
+                {refreshingAll ? "Refreshing..." : "Refresh all prices"}
+              </button>
+            )}
+            <a className="btn-ghost !py-1.5 text-xs" href="/msrp" target="_blank">MSRP guide</a>
             <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
           <CollectrImport onDone={load} />
         </div>
