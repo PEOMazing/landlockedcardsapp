@@ -99,6 +99,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     lines: lines.map((l, i) => ({
       id: l.id, name: l.name.replace(/^\d+x\s+/, ""), qty: l.qty, qtyHit: l.qtyHit,
       market: l.market, isGiveaway: l.isGiveaway, isHit: isHitLine(l, settings),
+      isStore: !!lineRows[i].fields["Is Store Purchase"],
+      soldPrice: lineRows[i].fields["Sold Price"] || 0,
       isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
       tcgUrl: tcgByProduct[lineRows[i].fields["Product"]?.[0]] || "",
       image: imageByProduct[lineRows[i].fields["Product"]?.[0]] || "",

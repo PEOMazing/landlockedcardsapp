@@ -35,6 +35,9 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [metaManager, setMetaManager] = useState("");
   const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
   const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
+  const [invOptions, setInvOptions] = useState<{ id: string; name: string; market: number; qty: number }[]>([]);
+  const [storeProduct, setStoreProduct] = useState("");
+  const [storePrice, setStorePrice] = useState("");
   const [resultsErr, setResultsErr] = useState("");
   const [setSort, setSetSort] = useState<"board" | "name" | "price">("board");
   const [pasteText, setPasteText] = useState("");
@@ -63,6 +66,24 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // in-stock inventory for the store purchase dropdown
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/inventory");
+        if (r.ok) {
+          const d = await r.json();
+          setInvOptions(
+            ((d.items || d.inventory || []) as any[])
+              .filter((i) => (i.qtyOnHand || 0) > 0)
+              .map((i) => ({ id: i.id, name: i.name, market: i.marketPrice || 0, qty: i.qtyOnHand }))
+              .sort((a, b) => a.name.localeCompare(b.name))
+          );
+        }
+      } catch {}
+    })();
+  }, []);
 
   // the whole team for the timeclock For selector - managers log anyone's hours
   useEffect(() => {
@@ -111,20 +132,26 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   // live metrics computed locally - hit marking updates instantly, no reload
   const m = useMemo(() => {
     const cfg = data?.config || { hitThreshold: 10, breakevenMult: 1.45, histDeliveryRate: null };
-    const spots = lines.filter((l) => !l.isGiveaway).reduce((a, l) => a + l.qty, 0);
-    const givvyQty = lines.filter((l) => l.isGiveaway).reduce((a, l) => a + l.qty, 0);
-    const givvyValue = lines.filter((l) => l.isGiveaway).reduce((a, l) => a + l.qty * l.market, 0);
-    const totalValue = lines.reduce((a, l) => a + l.qty * l.market, 0);
-    const hitLines = lines.filter((l) => l.isHit);
+    const storeLines = lines.filter((l: any) => l.isStore);
+    const base = lines.filter((l: any) => !l.isStore); // spin math never sees store purchases
+    const storeCount = storeLines.length;
+    const storeSales = storeLines.reduce((a: number, l: any) => a + (l.soldPrice || 0), 0);
+    const storeMarket = storeLines.reduce((a: number, l: any) => a + l.qty * l.market, 0);
+    const storeBuy = storeLines.reduce((a: number, l: any) => a + l.qty * (l.buy ?? 0), 0);
+    const spots = base.filter((l) => !l.isGiveaway).reduce((a, l) => a + l.qty, 0);
+    const givvyQty = base.filter((l) => l.isGiveaway).reduce((a, l) => a + l.qty, 0);
+    const givvyValue = base.filter((l) => l.isGiveaway).reduce((a, l) => a + l.qty * l.market, 0);
+    const totalValue = base.reduce((a, l) => a + l.qty * l.market, 0);
+    const hitLines = base.filter((l) => l.isHit);
     const hitPoolQty = hitLines.reduce((a, l) => a + l.qty, 0);
     const hitPoolValue = hitLines.reduce((a, l) => a + l.qty * l.market, 0);
     const hitsDelivered = hitLines.reduce((a, l) => a + l.qtyHit, 0);
     const hitValueDelivered = hitLines.reduce((a, l) => a + l.qtyHit * l.market, 0);
     const hitCostDelivered = hitLines.reduce((a, l) => a + l.qtyHit * (l.buy ?? 0), 0);
     const hitValueRemaining = hitLines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0) * l.market, 0);
-    const unpricedQty = lines.filter((l) => !l.isGiveaway && !(l.market > 0)).reduce((a, l) => a + l.qty, 0);
+    const unpricedQty = base.filter((l) => !l.isGiveaway && !(l.market > 0)).reduce((a, l) => a + l.qty, 0);
     const showBuy = lines.some((l) => typeof l.buy === "number"); // admin only
-    const buyCost = lines.reduce((a, l) => a + l.qty * (l.buy ?? 0), 0);
+    const buyCost = base.reduce((a, l) => a + l.qty * (l.buy ?? 0), 0);
     return {
       cfg, spots, unpricedQty, givvyQty, givvyValue, totalValue, showBuy,
       buyCost: showBuy ? buyCost : null,
@@ -134,6 +161,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       hitCostDelivered: showBuy ? hitCostDelivered : null,
       hitValueRemaining,
       hitOddsPerSpot: spots > 0 ? hitPoolQty / spots : 0,
+      storeCount, storeSales, storeMarket, storeBuy,
       expectedHits: cfg.histDeliveryRate !== null ? Math.round(hitPoolQty * cfg.histDeliveryRate) : null,
     };
   }, [lines, data]);
@@ -313,7 +341,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const giveawaySpend = giveawaysNum * (data?.config?.giveawayCost || 0);
   const productSold = m.hitValueDelivered + giveawaySpend;
   const productBack = Math.max(0, m.totalValue - m.hitValueDelivered - m.givvyValue);
-  const grossProfit = afterFeesNum - productSold;
+  const grossProfit = afterFeesNum - productSold - m.storeMarket;
 
   const packingPay = data?.pay ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * data.pay.packingRate : 0;
   // streaming labor at the streamer's hourly rate. Weekly settlement pays the
@@ -321,7 +349,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const streamPay = data?.pay?.hourlyRate ? (stream?.hours || 0) * data.pay.hourlyRate : 0;
   const netProfit = grossProfit - streamPay - packingPay - tipsNum - promoNum;
   const buyNet = m.hitCostDelivered !== null
-    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend) - streamPay - packingPay - tipsNum - promoNum
+    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend + (m.storeBuy || 0)) - streamPay - packingPay - tipsNum - promoNum
     : null;
 
   return (
@@ -398,7 +426,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             <span className="text-dim text-sm ml-3">Packaging: {stream.managerName}</span>
           )}
         </div>
-        <CopyShowSet lines={lines.map((l) => ({ qty: l.qty, name: l.name, market: l.market }))} streamTitle={stream.title || "show-set"} />
+        <CopyShowSet lines={(lines as any[]).filter((l) => !l.isStore).map((l) => ({ qty: l.qty, name: l.name, market: l.market }))} streamTitle={stream.title || "show-set"} />
       </div>
 
       {/* Stream P&L: product that was not hit goes back to inventory, so the
@@ -459,6 +487,20 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               <span className="text-dim">Product sold this show</span>
               <span className="num">-{$(productSold)}</span>
             </div>
+            {m.storeCount > 0 && (
+              <div className="flex justify-between gap-6">
+                <span className="text-dim">Store purchases ({m.storeCount}) - sold {$(m.storeSales)}</span>
+                <span className="num">-{$(m.storeMarket)}</span>
+              </div>
+            )}
+            {m.storeCount > 0 && (
+              <div className="flex justify-between gap-6">
+                <span className="text-dim">Additional profit over market</span>
+                <span className={`num ${m.storeSales - m.storeMarket >= 0 ? "text-win" : "text-bad"}`}>
+                  {m.storeSales - m.storeMarket >= 0 ? "+" : ""}{$(m.storeSales - m.storeMarket)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between gap-6 border-t border-edge pt-1.5 font-semibold">
               <span>Gross profit</span>
               <span className={`num ${!resultsEntered ? "text-dim" : grossProfit >= 0 ? "text-win" : "text-bad"}`}>
@@ -500,7 +542,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             )}
             {resultsEntered && spotsSoldNum > 0 && (
               <div className="text-dim text-xs num text-right">
-                {$(afterFeesNum / spotsSoldNum)} avg per spin - {$(netProfit / spotsSoldNum)} profit per spin so far
+                {$((afterFeesNum - m.storeSales) / spotsSoldNum)} avg per spin - {$((netProfit - (m.storeSales - m.storeMarket)) / spotsSoldNum)} profit per spin so far
               </div>
             )}
             {m.unpricedQty > 0 && (
@@ -664,6 +706,85 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         )}
       </section>
 
+      {/* Store purchases: a customer bought something straight off the shelf */}
+      {!stream.itemsReturned && (
+        <section className="card p-5 space-y-3">
+          <div className="flex items-baseline justify-between flex-wrap gap-2">
+            <h2 className="label">Store purchases</h2>
+            <span className="text-dim text-xs">Anything in stock can be ripped for a buyer - price it, log it, it books as additional profit without touching spin stats</span>
+          </div>
+          <div className="flex gap-2 flex-wrap items-end">
+            <div className="min-w-64 flex-1">
+              <label className="label">Item</label>
+              <select
+                className="input mt-1 w-full"
+                value={storeProduct}
+                onChange={(e) => {
+                  setStoreProduct(e.target.value);
+                  const p = invOptions.find((i) => i.id === e.target.value);
+                  if (p && !storePrice) setStorePrice(p.market ? String(p.market.toFixed(2)) : "");
+                }}
+              >
+                <option value="">Pick from inventory...</option>
+                {invOptions.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.qty} on hand{p.market ? ` - mkt $${p.market.toFixed(2)}` : ""})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Sold for $</label>
+              <input type="number" step="0.01" className="input mt-1 w-28" value={storePrice} onChange={(e) => setStorePrice(e.target.value)} />
+            </div>
+            <button
+              className="btn-win disabled:opacity-40"
+              disabled={busy || !storeProduct || !(parseFloat(storePrice) >= 0)}
+              onClick={async () => {
+                setBusy(true);
+                const r = await fetch("/api/lines/store", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ streamId: id, productId: storeProduct, soldPrice: parseFloat(storePrice) }),
+                });
+                setBusy(false);
+                if (r.ok) { setStoreProduct(""); setStorePrice(""); await load(); }
+              }}
+            >
+              Sold
+            </button>
+          </div>
+          {(lines as any[]).filter((l) => l.isStore).length > 0 && (
+            <div className="space-y-1 text-sm">
+              {(lines as any[]).filter((l) => l.isStore).map((l) => (
+                <div key={l.id} className="flex items-center justify-between gap-3 border-t border-edge pt-1.5">
+                  <span>{l.name.replace(/ \(store\)$/, "")}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="num">{$(l.soldPrice || 0)}</span>
+                    <span className={`text-xs ${((l.soldPrice || 0) - l.market) >= 0 ? "text-win" : "text-bad"}`}>
+                      {((l.soldPrice || 0) - l.market) >= 0 ? "+" : ""}{$((l.soldPrice || 0) - l.market)} vs market
+                    </span>
+                    <button
+                      className="text-dim hover:text-bad text-xs"
+                      onClick={async () => {
+                        await fetch(`/api/lines/${l.id}`, { method: "DELETE" });
+                        await load();
+                      }}
+                    >
+                      undo
+                    </button>
+                  </span>
+                </div>
+              ))}
+              <div className="flex justify-between gap-3 border-t border-edge pt-1.5 font-semibold">
+                <span>Additional profit over market</span>
+                <span className={`num ${m.storeSales - m.storeMarket >= 0 ? "text-win" : "text-bad"}`}>
+                  {m.storeSales - m.storeMarket >= 0 ? "+" : ""}{$(m.storeSales - m.storeMarket)}
+                </span>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Show set builder */}
       <section className="card p-5 space-y-4">
         <div className="flex items-center justify-between">
@@ -718,7 +839,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               </tr>
             </thead>
             <tbody>
-              {(setSort === "board" ? lines : [...lines].sort((a, b) =>
+              {(setSort === "board" ? (lines as any[]).filter((l) => !l.isStore) : ([...lines] as any[]).filter((l) => !l.isStore).sort((a, b) =>
                 setSort === "name" ? a.name.localeCompare(b.name) : (b.market || 0) - (a.market || 0)
               )).map((l) => (
                 <tr key={l.id} className={l.isGiveaway ? "bg-givvy/5" : ""}>
