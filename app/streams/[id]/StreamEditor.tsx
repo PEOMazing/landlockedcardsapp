@@ -429,6 +429,61 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         <CopyShowSet lines={(lines as any[]).filter((l) => !l.isStore).map((l) => ({ qty: l.qty, name: l.name, market: l.market }))} streamTitle={stream.title || "show-set"} />
       </div>
 
+      {(stream.status === "Planned" || stream.status === "Live") && !stream.itemsReturned && (
+        <section className="card p-4 flex items-center gap-3 flex-wrap border-win/40">
+          {stream.status === "Live" ? (
+            <>
+              <span className="text-win font-semibold text-sm">This stream is LIVE</span>
+              <a className="btn-win !py-1.5" href={`/streams/${id}/live`}>Open live mode</a>
+            </>
+          ) : (
+            <>
+              <span className="text-dim text-sm">Going live? Start the stream to clock in and open the focused show view.</span>
+              <button
+                className="btn-win !py-1.5 disabled:opacity-40"
+                disabled={busy}
+                onClick={async () => {
+                  const r = await fetch(`/api/streams/${id}/live`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start" }) });
+                  if (r.ok) window.location.href = `/streams/${id}/live`;
+                }}
+              >
+                Start stream
+              </button>
+            </>
+          )}
+        </section>
+      )}
+      {stream.status === "Review" && (
+        <section className="card p-4 flex items-center gap-3 flex-wrap border-givvy/40">
+          <span className="text-givvy font-semibold text-sm">Stream ended - hits need review and submission</span>
+          <a className="btn-ghost !py-1.5" href={`/streams/${id}/live`}>Review and submit</a>
+        </section>
+      )}
+      {stream.status === "Submitted" && (
+        <section className="card p-4 flex items-center gap-3 flex-wrap border-foil/40">
+          <span className="text-foil font-semibold text-sm">Submitted - awaiting approval</span>
+          {canManage ? (
+            <>
+              <span className="text-dim text-sm">Re-check the hit tracker below, then approve. Approval returns unhit items to inventory and marks the stream approved for payroll.</span>
+              <button
+                className="btn-win !py-1.5 disabled:opacity-40"
+                disabled={busy}
+                onClick={async () => {
+                  const r = await fetch(`/api/streams/${id}/live`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "approve" }) });
+                  const d = await r.json().catch(() => ({}));
+                  if (!r.ok) { setResultsErr(d.error || "could not approve"); return; }
+                  await load();
+                }}
+              >
+                Approve stream
+              </button>
+            </>
+          ) : (
+            <span className="text-dim text-sm">A manager will review and approve.</span>
+          )}
+        </section>
+      )}
+
       {/* Stream P&L: product that was not hit goes back to inventory, so the
           stream is only charged for what actually left the building */}
       <section className="card p-5 border-foil/40">

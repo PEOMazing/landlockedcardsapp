@@ -75,6 +75,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       title: stream.fields["Title"],
       date: stream.fields["Stream Date"],
       status: stream.fields["Status"] || "Planned",
+      liveStartedAt: stream.fields["Live Started At"] || null,
       afterFees: stream.fields["After Fees"] ?? null,
       promotion: stream.fields["Promotion"] ?? null,
       tips: stream.fields["Tips"] ?? null,
