@@ -25,6 +25,7 @@ export default function ProductPicker({
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const [selected, setSelected] = useState<PickerItem | null>(null);
+  const [pickMsg, setPickMsg] = useState("");
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addErr, setAddErr] = useState("");
@@ -64,7 +65,16 @@ export default function ProductPicker({
   }
 
   function submit() {
-    if (!selected || qty < 1) return;
+    if (!selected) {
+      setPickMsg(
+        q.trim()
+          ? `"${q.trim()}" is typed but not selected - click it in the dropdown first, then Add.`
+          : "Search for a product and pick it from the dropdown first."
+      );
+      return;
+    }
+    if (qty < 1) return;
+    setPickMsg("");
     onAdd(selected, qty);
     setSelected(null);
     setQ("");
@@ -179,10 +189,11 @@ export default function ProductPicker({
           onChange={(e) => setQty(parseInt(e.target.value) || 1)}
           aria-label="Quantity"
         />
-        <button className="btn-foil disabled:opacity-40" disabled={!selected || busy} onClick={submit}>
+        <button className="btn-foil disabled:opacity-40" disabled={busy} onClick={submit}>
           Add this product
         </button>
       </div>
+      {pickMsg && <p className="text-bad text-xs">{pickMsg}</p>}
 
       {adding && (
         <div className="card p-3 flex flex-col gap-2">

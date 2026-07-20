@@ -269,11 +269,18 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     setBusy(false);
   }
 
+  const removingRef = useRef<Set<string>>(new Set());
   async function removeLine(lineId: string) {
+    if (removingRef.current.has(lineId)) return;
+    removingRef.current.add(lineId);
     setBusy(true);
-    await fetch(`/api/lines/${lineId}`, { method: "DELETE" });
-    await load();
-    setBusy(false);
+    try {
+      await fetch(`/api/lines/${lineId}`, { method: "DELETE" });
+      await load();
+    } finally {
+      removingRef.current.delete(lineId);
+      setBusy(false);
+    }
   }
 
   // pricing (admin/manager): updates the line snapshot and the inventory master
