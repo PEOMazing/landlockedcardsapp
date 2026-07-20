@@ -146,8 +146,12 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const hitPoolQty = hitLines.reduce((a, l) => a + l.qty, 0);
     const hitPoolValue = hitLines.reduce((a, l) => a + l.qty * l.market, 0);
     const hitsDelivered = hitLines.reduce((a, l) => a + l.qtyHit, 0);
-    const hitValueDelivered = hitLines.reduce((a, l) => a + l.qtyHit * l.market, 0);
-    const hitCostDelivered = hitLines.reduce((a, l) => a + l.qtyHit * (l.buy ?? 0), 0);
+    // cost counts EVERY delivered non-giveaway line, whatever its price - the
+    // hit threshold defines odds stats, not what product cost the stream. Cheap
+    // packs that ripped still left the building.
+    const delivered = base.filter((l) => !l.isGiveaway);
+    const hitValueDelivered = delivered.reduce((a, l) => a + l.qtyHit * l.market, 0);
+    const hitCostDelivered = delivered.reduce((a, l) => a + l.qtyHit * (l.buy ?? 0), 0);
     const hitValueRemaining = hitLines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0) * l.market, 0);
     const unpricedQty = base.filter((l) => !l.isGiveaway && !(l.market > 0)).reduce((a, l) => a + l.qty, 0);
     const showBuy = lines.some((l) => typeof l.buy === "number"); // admin only
