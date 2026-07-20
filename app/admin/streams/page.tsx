@@ -38,7 +38,6 @@ export default async function AllStreamsPage() {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
-    if (line.isGiveaway) continue; // charged at the flat giveaway rate, not market
     hitMarketByStream[sid] = (hitMarketByStream[sid] || 0) + line.qtyHit * line.market;
   }
 

@@ -101,7 +101,6 @@ export default async function VendorDashboard() {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
-    if (line.isGiveaway) continue; // charged at the flat giveaway rate, not market
     // delivered hits only - unhit product returns to stock, same basis as the admin pages
     costByStream[sid] = (costByStream[sid] || 0) + line.qtyHit * line.buy;
     marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qtyHit * line.market;

@@ -146,10 +146,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const hitPoolQty = hitLines.reduce((a, l) => a + l.qty, 0);
     const hitPoolValue = hitLines.reduce((a, l) => a + l.qty * l.market, 0);
     const hitsDelivered = hitLines.reduce((a, l) => a + l.qtyHit, 0);
-    // cost counts EVERY delivered non-giveaway line, whatever its price - the
-    // hit threshold defines odds stats, not what product cost the stream. Cheap
-    // packs that ripped still left the building.
-    const delivered = base.filter((l) => !l.isGiveaway);
+    // cost counts EVERY delivered line at market, whatever its price - the hit
+    // threshold defines odds stats only, and giveaway spend comes exclusively
+    // from the giveaways-run counter, never from lines.
+    const delivered = base;
     const hitValueDelivered = delivered.reduce((a, l) => a + l.qtyHit * l.market, 0);
     const hitCostDelivered = delivered.reduce((a, l) => a + l.qtyHit * (l.buy ?? 0), 0);
     const hitValueRemaining = hitLines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0) * l.market, 0);

@@ -36,7 +36,6 @@ export default async function AdminDashboard() {
     // delivered hits only: unhit product returns to stock, so it is not a stream cost.
     // giveaway lines stay out - they are charged at the flat giveaway rate via the
     // giveaways-run counter, and counting them at market here double-charged them.
-    if (line.isGiveaway) continue;
     costByStream[sid] = (costByStream[sid] || 0) + line.qtyHit * line.buy;
     marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qtyHit * line.market;
   }
