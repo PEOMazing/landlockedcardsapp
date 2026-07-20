@@ -766,7 +766,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       </section>
 
       {/* Store purchases: a customer bought something straight off the shelf */}
-      {(!stream.itemsReturned || (isAdmin && Date.now() < Date.parse("2026-07-21T05:00:00Z"))) && (
+      {!stream.itemsReturned && (
         <section className="card p-5 space-y-3">
           <div className="flex items-baseline justify-between flex-wrap gap-2">
             <h2 className="label">Store purchases</h2>
