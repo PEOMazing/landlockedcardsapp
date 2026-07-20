@@ -69,9 +69,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const g = await guard(params.id);
   if ("err" in g) return g.err;
+  // TRIPWIRE (temporary): record every line deletion with its caller so the
+  // phantom mass-delete can be traced. Remove once the culprit is found.
+  try {
+    const { recordAlert } = await import("@/lib/alerts");
+    await recordAlert("stock", `TRIPWIRE: line deleted - ${g.line.fields["Line"] || params.id}`, {
+      lineId: params.id,
+      line: g.line.fields["Line"] || "",
+      streamId: g.line.fields["Stream Rec Id"] || "",
+      user: g.me?.streamer?.fields?.["Name"] || g.me?.streamer?.id || "unknown",
+      referer: req.headers.get("referer") || "",
+      userAgent: (req.headers.get("user-agent") || "").slice(0, 120),
+      at: new Date().toISOString(),
+    });
+  } catch {}
   const returned = !!g.stream.fields["Items Returned"];
   // Before a return: removing a line restores its full quantity (nothing left
   // the building yet). After a return: the unhit portion already went back, so
