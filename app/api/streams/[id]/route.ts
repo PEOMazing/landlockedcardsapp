@@ -203,7 +203,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const afterFees = b.afterFees !== undefined ? b.afterFees : stream.fields["After Fees"];
     const spots = b.spotsSold !== undefined ? b.spotsSold : stream.fields["Spots Sold"];
     const hours = stream.fields["Hours Streamed"] || 0;
-    const returned = !!stream.fields["Items Returned"];
+    let returned = !!stream.fields["Items Returned"];
+    // A fully-hit board has nothing to send back, so the return step is a
+    // formality - run it automatically instead of blocking completion on it.
+    if (!returned) {
+      const lines = await atList(T.lines, {
+        filterByFormula: `{Stream Rec Id} = '${params.id}'`,
+      });
+      const unhit = lines.reduce(
+        (n, l: any) => n + Math.max(0, (Number(l.fields["Qty"]) || 0) - (Number(l.fields["Qty Hit"]) || 0)),
+        0
+      );
+      if (unhit === 0) {
+        fields["Items Returned"] = true;
+        returned = true;
+      }
+    }
     const missing: string[] = [];
     if (!(afterFees > 0)) missing.push("after fees");
     if (!(spots >= 0) || spots === null || spots === undefined) missing.push("spots sold");
