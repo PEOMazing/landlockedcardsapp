@@ -180,7 +180,7 @@ export default function ProductPicker({
           aria-label="Quantity"
         />
         <button className="btn-foil disabled:opacity-40" disabled={!selected || busy} onClick={submit}>
-          Add to show
+          Add this product
         </button>
       </div>
 

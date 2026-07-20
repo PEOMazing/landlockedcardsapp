@@ -910,7 +910,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             />
             <div className="flex items-center gap-3 flex-wrap">
               <button className="btn-foil disabled:opacity-40" disabled={busy || !pasteText.trim()} onClick={bulkAdd}>
-                Add all to show
+                {pasteText.trim() ? `Add pasted list (${parsePaste(pasteText).length} items)` : "Add pasted list"}
               </button>
               {pasteMsg && <span className="text-dim text-xs">{pasteMsg}</span>}
             </div>
