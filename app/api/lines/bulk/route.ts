@@ -14,7 +14,10 @@ export async function POST(req: Request) {
   if (!isRecId(String(b.streamId || ""))) return NextResponse.json({ error: "bad stream id" }, { status: 400 });
   const stream = await atGet(T.streams, b.streamId);
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  if (stream.fields["Items Returned"]) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
+  // TEMPORARY inventory-rebuild window (expires 2026-07-20 23:00 Denver): admin
+  // can rebuild closed show sets; adds skip stock decrements, mirroring deletes.
+  const rebuildWindow = !!stream.fields["Items Returned"] && (me.isAdmin ?? false) && Date.now() < Date.parse("2026-07-21T05:00:00Z");
+  if (stream.fields["Items Returned"] && !rebuildWindow) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
 
   const items: { name: string; qty: number }[] = (b.items || [])
     .map((i: any) => ({ name: String(i.name || "").trim(), qty: Math.max(1, parseInt(i.qty) || 1) }))
@@ -73,8 +76,8 @@ export async function POST(req: Request) {
       "Stream Rec Id": b.streamId,
       "Product": [product.id],
     });
-    stockChanges.push({ name, qtyNow: (product.fields["Qty On Hand"] ?? 0) - item.qty, delta: -item.qty });
-    await atUpdate(T.inventory, product.id, {
+    if (!rebuildWindow) stockChanges.push({ name, qtyNow: (product.fields["Qty On Hand"] ?? 0) - item.qty, delta: -item.qty });
+    if (!rebuildWindow) await atUpdate(T.inventory, product.id, {
       "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) - item.qty,
     });
     added.push(`${item.qty}x ${name}`);
