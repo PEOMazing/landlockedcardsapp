@@ -79,6 +79,29 @@ export default function LiveClient({ id }: { id: string }) {
     return () => clearTimeout(t);
   }, [form, id]);
 
+  // flush a pending save when the tab hides or the page unloads
+  useEffect(() => {
+    const flush = () => {
+      const nowJson = JSON.stringify(form);
+      if (!baselineRef.current || nowJson === baselineRef.current) return;
+      fetch(`/api/streams/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ afterFees: parseFloat(form.afterFees) || 0, spotsSold: parseInt(form.spotsSold) || 0 }),
+        keepalive: true,
+      }).catch(() => {});
+      baselineRef.current = nowJson;
+    };
+    const onHide = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [form, id]);
+
   async function bumpHit(l: Line, delta: number) {
     const next = Math.min(Math.max(l.qtyHit + delta, 0), l.qty);
     if (next === l.qtyHit) return;
@@ -87,6 +110,7 @@ export default function LiveClient({ id }: { id: string }) {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ qtyHit: next }),
+      keepalive: true,
     }).catch(() => {});
   }
 

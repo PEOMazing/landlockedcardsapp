@@ -100,24 +100,30 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
 
   // results auto-save: whatever changes is on Airtable a moment later. No
   // reload on save - the P&L reads these fields from local state already.
+  const pendingRef = useRef<string | null>(null);
   useEffect(() => {
     const now = JSON.stringify(form);
-    if (!baselineRef.current || now === baselineRef.current) return;
+    if (!baselineRef.current || now === baselineRef.current) { pendingRef.current = null; return; }
+    pendingRef.current = JSON.stringify({
+      afterFees: parseFloat(form.afterFees) || 0,
+      promotion: parseFloat(form.promotion) || 0,
+      tips: parseFloat(form.tips) || 0,
+      spotsSold: parseInt(form.spotsSold) || 0,
+      giveaways: parseInt(form.giveaways) || 0,
+    });
     const t = setTimeout(async () => {
+      const body = pendingRef.current;
+      if (!body) return;
       setSaveState("saving");
       const r = await fetch(`/api/streams/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          afterFees: parseFloat(form.afterFees) || 0,
-          promotion: parseFloat(form.promotion) || 0,
-          tips: parseFloat(form.tips) || 0,
-          spotsSold: parseInt(form.spotsSold) || 0,
-          giveaways: parseInt(form.giveaways) || 0,
-        }),
+        body,
+        keepalive: true,
       });
       if (r.ok) {
         baselineRef.current = now;
+        pendingRef.current = null;
         setSaveState("saved");
         setTimeout(() => setSaveState("idle"), 1800);
       } else {
@@ -128,6 +134,29 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     }, 900);
     return () => clearTimeout(t);
   }, [form, id]);
+
+  // never lose a pending save: flush with keepalive when the tab hides or the
+  // component unmounts - keepalive requests outlive navigation
+  useEffect(() => {
+    const flush = () => {
+      if (!pendingRef.current) return;
+      fetch(`/api/streams/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: pendingRef.current,
+        keepalive: true,
+      }).catch(() => {});
+      pendingRef.current = null;
+    };
+    const onHide = () => { if (document.visibilityState === "hidden") flush(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [id]);
 
   // live metrics computed locally - hit marking updates instantly, no reload
   const m = useMemo(() => {
@@ -219,11 +248,14 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const items = parsePaste(pasteText);
     if (items.length === 0) return;
     setBusy(true); setPasteMsg("Adding " + items.length + " items...");
+    const guard = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener("beforeunload", guard);
     const res = await fetch("/api/lines/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ streamId: id, items }),
-    });
+      keepalive: true,
+    }).finally(() => window.removeEventListener("beforeunload", guard));
     const d = await res.json();
     if (!res.ok) setPasteMsg(d.error || "Bulk add failed");
     else {
