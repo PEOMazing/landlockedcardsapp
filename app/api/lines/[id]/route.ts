@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stockAlert } from "@/lib/alerts";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 
@@ -62,15 +63,31 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   const g = await guard(params.id);
   if ("err" in g) return g.err;
-  if (g.stream.fields["Items Returned"]) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
+  const returned = !!g.stream.fields["Items Returned"];
+  // Before a return: removing a line restores its full quantity (nothing left
+  // the building yet). After a return: the unhit portion already went back, so
+  // removing the line restores only the hit portion - inventory nets out as if
+  // the line never existed. Post-return removal is a history correction, so it
+  // is manager-gated.
+  if (returned && !g.me.isManager && !g.me.isAdmin) {
+    return NextResponse.json({ error: "items were returned - only managers can remove lines from a closed stream" }, { status: 403 });
+  }
   const qty = g.line.fields["Qty"] || 0;
+  const hit = g.line.fields["Qty Hit"] || 0;
+  const restore = returned ? hit : qty;
   const productId = g.line.fields["Product"]?.[0];
-  if (productId) {
+  if (productId && restore > 0) {
     const product = await atGet(T.inventory, productId);
     await atUpdate(T.inventory, productId, {
-      "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) + qty,
+      "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) + restore,
     });
+    if (returned) {
+      await stockAlert(
+        [{ name: product.fields["Product Name"], qtyNow: (product.fields["Qty On Hand"] ?? 0) + restore, delta: restore }],
+        "line removed from a closed stream"
+      ).catch(() => {});
+    }
   }
   await atDelete(T.lines, params.id);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, restored: restore });
 }

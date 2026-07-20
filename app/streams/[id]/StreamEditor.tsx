@@ -940,7 +940,26 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                         </button>
                       </span>
                     ) : (
-                      l.qty
+                      <span className="inline-flex items-center gap-2">
+                        {l.qty}
+                        {canManage && (
+                          <button
+                            className="text-dim hover:text-bad text-xs"
+                            title="Remove this line - restores its hit quantity to inventory, since the unhit portion already went back with the return"
+                            disabled={busy}
+                            onClick={async () => {
+                              if (!confirm(`Remove ${l.name} from this closed stream? Its ${l.qtyHit || 0} hit unit(s) go back to inventory.`)) return;
+                              setBusy(true);
+                              const r = await fetch(`/api/lines/${l.id}`, { method: "DELETE" });
+                              setBusy(false);
+                              if (!r.ok) { const d = await r.json().catch(() => ({})); setReturnMsg(d.error || "could not remove"); return; }
+                              await load();
+                            }}
+                          >
+                            remove
+                          </button>
+                        )}
+                      </span>
                     )}
                   </td>
                   <td>
