@@ -37,6 +37,7 @@ export default async function PayrollPage() {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
+    if (line.isGiveaway) continue; // charged at the flat giveaway rate, not market
     costByStream[sid] = (costByStream[sid] || 0) + line.qtyHit * line.buy;
     marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qtyHit * line.market;
   }
