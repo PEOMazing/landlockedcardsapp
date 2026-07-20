@@ -19,6 +19,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if ("err" in g) return g.err;
   const b = await req.json();
   const returned = !!g.stream.fields["Items Returned"];
+  // TEMPORARY inventory-rebuild window (expires 2026-07-20 23:00 Denver time):
+  // Gabe is redoing inventory by hand, so admin line removals on closed streams
+  // skip stock restoration and alerts entirely - pure bookkeeping deletes.
+  // After expiry this block is inert and the hit-portion-restore rule resumes.
+  const rebuildWindow = g.me.isAdmin && Date.now() < Date.parse("2026-07-21T05:00:00Z");
+  if (returned && rebuildWindow) {
+    await atDelete(T.lines, params.id);
+    return NextResponse.json({ ok: true, restored: 0, rebuildWindow: true });
+  }
   const fields: Record<string, any> = {};
   if (b.qtyHit !== undefined) {
     if (returned) return NextResponse.json({ error: "items already returned - hits are locked" }, { status: 400 });
