@@ -101,6 +101,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   // results auto-save: whatever changes is on Airtable a moment later. No
   // reload on save - the P&L reads these fields from local state already.
   const pendingRef = useRef<string | null>(null);
+  const removingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const now = JSON.stringify(form);
     if (!baselineRef.current || now === baselineRef.current) { pendingRef.current = null; return; }
@@ -269,7 +270,6 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     setBusy(false);
   }
 
-  const removingRef = useRef<Set<string>>(new Set());
   async function removeLine(lineId: string) {
     if (removingRef.current.has(lineId)) return;
     removingRef.current.add(lineId);
