@@ -19,6 +19,16 @@ function csvEscape(v: any): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+function linkLabel(url: string): string {
+  if (!url) return "TCGplayer";
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, "");
+    if (h.includes("tcgplayer")) return "TCGplayer";
+    if (h.includes("ebay")) return "eBay";
+    return h.split(".")[0];
+  } catch { return "Link"; }
+}
+
 function displayName(name: string, category: string): string {
   if (!category || category === "Other") return name;
   let stripped = name.replace(new RegExp(category.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), "").replace(/\s{2,}/g, " ").trim();
@@ -253,6 +263,11 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
           <label className="label">On hand</label>
           <input type="number" className="input mt-1" value={draft.qtyOnHand} onChange={(e) => setDraft({ ...draft, qtyOnHand: e.target.value })} />
         </div>
+        <div className="sm:col-span-2">
+          <label className="label">Price link (TCGplayer, eBay, or any URL)</label>
+          <input className="input mt-1" placeholder="https://www.tcgplayer.com/product/... or an eBay link" value={draft.tcgUrl} onChange={(e) => setDraft({ ...draft, tcgUrl: e.target.value })} />
+          <p className="text-dim text-[11px] mt-1">TCGplayer links wire into the nightly price refresh. Anything else (eBay etc.) is kept as a reference link and never auto-priced.</p>
+        </div>
         <button className="btn-foil justify-center disabled:opacity-40" disabled={busy || !draft.name} onClick={add}>
           Add product
         </button>
@@ -407,7 +422,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                         ? `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(i.name)}&LH_Sold=1&LH_Complete=1`
                         : `https://www.google.com/search?q=${encodeURIComponent(i.name)}+site:tcgplayer.com`)}
                     >
-                      {i.category === "Graded Card" ? "Sold comps" : "TCGplayer"}
+                      {i.category === "Graded Card" ? "Sold comps" : linkLabel(i.tcgUrl)}
                     </a>
                     {!i.tcgUrl && i.category !== "Graded Card" && (
                       <a

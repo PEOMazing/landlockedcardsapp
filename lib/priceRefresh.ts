@@ -101,6 +101,10 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
     }
     for (const [recId, rec] of pending) {
       if (priced.has(recId)) continue;
+      // A stored non-TCGplayer link (eBay etc.) means this product is priced
+      // elsewhere on purpose - never name-match it against the TCG catalog.
+      const storedUrl = String(rec.fields["TCGplayer URL"] || "");
+      if (storedUrl && !storedUrl.includes("tcgplayer.com")) continue;
       const knownId = idByRecord.get(recId);
       let best: any = null, bestScore = 0;
       for (const prod of prods) {
