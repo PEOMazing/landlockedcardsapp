@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function AllStreamsPage() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
-  if (!me.isAdmin) redirect("/dashboard");
+  if (!me.isAdmin && !me.isManager) redirect("/dashboard");
 
   const [streamRows, streamerRows, deletedRows, lineRows, settings] = await Promise.all([
     atList(T.streams, {
@@ -75,7 +75,7 @@ export default async function AllStreamsPage() {
 
   return (
     <>
-      <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-6xl mx-auto p-6 space-y-6">
         <div className="flex items-baseline justify-between flex-wrap gap-3">
           <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
@@ -84,7 +84,7 @@ export default async function AllStreamsPage() {
           <Link href="/streams/new" className="btn-foil">+ New stream</Link>
         </div>
 
-        <StreamsAdminClient streams={streams} deleted={deleted} />
+        <StreamsAdminClient streams={streams} deleted={me.isAdmin ? deleted : []} isAdmin={me.isAdmin} />
 
         <p className="text-dim text-xs">
           Every stream by every streamer, any status. Open any of them to view or edit the show set,

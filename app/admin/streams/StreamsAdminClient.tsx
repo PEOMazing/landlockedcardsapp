@@ -15,9 +15,11 @@ export type DeletedRowT = StreamRowT & { deletedAt: string; hoursLeft: number };
 export default function StreamsAdminClient({
   streams,
   deleted,
+  isAdmin = true,
 }: {
   streams: StreamRowT[];
   deleted: DeletedRowT[];
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
@@ -110,13 +112,15 @@ export default function StreamsAdminClient({
                 <td>{r.netProfit === null ? "-" : <span className={r.netProfit >= 0 ? "text-win" : "text-bad"}>{$(r.netProfit)}</span>}</td>
                 <td className="text-right whitespace-nowrap">
                   <Link className="text-foil hover:underline" href={`/streams/${r.id}`}>Open</Link>
-                  <button
-                    className="text-bad text-xs hover:underline ml-3 disabled:opacity-40"
-                    disabled={busy === r.id}
-                    onClick={() => softDelete(r)}
-                  >
-                    {busy === r.id ? "..." : "delete"}
-                  </button>
+                  {isAdmin && (
+                    <button
+                      className="text-bad text-xs hover:underline ml-3 disabled:opacity-40"
+                      disabled={busy === r.id}
+                      onClick={() => softDelete(r)}
+                    >
+                      {busy === r.id ? "..." : "delete"}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
