@@ -156,30 +156,7 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
 // ---------------- retail (MSRP) autofill ----------------
 // Walmart-fulfilled Pokemon sells at MSRP, so a category table gives the same
 // numbers with no scraping. Only fills blanks; hand edits are never touched.
-export function msrpFor(name: string, category: string): number | null {
-  const n = String(name).toLowerCase();
-  if (n.includes("ultra premium")) return 119.99;
-  if (category === "Super Premium Collection") return 79.99;
-  if (category === "Booster Pack") return 4.49;
-  if (category === "Booster Bundle") return 26.94;
-  if (category === "Elite Trainer Box") return n.includes("pokemon center") ? 54.99 : 49.99;
-  if (category === "Booster Box") return 161.64;
-  return null; // collections, tins, blisters vary too much - enter by hand
-}
 
-export async function fillRetailPrices(targets: AtRecord[]): Promise<number> {
-  let filled = 0;
-  for (const r of targets) {
-    if (r.fields["Retail Price"] !== undefined && r.fields["Retail Price"] !== null) continue;
-    const msrp = msrpFor(r.fields["Product Name"] || "", r.fields["Category"]?.name || r.fields["Category"] || "");
-    if (msrp === null) continue;
-    try {
-      await atUpdate(T.inventory, r.id, { "Retail Price": msrp });
-      filled++;
-    } catch {}
-  }
-  return filled;
-}
 
 // ---------------- nightly singles comp refresh ----------------
 // re-comps raw in-stock singles from fresh condition sales, capped per run

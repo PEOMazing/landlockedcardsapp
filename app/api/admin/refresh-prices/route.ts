@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { atList, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
-import { fillRetailPrices, refreshSingleComps, resnapshotOpenLines, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
+import { refreshSingleComps, resnapshotOpenLines, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -14,14 +14,12 @@ export async function POST() {
   if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const inventory = await atList(T.inventory, { filterByFormula: "{Active} = TRUE()" });
   const results = await tcgcsvBulkRefresh(inventory);
-  const retailFilled = await fillRetailPrices(inventory);
   const singles = await refreshSingleComps(150);
   const openLines = await resnapshotOpenLines();
   const priced = results.filter((r: any) => r.price !== null).length;
   return NextResponse.json({
     ok: true,
     sealed: { priced, total: results.length },
-    retailFilled,
     singles,
     openLines,
     ranAt: new Date().toISOString(),

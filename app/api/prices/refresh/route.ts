@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fillRetailPrices, recordSnapshot, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
+import { recordSnapshot, tcgcsvBulkRefresh } from "@/lib/priceRefresh";
 import { atList, atUpdate, T, AtRecord } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 
@@ -64,7 +64,6 @@ export async function POST(req: Request) {
   if (providerName === "tcgcsv") {
     try {
       const results = await tcgcsvBulkRefresh(targets);
-      await fillRetailPrices(targets);
       await recordSnapshot();
       return NextResponse.json({ provider: providerName, results });
     } catch (e: any) {
