@@ -112,7 +112,14 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       if (best && bestScore >= 60) {
         const mkt = marketById.get(best.productId);
         if (typeof mkt === "number") {
-          priced.set(recId, { price: Math.round(mkt * 100) / 100, matched: best.name, url: best.url || "", image: best.imageUrl || "" });
+          // Sanity band for name-only matches: if the record already has a price
+          // and the matched price is wildly off (over 3x in either direction),
+          // the match is almost certainly the wrong product (bundles, Costco
+          // multipacks, boxes vs packs). Skip it rather than corrupt the price.
+          const existing = Number(rec.fields["Market Price"]) || 0;
+          const proposed = Math.round(mkt * 100) / 100;
+          if (existing > 0 && (proposed > existing * 3 || proposed < existing / 3)) continue;
+          priced.set(recId, { price: proposed, matched: best.name, url: best.url || "", image: best.imageUrl || "" });
         }
       }
     }
@@ -123,7 +130,7 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
     const hit = priced.get(recId);
     if (hit) {
       const old = rec.fields["Market Price"] ?? 0;
-      if (old > 0 && hit.price >= old * 1.03 && (rec.fields["Qty On Hand"] ?? 0) > 0) {
+      if (old >= 1 && hit.price >= old * 1.03 && hit.price <= old * 3 && (rec.fields["Qty On Hand"] ?? 0) > 0) {
         jumps.push({ name: rec.fields["Product Name"], old, now: hit.price, pct: (hit.price / old - 1) * 100 });
       }
       const fields: Record<string, any> = {
