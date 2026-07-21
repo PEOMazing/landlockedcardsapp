@@ -271,7 +271,15 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 {i.imageUrl && <Thumb src={i.imageUrl} size={40} />}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold leading-tight" title={i.name}>{displayName(i.name, i.category)}</div>
-                  <div className="text-dim text-xs">{i.category}</div>
+                  <select
+                    className="bg-transparent text-dim text-xs border border-transparent hover:border-edge rounded px-1 py-0.5 cursor-pointer max-w-[160px]"
+                    value={i.category}
+                    onChange={(e) => patch(i.id, { category: e.target.value })}
+                    title="Change category"
+                  >
+                    {!CATS.includes(i.category as any) && <option value={i.category}>{i.category}</option>}
+                    {CATS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
                 <div className="text-right">
                   <div className="label">On hand</div>
@@ -330,7 +338,17 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                     {i.imageUrl && <Thumb src={i.imageUrl} size={32} className="mr-2" />}
                     {displayName(i.name, i.category)}
                   </td>
-                  <td className="text-dim">{i.category}</td>
+                  <td>
+                    <select
+                      className="bg-transparent text-dim text-xs border border-transparent hover:border-edge rounded px-1 py-0.5 cursor-pointer max-w-[150px]"
+                      value={i.category}
+                      onChange={(e) => patch(i.id, { category: e.target.value })}
+                      title="Change category"
+                    >
+                      {!CATS.includes(i.category as any) && <option value={i.category}>{i.category}</option>}
+                      {CATS.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </td>
                   <td>
                     {num(i.id, "buyPrice", i.buyPrice, "0.01", !(i.buyPrice > 0) ? "!border-amber-400/70 !bg-amber-400/10" : "")}
                     <button
