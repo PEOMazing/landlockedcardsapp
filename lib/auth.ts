@@ -45,6 +45,7 @@ export async function getMe(): Promise<Me | null> {
 // streamer of record, assigned manager, or admin
 export function ownsStream(me: Me, stream: AtRecord): boolean {
   if (me.isAdmin) return true;
+  if (me.isManager) return true;
   if (!me.streamer) return false;
   return (
     stream.fields["Streamer Rec Id"] === me.streamer.id ||

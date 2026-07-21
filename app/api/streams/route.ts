@@ -10,7 +10,7 @@ export async function GET() {
     "sort[0][direction]": "desc",
     filterByFormula: "{Deleted At} = BLANK()",
   };
-  if (!me.isAdmin) {
+  if (!me.isAdmin && !me.isManager) {
     if (!me.streamer) return NextResponse.json({ streams: [] });
     params.filterByFormula = `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`;
   }
