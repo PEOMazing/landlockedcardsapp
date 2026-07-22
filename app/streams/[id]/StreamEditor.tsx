@@ -627,12 +627,6 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                 {resultsEntered ? $(netProfit) : "-"}
               </span>
             </div>
-            {resultsEntered && buyNet !== null && (
-              <div className="flex justify-between gap-6 text-xs">
-                <span className="text-dim">over actual buy cost (admin)</span>
-                <span className={`num ${buyNet >= 0 ? "text-win" : "text-bad"}`}>{$(buyNet)}</span>
-              </div>
-            )}
             {!resultsEntered && (
               <div className="text-dim text-xs">
                 {canManage ? "type sales up top as they come in - every number here updates live, and marking a hit updates it too" : "updates live once sales are entered"}
