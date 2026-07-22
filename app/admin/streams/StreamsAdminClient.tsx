@@ -7,7 +7,7 @@ const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractio
 
 export type StreamRowT = {
   id: string; date: string; title: string; streamer: string; manager: string;
-  status: string; afterFees: number | null; hours: number | null; spots: number | null;
+  status: string; afterFees: number | null; hours: number | null; packingHours?: number; tips?: number | null; spots: number | null;
   payroll: number | null; netProfit: number | null;
 };
 export type DeletedRowT = StreamRowT & { deletedAt: string; hoursLeft: number };
@@ -69,7 +69,7 @@ export default function StreamsAdminClient({
           <thead>
             <tr>
               <th>Date</th><th>Title</th><th>Streamer</th><th>Packaging</th>
-              <th>Status</th><th>After fees</th><th>Hours</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
+              <th>Status</th><th>After fees</th><th>Hours</th><th title="Packing + manager packing hours">Packing</th><th title="Tips paid through to the streamer">Tips</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -108,6 +108,8 @@ export default function StreamsAdminClient({
                 </td>
                 <td>{r.afterFees !== null ? $(r.afterFees) : "-"}</td>
                 <td>{r.hours !== null ? r.hours.toFixed(1) : "-"}</td>
+                <td>{r.packingHours ? r.packingHours.toFixed(1) : "-"}</td>
+                <td>{r.tips ? $(r.tips) : "-"}</td>
                 <td>{r.payroll !== null && r.payroll > 0 ? $(r.payroll) : "-"}</td>
                 <td>{r.netProfit === null ? "-" : <span className={r.netProfit >= 0 ? "text-win" : "text-bad"}>{$(r.netProfit)}</span>}</td>
                 <td className="text-right whitespace-nowrap">

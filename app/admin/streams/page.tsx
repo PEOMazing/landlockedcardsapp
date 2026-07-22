@@ -60,6 +60,8 @@ export default async function AllStreamsPage() {
       status: r.fields["Status"] || "Planned",
       afterFees,
       hours: r.fields["Hours Streamed"] ?? null,
+      packingHours: (r.fields["Packing Hours"] || 0) + (r.fields["Manager Packing Hours"] || 0),
+      tips: r.fields["Tips"] ?? null,
       spots: r.fields["Spots Sold"] ?? null,
       payroll: afterFees === null && payroll === 0 ? null : payroll,
       netProfit: profitMarket === null ? null : profitMarket - hourlyEst - packing,
