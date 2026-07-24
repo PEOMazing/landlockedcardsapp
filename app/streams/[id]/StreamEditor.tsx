@@ -172,6 +172,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const givvyQty = base.filter((l) => l.isGiveaway).reduce((a, l) => a + l.qty, 0);
     const givvyValue = base.filter((l) => l.isGiveaway).reduce((a, l) => a + l.qty * l.market, 0);
     const totalValue = base.reduce((a, l) => a + l.qty * l.market, 0);
+    const itemsHit = base.reduce((a, l) => a + l.qtyHit, 0);
+    const itemsTotal = base.reduce((a, l) => a + l.qty, 0);
     const hitLines = base.filter((l) => l.isHit);
     const hitPoolQty = hitLines.reduce((a, l) => a + l.qty, 0);
     const hitPoolValue = hitLines.reduce((a, l) => a + l.qty * l.market, 0);
@@ -191,7 +193,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       buyCost: showBuy ? buyCost : null,
       valuePerSpot: spots > 0 ? totalValue / spots : 0,
       breakEven: spots > 0 ? (totalValue / spots) * cfg.breakevenMult : 0,
-      hitPoolQty, hitPoolValue, hitsDelivered, hitValueDelivered,
+      hitPoolQty, hitPoolValue, hitsDelivered, hitValueDelivered, itemsHit, itemsTotal,
       hitCostDelivered: showBuy ? hitCostDelivered : null,
       hitValueRemaining,
       hitOddsPerSpot: spots > 0 ? hitPoolQty / spots : 0,
@@ -763,6 +765,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           <div className="label">Total product hit so far</div>
           <div className="text-3xl font-bold num text-foil">{$(m.hitValueDelivered)}</div>
           <div className="text-dim text-xs num">{m.hitsDelivered} of {m.hitPoolQty} hits out</div>
+        </div>
+        <div>
+          <div className="label">Items hit</div>
+          <div className="text-3xl font-bold num text-win">{m.itemsHit}<span className="text-dim text-base font-normal"> / {m.itemsTotal}</span></div>
         </div>
         <div>
           <div className="label">Hit value remaining</div>
