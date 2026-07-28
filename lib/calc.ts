@@ -116,10 +116,11 @@ export type WeekPay = {
   commissionable: number;   // profit - packing (market basis)
   hours: number;
   hourlyRate: number;
-  optionA: number;          // hours x rate
-  optionB: number;          // tier commission on commissionable
-  streamPay: number;        // the higher
-  winner: "hourly" | "commission";
+  optionA: number;          // sum of per-stream hourly
+  optionB: number;          // sum of per-stream commission
+  streamPay: number;        // sum of per-stream greater-of
+  winner: "hourly" | "commission" | "mixed";
+  perStream: { id: string; hourly: number; commission: number; pay: number; winner: "hourly" | "commission" }[];
   tips: number;
   totalPay: number;         // streamPay + packingPay + tips
   supportPay: number;
@@ -154,9 +155,19 @@ export function buildWeekPay(
     const managerPackingPay = managerPackingHours * s.packing_rate; // manager's packing, a stream cost
     const commissionable = profit - packingPay - managerPackingPay;
     const hourlyRate = ratesByStreamer[streamerId] ?? s.default_hourly_rate;
-    const optionA = hours * hourlyRate;
-    const optionB = tierCommission(commissionable, s);
-    const streamPay = Math.max(optionA, optionB);
+    // settlement is PER STREAM: each show pays the higher of its hours x rate or
+    // 20% of its own commissionable (profit minus its packing); the week just sums them
+    const perStream = rows.map((r) => {
+      const rCommissionable =
+        r.afterFees - r.promotion - giveawayCost(r) - r.productMarketCost -
+        (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate;
+      const hourly = r.hours * hourlyRate;
+      const commission = tierCommission(rCommissionable, s);
+      return { id: r.id, hourly, commission, pay: Math.max(hourly, commission), winner: (hourly >= commission ? "hourly" : "commission") as "hourly" | "commission" };
+    });
+    const optionA = perStream.reduce((a, p) => a + p.hourly, 0);
+    const optionB = perStream.reduce((a, p) => a + p.commission, 0);
+    const streamPay = perStream.reduce((a, p) => a + p.pay, 0);
     const supportPay = Math.max(commissionable - streamPay, 0) * s.support_pct;
     out.push({
       weekStart,
@@ -165,8 +176,8 @@ export function buildWeekPay(
       streamerName: rows[0].streamerName,
       streams: rows.sort((a, b) => a.date.localeCompare(b.date)),
       profit, buyProfit, packingPay, commissionable, hours, hourlyRate,
-      optionA, optionB, streamPay,
-      winner: optionA >= optionB ? "hourly" : "commission",
+      optionA, optionB, streamPay, perStream,
+      winner: perStream.every((p) => p.winner === "hourly") ? "hourly" : perStream.every((p) => p.winner === "commission") ? "commission" : "mixed",
       tips,
       totalPay: streamPay + packingPay + tips,
       supportPay,
@@ -237,10 +248,14 @@ export function buildManagerPay(
             (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
       0
     );
-    // the streamer's pay on these streams: same greater-of rule (hours x rate vs tiers)
-    const hours = rows.reduce((a, r) => a + r.hours, 0);
+    // the streamer's pay on these streams: same per-stream greater-of the streamer is actually paid
     const rate = ratesByStreamer[streamerId] ?? s.default_hourly_rate;
-    const streamerPay = Math.max(hours * rate, tierCommission(commissionable, s));
+    const streamerPay = rows.reduce((a, r) => {
+      const rCommissionable =
+        r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost - r.productMarketCost -
+        (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate;
+      return a + Math.max(r.hours * rate, tierCommission(rCommissionable, s));
+    }, 0);
     const packingHours = rows.reduce((a, r) => a + (r.managerPackingHours || 0), 0);
 
     const mwKey = `${weekStart}|${managerId}`;
