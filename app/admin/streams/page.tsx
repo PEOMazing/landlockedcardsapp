@@ -50,7 +50,7 @@ export default async function AllStreamsPage() {
     const payroll = hourlyEst + packing + tips;
     const profitMarket = afterFees === null ? null :
       afterFees - (r.fields["Promotion"] || 0) - (r.fields["Giveaways Run"] || 0) * settings.giveaway_cost -
-      (hitMarketByStream[r.id] || 0) - tips;
+      (hitMarketByStream[r.id] || 0);
     return {
       id: r.id,
       date: r.fields["Stream Date"] || "",

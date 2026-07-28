@@ -133,7 +133,7 @@ export default async function VendorDashboard() {
   const streamProfit30 = recent.reduce((a, r) => {
     const sold = (hitDeliveredByStream[r.id] || 0) + (r.giveaways || 0) * settings.giveaway_cost;
     const packing = (r.packingHours + (r.managerPackingHours || 0)) * settings.packing_rate;
-    return a + (r.afterFees - sold - packing - r.tips - r.promotion);
+    return a + (r.afterFees - sold - packing - r.promotion);
   }, 0);
   const planned = rows.filter((r) => r.status !== "Complete").length;
 

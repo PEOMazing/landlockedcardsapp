@@ -110,8 +110,8 @@ export type WeekPay = {
   streamerId: string;
   streamerName: string;
   streams: StreamRow[];
-  profit: number;           // OVER MARKET: sum of (afterFees - promotion - productMarketCost - tips); drives all pay
-  buyProfit: number;        // OVER BUY: sum of (afterFees - promotion - productCost - tips); the company's real profit
+  profit: number;           // OVER MARKET: sum of (afterFees - promotion - productMarketCost); tips are outside the P&L, paid through separately
+  buyProfit: number;        // OVER BUY: sum of (afterFees - promotion - productCost); tips never touch profit
   packingPay: number;
   commissionable: number;   // profit - packing (market basis)
   hours: number;
@@ -144,8 +144,8 @@ export function buildWeekPay(
     // tips are paid through to the streamer, so they come out of profit before commission.
     // Streamer pay is commissioned on profit over MARKET price; buy price never touches their numbers.
     const giveawayCost = (r: StreamRow) => (r.giveaways || 0) * s.giveaway_cost;
-    const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productMarketCost - r.tips), 0);
-    const buyProfit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productCost - r.tips), 0);
+    const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productMarketCost), 0);
+    const buyProfit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productCost), 0);
     const packingHours = rows.reduce((a, r) => a + r.packingHours, 0);
     const managerPackingHours = rows.reduce((a, r) => a + (r.managerPackingHours || 0), 0);
     const hours = rows.reduce((a, r) => a + r.hours, 0);
@@ -233,7 +233,7 @@ export function buildManagerPay(
         r.overrideExcluded
           ? a // admin excluded this stream from the override base; packing pay still counts
           : a +
-            (r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost - r.productMarketCost - r.tips) -
+            (r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost - r.productMarketCost) -
             (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
       0
     );
