@@ -53,12 +53,12 @@ export function streamMetrics(lines: Line[], s: Settings) {
 }
 
 // ---- progressive commission tiers ----
+// Streamer commission is a flat percentage of commissionable profit
+// (settings key commission_pct, default 20%). The old three-tier ladder is
+// retired - the deal is simply: hourly rate or this percentage, whichever pays more.
 export function tierCommission(profit: number, s: Settings): number {
   if (profit <= 0) return 0;
-  const t1 = Math.min(profit, s.tier1_limit) * s.tier1_rate;
-  const t2 = Math.max(Math.min(profit - s.tier1_limit, s.tier2_limit - s.tier1_limit), 0) * s.tier2_rate;
-  const t3 = Math.max(profit - s.tier2_limit, 0) * s.tier3_rate;
-  return t1 + t2 + t3;
+  return profit * (s.commission_pct ?? 0.2);
 }
 
 // ---- weeks run Sunday through Saturday ----
