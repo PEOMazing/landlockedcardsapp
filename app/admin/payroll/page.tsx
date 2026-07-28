@@ -74,28 +74,29 @@ export default async function PayrollPage() {
   const streamProfit = (r: StreamRow) =>
     r.afterFees - r.promotion - (r.giveaways || 0) * settings.giveaway_cost - r.productMarketCost - r.tips;
   for (const w of weeks) {
-    // per-stream pay is exact: each show settled as the higher of its hourly or 20% commission
-    const breakdown: PayLine[] = w.streams.map((r) => {
-      const ps = w.perStream.find((x) => x.id === r.id);
+    // per-stream pay: exact for hourly weeks; commission weeks allocate the week's
+    // commission across streams by their share of positive profit
+    const posProfit = w.streams.map((r) => Math.max(streamProfit(r), 0));
+    const posTotal = posProfit.reduce((a, v) => a + v, 0);
+    const breakdown: PayLine[] = w.streams.map((r, i) => {
       const packing = r.packingHours * settings.packing_rate;
-      const base = ps?.pay ?? r.hours * w.hourlyRate;
-      const bits = [
-        ps?.winner === "commission"
-          ? `20% commission ${money(ps.commission)} beat ${r.hours.toFixed(1)}h hourly`
-          : `${r.hours.toFixed(1)}h hourly${ps && ps.commission > 0 ? ` beat commission ${money(ps.commission)}` : ""}`,
-      ];
+      const base = w.winner === "hourly"
+        ? r.hours * w.hourlyRate
+        : posTotal > 0 ? (posProfit[i] / posTotal) * w.streamPay : w.streamPay / w.streams.length;
+      const bits = [`${r.hours.toFixed(1)}h`];
       if (packing > 0) bits.push(`packing ${money(packing)}`);
       if (r.tips > 0) bits.push(`tips ${money(r.tips)}`);
+      if (w.winner !== "hourly") bits.push("share of week commission");
       return { label: `${r.date.slice(5)} ${r.title || "Stream"}`, note: bits.join(" + "), amount: base + packing + r.tips };
     });
     const accounted = breakdown.reduce((a, b) => a + b.amount, 0);
     if (Math.abs(w.totalPay - accounted) > 0.01) {
-      breakdown.push({ label: "Week-level adjustment", note: "support pay", amount: w.totalPay - accounted });
+      breakdown.push({ label: "Week-level adjustment", note: "support pay / weekly commission settlement", amount: w.totalPay - accounted });
     }
     push(w.weekStart, {
       name: w.streamerName,
       role: "Streamer",
-      detail: `${w.hours.toFixed(1)}h - ${w.winner === "mixed" ? "best-of per show" : `paid by ${w.winner}`}${w.packingPay > 0 ? ` + packing ${money(w.packingPay)}` : ""}${w.tips > 0 ? ` + tips ${money(w.tips)}` : ""}`,
+      detail: `${w.hours.toFixed(1)}h - paid by ${w.winner === "hourly" ? `hourly (${money(w.hourlyRate)}/h)` : "commission"}${w.packingPay > 0 ? ` + packing ${money(w.packingPay)}` : ""}${w.tips > 0 ? ` + tips ${money(w.tips)}` : ""}`,
       amount: w.totalPay,
       breakdown,
     });

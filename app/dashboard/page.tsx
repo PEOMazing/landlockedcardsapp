@@ -129,14 +129,14 @@ export default async function Dashboard() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div className={`rounded-lg border p-3 ${w.winner === "hourly" ? "border-win/50 bg-win/10" : "border-edge"}`}>
-                    <div className="label">Hourly {w.winner === "hourly" && "- paid"}{w.winner === "mixed" && " (mixed)"}</div>
+                    <div className="label">Hourly {w.winner === "hourly" && "- paid"}</div>
                     <div className="num font-semibold">{money(w.optionA)}</div>
                     <div className="text-dim text-xs">{w.hours.toFixed(1)} hrs x ${w.hourlyRate}</div>
                   </div>
                   <div className={`rounded-lg border p-3 ${w.winner === "commission" ? "border-win/50 bg-win/10" : "border-edge"}`}>
                     <div className="label">Commission {w.winner === "commission" && "- paid"}</div>
                     <div className="num font-semibold">{money(w.optionB)}</div>
-                    <div className="text-dim text-xs">20% per show, best-of settled per stream</div>
+                    <div className="text-dim text-xs">20% of {money(w.commissionable)}</div>
                   </div>
                 </div>
                 <div className="mt-3 text-xs text-dim space-y-1">
