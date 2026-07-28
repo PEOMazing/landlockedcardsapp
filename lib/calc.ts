@@ -87,6 +87,7 @@ export function weekLabel(weekStart: string): string {
 export type StreamRow = {
   id: string;
   date: string;
+  title?: string;
   streamerId: string;
   streamerName: string;
   afterFees: number;
@@ -182,6 +183,7 @@ export const money = (n: number) =>
 
 // ---- manager pay: packing hours + override on profit AFTER the streamer's pay ----
 export type ManagerWeekPay = {
+  streams: StreamRow[];
   weekStart: string;
   weekLabel: string;
   managerId: string;
@@ -260,6 +262,7 @@ export function buildManagerPay(
     out.push({
       weekStart,
       weekLabel: weekLabel(weekStart),
+      streams: agg.rows.sort((a, b) => a.date.localeCompare(b.date)),
       managerId,
       managerName: namesById[managerId] || "Manager",
       streamCount: agg.rows.length,

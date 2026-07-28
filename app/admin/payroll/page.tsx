@@ -43,6 +43,7 @@ export default async function PayrollPage() {
   const rows: StreamRow[] = streamRows.map((r: any) => ({
     id: r.id,
     date: r.fields["Stream Date"],
+    title: r.fields["Title"] || "",
     streamerId: r.fields["Streamer Rec Id"] || "unknown",
     streamerName: nameById[r.fields["Streamer Rec Id"]] || "Streamer",
     afterFees: r.fields["After Fees"] || 0,
@@ -63,27 +64,62 @@ export default async function PayrollPage() {
   const managerWeeks = buildManagerPay(rows, settings, overrideById, nameById, rateById);
 
   // one section per pay period, every payee inside it
-  type Payee = { name: string; role: string; detail: string; amount: number };
+  type PayLine = { label: string; note: string; amount: number };
+  type Payee = { name: string; role: string; detail: string; amount: number; breakdown: PayLine[] };
   const periods = new Map<string, Payee[]>();
   const push = (week: string, p: Payee) => {
     if (!periods.has(week)) periods.set(week, []);
     periods.get(week)!.push(p);
   };
+  const streamProfit = (r: StreamRow) =>
+    r.afterFees - r.promotion - (r.giveaways || 0) * settings.giveaway_cost - r.productMarketCost - r.tips;
   for (const w of weeks) {
+    // per-stream pay: exact for hourly weeks; commission weeks allocate the week's
+    // commission across streams by their share of positive profit
+    const posProfit = w.streams.map((r) => Math.max(streamProfit(r), 0));
+    const posTotal = posProfit.reduce((a, v) => a + v, 0);
+    const breakdown: PayLine[] = w.streams.map((r, i) => {
+      const packing = r.packingHours * settings.packing_rate;
+      const base = w.winner === "hourly"
+        ? r.hours * w.hourlyRate
+        : posTotal > 0 ? (posProfit[i] / posTotal) * w.streamPay : w.streamPay / w.streams.length;
+      const bits = [`${r.hours.toFixed(1)}h`];
+      if (packing > 0) bits.push(`packing ${money(packing)}`);
+      if (r.tips > 0) bits.push(`tips ${money(r.tips)}`);
+      if (w.winner !== "hourly") bits.push("share of week commission");
+      return { label: `${r.date.slice(5)} ${r.title || "Stream"}`, note: bits.join(" + "), amount: base + packing + r.tips };
+    });
+    const accounted = breakdown.reduce((a, b) => a + b.amount, 0);
+    if (Math.abs(w.totalPay - accounted) > 0.01) {
+      breakdown.push({ label: "Week-level adjustment", note: "support pay / weekly commission tiering", amount: w.totalPay - accounted });
+    }
     push(w.weekStart, {
       name: w.streamerName,
       role: "Streamer",
       detail: `${w.hours.toFixed(1)}h - paid by ${w.winner === "hourly" ? `hourly (${money(w.hourlyRate)}/h)` : "commission"}${w.packingPay > 0 ? ` + packing ${money(w.packingPay)}` : ""}${w.tips > 0 ? ` + tips ${money(w.tips)}` : ""}`,
       amount: w.totalPay,
+      breakdown,
     });
   }
   for (const mw of managerWeeks) {
     if (mw.totalPay <= 0) continue;
+    const breakdown: PayLine[] = mw.streams.map((r) => {
+      const packing = (r.managerPackingHours || 0) * settings.packing_rate;
+      const note = r.overrideExcluded
+        ? `excluded from override${packing > 0 ? ` + packing ${money(packing)}` : ""}`
+        : `profit ${money(streamProfit(r))} in override base${packing > 0 ? ` + packing ${money(packing)}` : ""}`;
+      return { label: `${r.date.slice(5)} ${r.title || "Stream"}`, note, amount: packing };
+    });
+    const accounted = breakdown.reduce((a, b) => a + b.amount, 0);
+    if (Math.abs(mw.totalPay - accounted) > 0.01) {
+      breakdown.push({ label: "Override", note: `${(mw.overridePct * 100).toFixed(0)}% of ${money(mw.overrideBase)} (week base after streamer pay)`, amount: mw.totalPay - accounted });
+    }
     push(mw.weekStart, {
       name: mw.managerName,
       role: "Manager",
       detail: `override ${(mw.overridePct * 100).toFixed(0)}% on ${money(mw.overrideBase)}${mw.packingPay > 0 ? ` + packing ${mw.packingHours.toFixed(1)}h` : ""}`,
       amount: mw.totalPay,
+      breakdown,
     });
   }
   const ordered = [...periods.entries()].sort((a, b) => b[0].localeCompare(a[0]));
@@ -124,27 +160,33 @@ export default async function PayrollPage() {
                   {inProgress ? "will pay" : "pays"} Tuesday {fmt(payDateOf(ws))}
                 </span>
               </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-dim">
-                    <th className="py-1">Employee</th><th className="py-1">Role</th><th className="py-1">How it was earned</th><th className="py-1 text-right">Owed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payees.sort((a, b) => b.amount - a.amount).map((p, i) => (
-                    <tr key={i} className="border-t border-edge">
-                      <td className="py-2 font-medium">{p.name}</td>
-                      <td className="py-2 text-dim">{p.role}</td>
-                      <td className="py-2 text-dim text-xs">{p.detail}</td>
-                      <td className="py-2 text-right num font-semibold">{money(p.amount)}</td>
-                    </tr>
-                  ))}
-                  <tr className="border-t border-edge">
-                    <td className="py-2 font-bold" colSpan={3}>Period total</td>
-                    <td className="py-2 text-right num font-bold text-win">{money(total)}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <div className="text-sm">
+                <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[160px_90px_1fr_110px] gap-x-3 text-dim text-left pb-1">
+                  <span>Employee</span><span className="hidden sm:block">Role</span><span className="hidden sm:block">How it was earned</span><span className="text-right">Owed</span>
+                </div>
+                {payees.sort((a, b) => b.amount - a.amount).map((p, i) => (
+                  <details key={i} className="border-t border-edge group">
+                    <summary className="grid grid-cols-[1fr_auto] sm:grid-cols-[160px_90px_1fr_110px] gap-x-3 py-2 cursor-pointer list-none items-baseline hover:bg-white/[0.02]">
+                      <span className="font-medium"><span className="text-dim text-xs mr-1.5 inline-block transition-transform group-open:rotate-90">&#9656;</span>{p.name}</span>
+                      <span className="text-dim hidden sm:block">{p.role}</span>
+                      <span className="text-dim text-xs hidden sm:block">{p.detail}</span>
+                      <span className="text-right num font-semibold">{money(p.amount)}</span>
+                    </summary>
+                    <div className="pb-3 pl-5 pr-1 space-y-1">
+                      {p.breakdown.map((b, j) => (
+                        <div key={j} className="grid grid-cols-[1fr_110px] gap-x-3 text-xs items-baseline">
+                          <span className="text-dim truncate" title={b.label}>{b.label}<span className="text-dim/60"> - {b.note}</span></span>
+                          <span className="text-right num">{money(b.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+                <div className="grid grid-cols-[1fr_110px] gap-x-3 border-t border-edge py-2">
+                  <span className="font-bold">Period total</span>
+                  <span className="text-right num font-bold text-win">{money(total)}</span>
+                </div>
+              </div>
             </section>
           );
         })}
