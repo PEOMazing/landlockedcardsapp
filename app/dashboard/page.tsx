@@ -136,7 +136,7 @@ export default async function Dashboard() {
                   <div className={`rounded-lg border p-3 ${w.winner === "commission" ? "border-win/50 bg-win/10" : "border-edge"}`}>
                     <div className="label">Commission {w.winner === "commission" && "- paid"}</div>
                     <div className="num font-semibold">{money(w.optionB)}</div>
-                    <div className="text-dim text-xs">tiers on {money(w.commissionable)}</div>
+                    <div className="text-dim text-xs">20% of {money(w.commissionable)}</div>
                   </div>
                 </div>
                 <div className="mt-3 text-xs text-dim space-y-1">

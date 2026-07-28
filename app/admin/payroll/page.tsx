@@ -91,7 +91,7 @@ export default async function PayrollPage() {
     });
     const accounted = breakdown.reduce((a, b) => a + b.amount, 0);
     if (Math.abs(w.totalPay - accounted) > 0.01) {
-      breakdown.push({ label: "Week-level adjustment", note: "support pay / weekly commission tiering", amount: w.totalPay - accounted });
+      breakdown.push({ label: "Week-level adjustment", note: "support pay / weekly commission settlement", amount: w.totalPay - accounted });
     }
     push(w.weekStart, {
       name: w.streamerName,
