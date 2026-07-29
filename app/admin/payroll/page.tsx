@@ -129,6 +129,15 @@ export default async function PayrollPage() {
     });
   }
   const ordered = [...periods.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  const salesByWeek = new Map<string, { afterFees: number; count: number }>();
+  for (const r of streamRows as any[]) {
+    if (r.fields["Status"] !== "Complete") continue;
+    const ws = weekStartOf(r.fields["Stream Date"]);
+    if (!salesByWeek.has(ws)) salesByWeek.set(ws, { afterFees: 0, count: 0 });
+    const sw = salesByWeek.get(ws)!;
+    sw.afterFees += r.fields["After Fees"] || 0;
+    sw.count += 1;
+  }
   // paid state per pay week, straight off the stream records
   const paidState = new Map<string, { ids: string[]; paidIds: string[]; paidAt: string | null }>();
   for (const r of streamRows as any[]) {
@@ -167,6 +176,7 @@ export default async function PayrollPage() {
         {ordered.length === 0 && <p className="text-dim">No completed streams yet - payroll builds itself as shows are completed.</p>}
         {ordered.map(([ws, payees]) => {
           const total = payees.reduce((a, p) => a + p.amount, 0);
+          const wkStreams = salesByWeek.get(ws) || { afterFees: 0, count: 0 };
           const inProgress = ws === thisWeek;
           const ps = paidState.get(ws) || { ids: [], paidIds: [], paidAt: null };
           const fullyPaid = ps.ids.length > 0 && ps.paidIds.length === ps.ids.length;
@@ -212,8 +222,12 @@ export default async function PayrollPage() {
                     </div>
                   </details>
                 ))}
-                <div className="grid grid-cols-[1fr_110px] gap-x-3 border-t border-edge py-2">
-                  <span className="font-bold">Period total{payees.every((p) => paidKeys.has(`${ws}|${p.personId}`)) && payees.length > 0 ? " - all paid" : ""}</span>
+                <div className="grid grid-cols-[1fr_110px] gap-x-3 border-t border-edge pt-2 text-dim text-xs">
+                  <span>Sales after fees ({wkStreams.count} completed stream{wkStreams.count === 1 ? "" : "s"})</span>
+                  <span className="text-right num">{money(wkStreams.afterFees)}</span>
+                </div>
+                <div className="grid grid-cols-[1fr_110px] gap-x-3 py-2">
+                  <span className="font-bold">Period total{payees.every((p) => paidKeys.has(`${ws}|${p.personId}`)) && payees.length > 0 ? " - all paid" : ""}{wkStreams.afterFees > 0 ? <span className="text-dim text-xs font-normal ml-2">{((total / wkStreams.afterFees) * 100).toFixed(1)}% of sales</span> : null}</span>
                   <span className="text-right num font-bold text-win">{money(total)}</span>
                 </div>
               </div>
