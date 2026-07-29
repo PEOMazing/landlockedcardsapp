@@ -76,7 +76,7 @@ export default async function PayrollPage() {
     periods.get(week)!.push(p);
   };
   const streamProfit = (r: StreamRow) =>
-    r.afterFees - r.promotion - (r.giveaways || 0) * settings.giveaway_cost - r.productMarketCost - r.tips;
+    r.afterFees - r.promotion - (r.giveaways || 0) * settings.giveaway_cost - r.productMarketCost;
   for (const w of weeks) {
     // per-stream pay: exact for hourly weeks; commission weeks allocate the week's
     // commission across streams by their share of positive profit
