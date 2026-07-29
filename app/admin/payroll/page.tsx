@@ -4,6 +4,7 @@ import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
 import { buildWeekPay, buildManagerPay, money, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
+import PaidToggle from "./PaidToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ export default async function PayrollPage() {
     atList(T.streams, { filterByFormula: "{Deleted At} = BLANK()" }),
     atList(T.lines),
   ]);
+  const paidRows = await atList(T.payrollPaid);
+  const paidKeys = new Set(paidRows.map((r: any) => String(r.fields["Key"] || "")));
 
   const nameById: Record<string, string> = {};
   const rateById: Record<string, number> = {};
@@ -65,7 +68,7 @@ export default async function PayrollPage() {
 
   // one section per pay period, every payee inside it
   type PayLine = { label: string; note: string; amount: number };
-  type Payee = { name: string; role: string; detail: string; amount: number; breakdown: PayLine[] };
+  type Payee = { name: string; role: string; detail: string; amount: number; breakdown: PayLine[]; personId: string };
   const periods = new Map<string, Payee[]>();
   const push = (week: string, p: Payee) => {
     if (!periods.has(week)) periods.set(week, []);
@@ -99,6 +102,7 @@ export default async function PayrollPage() {
       detail: `${w.hours.toFixed(1)}h - paid by ${w.winner === "hourly" ? `hourly (${money(w.hourlyRate)}/h)` : "commission"}${w.packingPay > 0 ? ` + packing ${money(w.packingPay)}` : ""}${w.tips > 0 ? ` + tips ${money(w.tips)}` : ""}`,
       amount: w.totalPay,
       breakdown,
+      personId: w.streamerId,
     });
   }
   for (const mw of managerWeeks) {
@@ -120,6 +124,7 @@ export default async function PayrollPage() {
       detail: `override ${(mw.overridePct * 100).toFixed(0)}% on ${money(mw.overrideBase)}${mw.packingPay > 0 ? ` + packing ${mw.packingHours.toFixed(1)}h` : ""}`,
       amount: mw.totalPay,
       breakdown,
+      personId: mw.managerId,
     });
   }
   const ordered = [...periods.entries()].sort((a, b) => b[0].localeCompare(a[0]));
@@ -170,7 +175,10 @@ export default async function PayrollPage() {
                       <span className="font-medium"><span className="text-dim text-xs mr-1.5 inline-block transition-transform group-open:rotate-90">&#9656;</span>{p.name}</span>
                       <span className="text-dim hidden sm:block">{p.role}</span>
                       <span className="text-dim text-xs hidden sm:block">{p.detail}</span>
-                      <span className="text-right num font-semibold">{money(p.amount)}</span>
+                      <span className="text-right num font-semibold flex items-baseline justify-end gap-3">
+                        <PaidToggle week={ws} personId={p.personId} personName={p.name} amount={p.amount} paid={paidKeys.has(`${ws}|${p.personId}`)} />
+                        {money(p.amount)}
+                      </span>
                     </summary>
                     <div className="pb-3 pl-5 pr-1 space-y-1">
                       {p.breakdown.map((b, j) => (
@@ -183,7 +191,7 @@ export default async function PayrollPage() {
                   </details>
                 ))}
                 <div className="grid grid-cols-[1fr_110px] gap-x-3 border-t border-edge py-2">
-                  <span className="font-bold">Period total</span>
+                  <span className="font-bold">Period total{payees.every((p) => paidKeys.has(`${ws}|${p.personId}`)) && payees.length > 0 ? " - all paid" : ""}</span>
                   <span className="text-right num font-bold text-win">{money(total)}</span>
                 </div>
               </div>

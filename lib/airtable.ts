@@ -14,6 +14,7 @@ export const T = {
   snapshots: "Price History",
   purchases: "Purchase Log",
   customSets: "Custom Sets",
+  payrollPaid: "Payroll Payments",
 };
 
 const headers = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
