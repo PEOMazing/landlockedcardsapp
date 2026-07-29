@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Nav from "@/components/Nav";
+import MarkPaidButton from "./MarkPaidButton";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
@@ -128,6 +129,19 @@ export default async function PayrollPage() {
     });
   }
   const ordered = [...periods.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  // paid state per pay week, straight off the stream records
+  const paidState = new Map<string, { ids: string[]; paidIds: string[]; paidAt: string | null }>();
+  for (const r of streamRows as any[]) {
+    if (r.fields["Status"] !== "Complete") continue;
+    const ws = weekStartOf(r.fields["Stream Date"]);
+    if (!paidState.has(ws)) paidState.set(ws, { ids: [], paidIds: [], paidAt: null });
+    const st = paidState.get(ws)!;
+    st.ids.push(r.id);
+    if (r.fields["Paid Out"]) {
+      st.paidIds.push(r.id);
+      if (r.fields["Paid At"] && (!st.paidAt || r.fields["Paid At"] > st.paidAt)) st.paidAt = r.fields["Paid At"];
+    }
+  }
   const thisWeek = weekStartOf(new Date().toISOString().slice(0, 10));
   const fmt = (iso: string) => {
     const d = new Date(iso + "T00:00:00Z");
@@ -154,15 +168,23 @@ export default async function PayrollPage() {
         {ordered.map(([ws, payees]) => {
           const total = payees.reduce((a, p) => a + p.amount, 0);
           const inProgress = ws === thisWeek;
+          const ps = paidState.get(ws) || { ids: [], paidIds: [], paidAt: null };
+          const fullyPaid = ps.ids.length > 0 && ps.paidIds.length === ps.ids.length;
+          const partlyPaid = ps.paidIds.length > 0 && !fullyPaid;
           return (
-            <section key={ws} className={`card p-5 space-y-3 ${inProgress ? "!border-foil/40" : ""}`}>
+            <section key={ws} className={`card p-5 space-y-3 ${fullyPaid ? "!border-win/40" : inProgress ? "!border-foil/40" : ""}`}>
               <div className="flex items-baseline justify-between flex-wrap gap-2">
                 <h2 className="font-bold">
                   Week {fmt(ws)} - {fmt(weekEnd(ws))}
                   {inProgress && <span className="text-foil text-xs ml-2">in progress</span>}
+                  {fullyPaid && <span className="text-win text-xs ml-2">PAID{ps.paidAt ? ` ${fmt(ps.paidAt)}` : ""}</span>}
+                  {partlyPaid && <span className="text-foil text-xs ml-2">partially paid ({ps.paidIds.length}/{ps.ids.length} streams)</span>}
                 </h2>
-                <span className="text-dim text-sm">
-                  {inProgress ? "will pay" : "pays"} Tuesday {fmt(payDateOf(ws))}
+                <span className="flex items-center gap-3">
+                  <span className="text-dim text-sm">
+                    {fullyPaid ? "paid" : inProgress ? "will pay" : "pays"} Tuesday {fmt(payDateOf(ws))}
+                  </span>
+                  {ps.ids.length > 0 && !inProgress && <MarkPaidButton streamIds={ps.ids} paid={fullyPaid} />}
                 </span>
               </div>
               <div className="text-sm">

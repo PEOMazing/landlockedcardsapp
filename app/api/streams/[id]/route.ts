@@ -169,6 +169,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       fields["Title"] = String(stream.fields["Title"]).replace(oldDate, b.date);
     }
   }
+  if (b.paidOut !== undefined) {
+    if (!me.isAdmin) return NextResponse.json({ error: "only admin can mark pay" }, { status: 403 });
+    fields["Paid Out"] = !!b.paidOut;
+    fields["Paid At"] = b.paidOut ? new Date().toISOString().slice(0, 10) : null;
+  }
   if (b.afterFees !== undefined) fields["After Fees"] = b.afterFees;
   if (b.promotion !== undefined) fields["Promotion"] = b.promotion;
   if (b.tips !== undefined) fields["Tips"] = b.tips;
