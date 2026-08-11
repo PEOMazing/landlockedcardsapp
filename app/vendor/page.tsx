@@ -113,6 +113,7 @@ export default async function VendorDashboard() {
     streamerName: nameById[r.fields["Streamer Rec Id"]] || "Streamer",
     afterFees: r.fields["After Fees"] || 0,
     giveaways: r.fields["Giveaways Run"] || 0,
+    singlesGiveaways: r.fields["Singles Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,
@@ -131,7 +132,8 @@ export default async function VendorDashboard() {
   // returns to inventory, so a stream is charged only for hits delivered,
   // giveaway spend, packing, tips, and promotion
   const streamProfit30 = recent.reduce((a, r) => {
-    const sold = (hitDeliveredByStream[r.id] || 0) + (r.giveaways || 0) * settings.giveaway_cost;
+    const sold = (hitDeliveredByStream[r.id] || 0) + (r.giveaways || 0) * settings.giveaway_cost
+      + (r.singlesGiveaways || 0) * settings.singles_giveaway_cost;
     const packing = (r.packingHours + (r.managerPackingHours || 0)) * settings.packing_rate;
     return a + (r.afterFees - sold - packing - r.promotion);
   }, 0);
