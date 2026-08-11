@@ -60,6 +60,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       tips: d.stream.tips ?? "",
       spotsSold: d.stream.spotsSold ?? "",
       giveaways: d.stream.giveaways ?? "",
+      singlesGiveaways: d.stream.singlesGiveaways ?? "",
     };
     setForm(f);
     baselineRef.current = JSON.stringify(f);
@@ -111,6 +112,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       tips: parseFloat(form.tips) || 0,
       spotsSold: parseInt(form.spotsSold) || 0,
       giveaways: parseInt(form.giveaways) || 0,
+      singlesGiveaways: parseInt(form.singlesGiveaways) || 0,
     });
     const t = setTimeout(async () => {
       const body = pendingRef.current;
@@ -346,6 +348,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         tips: parseFloat(form.tips) || 0,
         spotsSold: parseInt(form.spotsSold) || 0,
         giveaways: parseInt(form.giveaways) || 0,
+        singlesGiveaways: parseInt(form.singlesGiveaways) || 0,
         ...(markComplete ? { status: "Complete" } : {}),
       }),
     });
@@ -377,13 +380,15 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const promoNum = parseFloat(form.promotion) || 0;
   const tipsNum = parseFloat(form.tips) || 0;
   const giveawaysNum = parseInt(form.giveaways) || 0;
+  const singlesGivvyNum = parseInt(form.singlesGiveaways) || 0;
   const resultsEntered = afterFeesNum > 0;
 
   // ---- the stream P&L waterfall ----
   // Product that was not hit goes back into inventory, so it is not a cost of
   // this stream. What the stream "sold" is the hits that went out plus the
   // giveaways it spent.
-  const giveawaySpend = giveawaysNum * (data?.config?.giveawayCost || 0);
+  const giveawaySpend = giveawaysNum * (data?.config?.giveawayCost || 0)
+    + singlesGivvyNum * (data?.config?.singlesGiveawayCost || 0);
   const productSold = m.hitValueDelivered + giveawaySpend;
   const productBack = Math.max(0, m.totalValue - m.hitValueDelivered - m.givvyValue);
   const grossProfit = afterFeesNum - productSold - m.storeMarket;
@@ -569,7 +574,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               <span className="num">{$(m.hitValueDelivered)}</span>
             </div>
             <div className="flex justify-between gap-6 pl-3">
-              <span className="text-dim">Giveaways spent ({giveawaysNum} run{m.givvyQty > 0 ? ` + ${m.givvyQty} in set` : ""})</span>
+              <span className="text-dim">Giveaways spent ({giveawaysNum} pack{singlesGivvyNum > 0 ? ` + ${singlesGivvyNum} single${singlesGivvyNum === 1 ? "" : "s"}` : ""}{m.givvyQty > 0 ? ` + ${m.givvyQty} in set` : ""})</span>
               <span className="num">{$(giveawaySpend)}</span>
             </div>
             <div className="flex justify-between gap-6 border-t border-edge pt-1.5 font-semibold">
@@ -698,10 +703,18 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           {field("tips", "Tips ($)")}
           {field("spotsSold", "Spots sold (spins)", "1")}
           <div>
-            {field("giveaways", "Giveaways run", "1")}
+            {field("giveaways", "Pack givvies run", "1")}
             {(parseInt(form.giveaways) || 0) > 0 && (
               <p className="text-dim text-xs mt-1">
                 {parseInt(form.giveaways) || 0} x {$(m.cfg.giveawayCost ?? 2.5)} = <span className="text-bad">-{$((parseInt(form.giveaways) || 0) * (m.cfg.giveawayCost ?? 2.5))}</span> from profit
+              </p>
+            )}
+          </div>
+          <div>
+            {field("singlesGiveaways", "Singles givvies", "1")}
+            {singlesGivvyNum > 0 && (
+              <p className="text-dim text-xs mt-1">
+                {singlesGivvyNum} x {$(m.cfg.singlesGiveawayCost ?? 1)} = <span className="text-bad">-{$(singlesGivvyNum * (m.cfg.singlesGiveawayCost ?? 1))}</span> from profit
               </p>
             )}
           </div>
