@@ -3,7 +3,7 @@ import Nav from "@/components/Nav";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { buildWeekPay, buildManagerPay, money, StreamRow, toLine, isHitLine } from "@/lib/calc";
+import { buildWeekPay, buildManagerPay, buildPersonHours, money, StreamRow, toLine, isHitLine } from "@/lib/calc";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export default async function AnalyticsPage() {
   if (!me) redirect("/sign-in");
   if (!me.isAdmin) redirect("/dashboard");
 
-  const [settings, streamerRows, streamRows, lineRows] = await Promise.all([
+  const [settings, streamerRows, streamRows, lineRows, timeRows] = await Promise.all([
     getSettings(),
     atList(T.streamers),
     atList(T.streams, {
@@ -21,6 +21,7 @@ export default async function AnalyticsPage() {
       "sort[0][direction]": "desc",
     }),
     atList(T.lines),
+    atList(T.time),
   ]);
 
   const nameById: Record<string, string> = {};
@@ -84,6 +85,7 @@ export default async function AnalyticsPage() {
     streamerName: nameById[r.fields["Streamer Rec Id"]] || "Streamer",
     afterFees: r.fields["After Fees"] || 0,
     giveaways: r.fields["Giveaways Run"] || 0,
+    singlesGiveaways: r.fields["Singles Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,
@@ -95,7 +97,15 @@ export default async function AnalyticsPage() {
     status: r.fields["Status"] || "Planned",
   }));
 
-  const weeks = buildWeekPay(rows, settings, rateById);
+  // hp-v1: pay follows the person who clocked the hours (shared shows split)
+  const personHours = buildPersonHours(
+    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips })),
+    (timeRows as any[]).map((e) => ({
+      streamId: e.fields["Stream Rec Id"] || "", personId: e.fields["Person Rec Id"] || "",
+      type: e.fields["Type"] || "", hours: e.fields["Hours"] || 0,
+    }))
+  );
+  const weeks = buildWeekPay(rows, settings, rateById, { personHours, namesById: nameById });
   const managerWeeks = buildManagerPay(rows, settings, overrideById, nameById, rateById);
 
   // per-stream P&L rows: everything here is exact per stream; wages settle weekly
