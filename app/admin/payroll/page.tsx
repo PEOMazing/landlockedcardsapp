@@ -4,7 +4,7 @@ import MarkPaidButton from "./MarkPaidButton";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { buildWeekPay, buildManagerPay, money, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
+import { buildWeekPay, buildManagerPay, buildPersonHours, money, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
 import PaidToggle from "./PaidToggle";
 
 export const dynamic = "force-dynamic";
@@ -18,11 +18,12 @@ export default async function PayrollPage() {
   if (!me) redirect("/sign-in");
   if (!me.isAdmin) redirect("/dashboard");
 
-  const [settings, streamerRows, streamRows, lineRows] = await Promise.all([
+  const [settings, streamerRows, streamRows, lineRows, timeRows] = await Promise.all([
     getSettings(),
     atList(T.streamers),
     atList(T.streams, { filterByFormula: "{Deleted At} = BLANK()" }),
     atList(T.lines),
+    atList(T.time),
   ]);
   const paidRows = await atList(T.payrollPaid);
   const paidKeys = new Set(paidRows.map((r: any) => String(r.fields["Key"] || "")));
@@ -52,6 +53,7 @@ export default async function PayrollPage() {
     streamerName: nameById[r.fields["Streamer Rec Id"]] || "Streamer",
     afterFees: r.fields["After Fees"] || 0,
     giveaways: r.fields["Giveaways Run"] || 0,
+    singlesGiveaways: r.fields["Singles Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,
@@ -64,7 +66,32 @@ export default async function PayrollPage() {
     overrideExcluded: !!r.fields["Override Excluded"],
   }));
 
-  const weeks = buildWeekPay(rows, settings, rateById);
+  // hp-v1: pay follows the person who clocked the hours, not the stream of
+  // record - a shared show pays each streamer their own timeclock.
+  const personHours = buildPersonHours(
+    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips })),
+    (timeRows as any[]).map((e) => ({
+      streamId: e.fields["Stream Rec Id"] || "",
+      personId: e.fields["Person Rec Id"] || "",
+      type: e.fields["Type"] || "",
+      hours: e.fields["Hours"] || 0,
+    }))
+  );
+  // per (stream, person) split for the per-stream breakdown lines
+  const perStreamOwn: Record<string, { streaming: number; packing: number }> = {};
+  const streamersByStream: Record<string, Set<string>> = {};
+  for (const e of timeRows as any[]) {
+    const sid = e.fields["Stream Rec Id"]; const pid = e.fields["Person Rec Id"];
+    if (!sid || !pid) continue;
+    const k = `${sid}|${pid}`;
+    if (!perStreamOwn[k]) perStreamOwn[k] = { streaming: 0, packing: 0 };
+    if (e.fields["Type"] === "Streaming") {
+      perStreamOwn[k].streaming += e.fields["Hours"] || 0;
+      if (!streamersByStream[sid]) streamersByStream[sid] = new Set();
+      streamersByStream[sid].add(pid);
+    } else perStreamOwn[k].packing += e.fields["Hours"] || 0;
+  }
+  const weeks = buildWeekPay(rows, settings, rateById, { personHours, namesById: nameById });
   const managerWeeks = buildManagerPay(rows, settings, overrideById, nameById, rateById);
 
   // one section per pay period, every payee inside it
@@ -76,26 +103,38 @@ export default async function PayrollPage() {
     periods.get(week)!.push(p);
   };
   const streamProfit = (r: StreamRow) =>
-    r.afterFees - r.promotion - (r.giveaways || 0) * settings.giveaway_cost - r.productMarketCost;
+    r.afterFees - r.promotion - (r.giveaways || 0) * settings.giveaway_cost
+    - (r.singlesGiveaways || 0) * settings.singles_giveaway_cost - r.productMarketCost;
   for (const w of weeks) {
     // per-stream pay: exact for hourly weeks; commission weeks allocate the week's
     // commission across streams by their share of positive profit
     const posProfit = w.streams.map((r) => Math.max(streamProfit(r), 0));
     const posTotal = posProfit.reduce((a, v) => a + v, 0);
     const breakdown: PayLine[] = w.streams.map((r, i) => {
-      const packing = r.packingHours * settings.packing_rate;
+      // hp-v1: each line shows THIS person's own clocked time on the stream
+      const own = perStreamOwn[`${r.id}|${w.streamerId}`] || { streaming: 0, packing: 0 };
+      const packing = own.packing * settings.packing_rate;
       const base = w.winner === "hourly"
-        ? r.hours * w.hourlyRate
+        ? own.streaming * w.hourlyRate
         : posTotal > 0 ? (posProfit[i] / posTotal) * w.streamPay : w.streamPay / w.streams.length;
-      const bits = [`${r.hours.toFixed(1)}h`];
+      // tips: even split among the show's clocked streamers; all to the
+      // streamer of record when nobody clocked
+      const clocked = streamersByStream[r.id];
+      const ownTips = clocked && clocked.size > 0
+        ? (clocked.has(w.streamerId) ? r.tips / clocked.size : 0)
+        : r.tips;
+      const bits = [`${own.streaming.toFixed(1)}h`];
       if (packing > 0) bits.push(`packing ${money(packing)}`);
-      if (r.tips > 0) bits.push(`tips ${money(r.tips)}`);
+      if (ownTips > 0) bits.push(`tips ${money(ownTips)}${clocked && clocked.size > 1 ? " (split)" : ""}`);
       if (w.winner !== "hourly") bits.push("share of week commission");
-      return { label: `${r.date.slice(5)} ${r.title || "Stream"}`, note: bits.join(" + "), amount: base + packing + r.tips };
+      return { label: `${r.date.slice(5)} ${r.title || "Stream"}`, note: bits.join(" + "), amount: base + packing + ownTips };
     });
+    if (w.streams.length === 0 && w.totalPay > 0) {
+      breakdown.push({ label: "Shared streams", note: `${w.hours.toFixed(1)}h clocked under their name on other streamers' shows`, amount: w.totalPay });
+    }
     const accounted = breakdown.reduce((a, b) => a + b.amount, 0);
     if (Math.abs(w.totalPay - accounted) > 0.01) {
-      breakdown.push({ label: "Week-level adjustment", note: "support pay / weekly commission settlement", amount: w.totalPay - accounted });
+      breakdown.push({ label: "Week-level adjustment", note: "hours on shared shows / support pay / weekly commission settlement", amount: w.totalPay - accounted });
     }
     push(w.weekStart, {
       name: w.streamerName,
