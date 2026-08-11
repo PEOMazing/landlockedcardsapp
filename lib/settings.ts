@@ -5,6 +5,7 @@ export type Settings = {
   tier1_limit: number; tier1_rate: number; tier2_limit: number; tier2_rate: number;
   tier3_rate: number; default_hourly_rate: number; hit_threshold: number;
   giveaway_cost: number;
+  singles_giveaway_cost: number;
   commission_pct: number;
 };
 
@@ -13,6 +14,9 @@ const DEFAULTS: Settings = {
   tier1_limit: 500, tier1_rate: 0.15, tier2_limit: 1000, tier2_rate: 0.2,
   tier3_rate: 0.25, default_hourly_rate: 20, hit_threshold: 10,
   giveaway_cost: 2.5,
+  // gv-v1: a singles givvy is cheap product - charged at its own (lower)
+  // flat rate, separate from pack givvies.
+  singles_giveaway_cost: 1,
   commission_pct: 0.2,
 };
 

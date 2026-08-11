@@ -93,7 +93,8 @@ export type StreamRow = {
   afterFees: number;
   promotion: number;
   tips: number;
-  giveaways: number;          // count of $-per-giveaway giveaways run on stream
+  giveaways: number;          // count of PACK givvies run on stream (giveaway_cost each)
+  singlesGiveaways: number;   // gv-v1: count of SINGLES givvies (singles_giveaway_cost each)
   hours: number;
   packingHours: number;
   managerPackingHours: number;
@@ -126,10 +127,64 @@ export type WeekPay = {
   companyProfit: number;
 };
 
+// hp-v1: per-PERSON hours from the timeclock. Key `${weekStart}|${personId}`.
+// Built from Time Entries joined to their COMPLETE streams (the stream's date
+// decides the week, matching the "belongs to whoever completes it" rule).
+// Manager packing stays out - buildManagerPay pays that separately.
+export type PersonHours = Record<string, { streaming: number; packing: number; tips: number }>;
+
+export function buildPersonHours(
+  streams: Array<{ id: string; date: string; status: string; managerId?: string | null; streamerId?: string; tips?: number }>,
+  entries: Array<{ streamId: string; personId: string; type: string; hours: number }>
+): PersonHours {
+  const streamById = new Map(streams.map((st) => [st.id, st]));
+  const out: PersonHours = {};
+  const bump = (key: string) => {
+    if (!out[key]) out[key] = { streaming: 0, packing: 0, tips: 0 };
+    return out[key];
+  };
+  // who actually STREAMED each show, from the timeclock
+  const streamersOnStream = new Map<string, Set<string>>();
+  for (const e of entries) {
+    const st = streamById.get(e.streamId);
+    if (!st || st.status !== "Complete" || !e.personId || !(e.hours > 0)) continue;
+    const key = `${weekStartOf(st.date)}|${e.personId}`;
+    if (e.type === "Streaming") {
+      bump(key).streaming += e.hours;
+      if (!streamersOnStream.has(st.id)) streamersOnStream.set(st.id, new Set());
+      streamersOnStream.get(st.id)!.add(e.personId);
+    } else if (e.personId !== (st.managerId || null)) bump(key).packing += e.hours;
+  }
+  // tips split EVENLY among the streamers who clocked on the show (per Gabe
+  // 2026-08-11); a show with no clocked streamers falls back to its streamer
+  // of record so tips never vanish.
+  for (const st of streams) {
+    if (st.status !== "Complete" || !(st.tips && st.tips > 0)) continue;
+    const people = [...(streamersOnStream.get(st.id) || [])];
+    const payees = people.length ? people : (st.streamerId ? [st.streamerId] : []);
+    if (!payees.length) continue;
+    const share = st.tips / payees.length;
+    for (const pid of payees) bump(`${weekStartOf(st.date)}|${pid}`).tips += share;
+  }
+  for (const k of Object.keys(out)) {
+    out[k].streaming = Math.round(out[k].streaming * 100) / 100;
+    out[k].packing = Math.round(out[k].packing * 100) / 100;
+    out[k].tips = Math.round(out[k].tips * 100) / 100;
+  }
+  return out;
+}
+
 export function buildWeekPay(
   streams: StreamRow[],
   s: Settings,
-  ratesByStreamer: Record<string, number>
+  ratesByStreamer: Record<string, number>,
+  // hp-v1 (per Gabe 2026-08-11): streamers are paid ONLY the hours clocked
+  // under their own name. When personHours is provided, the hourly option
+  // and packing pay come from the person's own timeclock entries - a shared
+  // show pays each person their own clock, never the whole show to the
+  // streamer of record. People with clocked hours but no streams of record
+  // that week get their own hourly-only row (namesById labels them).
+  opts?: { personHours?: PersonHours; namesById?: Record<string, string>; onlyPersonId?: string }
 ): WeekPay[] {
   const groups = new Map<string, StreamRow[]>();
   for (const st of streams) {
@@ -139,20 +194,32 @@ export function buildWeekPay(
     groups.get(key)!.push(st);
   }
   const out: WeekPay[] = [];
+  const coveredKeys = new Set<string>();
   for (const [key, rows] of groups) {
     const [weekStart, streamerId] = key.split("|");
     // tips are paid through to the streamer, so they come out of profit before commission.
     // Streamer pay is commissioned on profit over MARKET price; buy price never touches their numbers.
-    const giveawayCost = (r: StreamRow) => (r.giveaways || 0) * s.giveaway_cost;
+    const giveawayCost = (r: StreamRow) =>
+      (r.giveaways || 0) * s.giveaway_cost + (r.singlesGiveaways || 0) * s.singles_giveaway_cost;
     const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productMarketCost), 0);
     const buyProfit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - giveawayCost(r) - r.productCost), 0);
     const packingHours = rows.reduce((a, r) => a + r.packingHours, 0);
     const managerPackingHours = rows.reduce((a, r) => a + (r.managerPackingHours || 0), 0);
-    const hours = rows.reduce((a, r) => a + r.hours, 0);
-    const tips = rows.reduce((a, r) => a + r.tips, 0);
-    const packingPay = packingHours * s.packing_rate;           // streamer's own packing, paid to streamer
+    // hp-v1: PAY-side hours are the person's own clocked time; COST-side
+    // packing (subtracted from the commission base) stays the streams' full
+    // packing, whoever clocked it - the labor happened on these streams.
+    const key2 = `${weekStart}|${streamerId}`;
+    coveredKeys.add(key2);
+    const own = opts?.personHours ? opts.personHours[key2] : undefined;
+    const hours = opts?.personHours ? (own?.streaming ?? 0) : rows.reduce((a, r) => a + r.hours, 0);
+    // tips: split per show among its clocked streamers when personHours is
+    // on; the stream-lump sum otherwise
+    const tips = opts?.personHours ? (own?.tips ?? 0) : rows.reduce((a, r) => a + r.tips, 0);
+    const payPackingHours = opts?.personHours ? (own?.packing ?? 0) : packingHours;
+    const packingPay = payPackingHours * s.packing_rate;        // person's own packing, paid to them
+    const costPackingPay = packingHours * s.packing_rate;       // the streams' full streamer-side packing cost
     const managerPackingPay = managerPackingHours * s.packing_rate; // manager's packing, a stream cost
-    const commissionable = profit - packingPay - managerPackingPay;
+    const commissionable = profit - costPackingPay - managerPackingPay;
     const hourlyRate = ratesByStreamer[streamerId] ?? s.default_hourly_rate;
     const optionA = hours * hourlyRate;
     const optionB = tierCommission(commissionable, s);
@@ -171,8 +238,39 @@ export function buildWeekPay(
       totalPay: streamPay + packingPay + tips,
       supportPay,
       // company profit runs on REAL cost (buy): what actually remains after paying everyone
-      companyProfit: (buyProfit - packingPay - managerPackingPay) - streamPay - supportPay, // before manager override
+      companyProfit: (buyProfit - costPackingPay - managerPackingPay) - streamPay - supportPay, // before manager override
     });
+  }
+  // hp-v1: hourly-only rows for people who clocked time on someone else's
+  // streams and have no streams of record that week (e.g. a second streamer
+  // on a shared show). Their hours would otherwise be paid to nobody.
+  if (opts?.personHours) {
+    for (const [key, own] of Object.entries(opts.personHours)) {
+      if (coveredKeys.has(key)) continue;
+      const [weekStart, personId] = key.split("|");
+      if (opts.onlyPersonId && personId !== opts.onlyPersonId) continue;
+      if (!(own.streaming > 0 || own.packing > 0 || own.tips > 0)) continue;
+      const hourlyRate = ratesByStreamer[personId] ?? s.default_hourly_rate;
+      const streamPay = own.streaming * hourlyRate;
+      const packingPay = own.packing * s.packing_rate;
+      out.push({
+        weekStart,
+        weekLabel: weekLabel(weekStart),
+        streamerId: personId,
+        streamerName: opts.namesById?.[personId] || "Streamer",
+        streams: [],
+        profit: 0, buyProfit: 0, packingPay,
+        commissionable: 0,
+        hours: own.streaming, hourlyRate,
+        optionA: streamPay, optionB: 0, streamPay,
+        winner: "hourly",
+        tips: own.tips,
+        totalPay: streamPay + packingPay + own.tips,
+        supportPay: 0,
+        // their pay is a labor cost already carried by the streams they worked
+        companyProfit: -(streamPay + packingPay),
+      });
+    }
   }
   return out.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
 }
@@ -233,7 +331,8 @@ export function buildManagerPay(
         r.overrideExcluded
           ? a // admin excluded this stream from the override base; packing pay still counts
           : a +
-            (r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost - r.productMarketCost) -
+            (r.afterFees - r.promotion - (r.giveaways || 0) * s.giveaway_cost
+              - (r.singlesGiveaways || 0) * s.singles_giveaway_cost - r.productMarketCost) -
             (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
       0
     );
