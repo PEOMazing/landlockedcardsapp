@@ -4,7 +4,7 @@ import Nav from "@/components/Nav";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { buildWeekPay, buildManagerPay, money, StreamRow, toLine } from "@/lib/calc";
+import { buildWeekPay, buildManagerPay, buildPersonHours, money, StreamRow, toLine } from "@/lib/calc";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export default async function Dashboard() {
   }
 
   const name = me.streamer.fields["Name"];
-  const [settings, streamRows, lineRows] = await Promise.all([
+  const [settings, streamRows, lineRows, myTimeRows, allStreamMeta] = await Promise.all([
     getSettings(),
     atList(T.streams, {
       filterByFormula: `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`,
@@ -39,6 +39,10 @@ export default async function Dashboard() {
       "sort[0][direction]": "desc",
     }),
     atList(T.lines),
+    // hp-v1: MY timeclock entries, wherever they were clocked - hours on a
+    // shared show pay me even when it is someone else's stream of record
+    atList(T.time, { filterByFormula: `{Person Rec Id} = '${me.streamer.id}'` }),
+    atList(T.streams, { filterByFormula: "{Deleted At} = BLANK()" }),
   ]);
 
   const costByStream: Record<string, number> = {};
@@ -58,6 +62,7 @@ export default async function Dashboard() {
     streamerName: name,
     afterFees: r.fields["After Fees"] || 0,
     giveaways: r.fields["Giveaways Run"] || 0,
+    singlesGiveaways: r.fields["Singles Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,
@@ -74,7 +79,21 @@ export default async function Dashboard() {
       ? me.streamer.fields["Hourly Rate"]
       : settings.default_hourly_rate;
   const ownRows = rows.filter((r) => r.streamerId === me.streamer!.id);
-  const weeks = buildWeekPay(ownRows, settings, { [me.streamer.id]: rate });
+  const personHours = buildPersonHours(
+    (allStreamMeta as any[]).map((r) => ({
+      id: r.id, date: r.fields["Stream Date"], status: r.fields["Status"] || "Planned",
+      managerId: r.fields["Manager Rec Id"] || null,
+      streamerId: r.fields["Streamer Rec Id"] || undefined,
+      tips: r.fields["Tips"] || 0,
+    })),
+    (myTimeRows as any[]).map((e) => ({
+      streamId: e.fields["Stream Rec Id"] || "", personId: e.fields["Person Rec Id"] || "",
+      type: e.fields["Type"] || "", hours: e.fields["Hours"] || 0,
+    }))
+  );
+  const weeks = buildWeekPay(ownRows, settings, { [me.streamer.id]: rate }, {
+    personHours, namesById: { [me.streamer.id]: name }, onlyPersonId: me.streamer.id,
+  });
   const overridePct =
     typeof me.streamer.fields["Override %"] === "number" ? me.streamer.fields["Override %"] : 0;
   const managedRows = rows.filter((r) => r.managerId === me.streamer!.id);
