@@ -1,6 +1,12 @@
-// Collectr export parsing and classification, shared by the in-app importer
-// and the inbound email webhook. A row with a card number is a single (graded
-// if Grade is not "Ungraded"); a row without one is a sealed product.
+// CSV export parsing and classification, shared by the in-app importer and the
+// inbound email webhook. A row with a card number is a single (graded if Grade
+// is not "Ungraded"); a row without one is a sealed product.
+//
+// Two shapes are understood:
+//   Collectr   - Product Name / Quantity / Market Price / Card Condition
+//   TCGplayer  - Product Name / Add to Quantity / TCG Market Price / Condition
+// TCGplayer prices are per SKU, so the price on the row already reflects that
+// row's condition and printing - no NM-basis discount is applied to them.
 
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -60,11 +66,28 @@ export function classifyCollectrCsv(text: string): ClassifiedPortfolios {
   if (grid.length < 2) return { portfolios: {}, skipped: 0, nonPokemon: 0 };
   const header = grid[0].map((h) => h.trim());
   const col = (want: string[]) => header.findIndex((h) => want.some((w) => h.toLowerCase().startsWith(w)));
+  // Some exports carry several candidates for one value - TCGplayer ships both
+  // Total Quantity and Add to Quantity, and only one of them is filled in. Keep
+  // every match in the order asked for and read the first that has a value.
+  const colsFor = (want: string[]) =>
+    want
+      .map((w) => header.findIndex((h) => h.toLowerCase().startsWith(w)))
+      .filter((i) => i >= 0)
+      .filter((i, n, a) => a.indexOf(i) === n);
+  const firstOf = (r: string[], idxs: number[]) => {
+    for (const i of idxs) {
+      const v = (r[i] || "").trim();
+      if (v !== "") return v;
+    }
+    return "";
+  };
   const iName = col(["product name", "card name", "name"]);
   if (iName < 0) return { portfolios: {}, skipped: grid.length - 1, nonPokemon: 0 };
-  const iQty = col(["quantity", "qty"]);
+  const isTcg = header.some((h) => /^tcg/i.test(h.trim()));
+  const qtyCols = colsFor(["quantity", "qty", "total quantity", "add to quantity"]);
   const iPortfolio = col(["portfolio"]);
-  const iCategory = col(["category"]);
+  // TCGplayer names the game column "Product Line"
+  const iCategory = col(["category", "product line"]);
   const iSet = col(["set"]);
   const iNumber = col(["card number", "number"]);
   const iRarity = col(["rarity"]);
@@ -72,7 +95,12 @@ export function classifyCollectrCsv(text: string): ClassifiedPortfolios {
   const iGrade = col(["grade"]);
   const iCond = col(["card condition", "condition"]);
   const iBuy = col(["average cost paid", "cost paid", "buy price", "cost", "price paid"]);
-  const iMarket = col(["market price", "market value"]);
+  // market first, then the seller's own listed price, then low as a floor
+  const marketCols = colsFor([
+    "market price", "market value", "tcg market price",
+    "tcg marketplace price", "tcg low price with shipping", "tcg low price",
+  ]);
+  const imageCols = colsFor(["photo url", "image url", "image"]);
   const iNotes = col(["notes"]);
   const iAdded = col(["date added"]);
 
@@ -87,24 +115,29 @@ export function classifyCollectrCsv(text: string): ClassifiedPortfolios {
     if (cat && cat !== "pokemon") { nonPokemon++; continue; }
     const pf = iPortfolio >= 0 ? (r[iPortfolio] || "").trim() || "default" : "default";
     if (!portfolios[pf]) portfolios[pf] = { sealed: [], singles: [] };
-    const qty = Math.max(1, parseInt(r[iQty]) || 1);
+    const qty = Math.max(1, parseInt(firstOf(r, qtyCols)) || 1);
     const buy = iBuy >= 0 ? money(r[iBuy]) : undefined;
-    const market = iMarket >= 0 ? money(r[iMarket]) : undefined;
+    const market = money(firstOf(r, marketCols));
+    const imageUrl = firstOf(r, imageCols);
     const number = iNumber >= 0 ? (r[iNumber] || "").trim() : "";
     const dateAdded = iAdded >= 0 ? (r[iAdded] || "").trim() : "";
     if (number) {
       const variance = iVariance >= 0 ? (r[iVariance] || "").trim() : "";
+      const condition = mapCondition(iGrade >= 0 ? r[iGrade] : "", iCond >= 0 ? r[iCond] : "");
       portfolios[pf].singles.push({
         name, qty, buy, comp: market, number,
         setName: iSet >= 0 ? (r[iSet] || "").trim() : "",
         rarity: iRarity >= 0 ? (r[iRarity] || "").trim() : "",
         printing: /reverse/i.test(variance) ? "Reverse" : /holo/i.test(variance) ? "Holo" : "",
-        condition: mapCondition(iGrade >= 0 ? r[iGrade] : "", iCond >= 0 ? r[iCond] : ""),
+        condition,
+        imageUrl,
+        // TCGplayer quotes per SKU, so the row price is already this condition
+        compSource: isTcg ? `TCGplayer export (market, ${condition})` : "Collectr import (market)",
         notes: iNotes >= 0 ? (r[iNotes] || "").trim() : "",
         dateAdded,
       });
     } else {
-      portfolios[pf].sealed.push({ name, qty, buy, market, dateAdded });
+      portfolios[pf].sealed.push({ name, qty, buy, market, imageUrl, dateAdded });
     }
   }
   return { portfolios, skipped, nonPokemon };
