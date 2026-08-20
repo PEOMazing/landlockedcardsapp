@@ -77,6 +77,22 @@ export async function atDelete(table: string, id: string): Promise<void> {
   if (!res.ok) throw new Error(`Airtable delete ${table}/${id}: ${res.status}`);
 }
 
+// delete up to 10 records per request (Airtable's batch limit), chunked.
+// Returns the ids Airtable confirmed as deleted.
+export async function atDeleteBatch(table: string, ids: string[]): Promise<string[]> {
+  const done: string[] = [];
+  for (let i = 0; i < ids.length; i += 10) {
+    const chunk = ids.slice(i, i + 10);
+    const q = new URLSearchParams();
+    for (const id of chunk) q.append("records[]", id);
+    const res = await fetch(`${API}/${encodeURIComponent(table)}?${q}`, { method: "DELETE", headers });
+    if (!res.ok) throw new Error(`Airtable batch delete ${table}: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    for (const r of data.records || []) if (r.deleted) done.push(r.id);
+  }
+  return done;
+}
+
 // Airtable record ids are rec + 14 alphanumerics. Validate before embedding
 // user-supplied ids into filterByFormula strings.
 export function isRecId(id: string): boolean {
