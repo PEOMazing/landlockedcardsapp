@@ -47,6 +47,12 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [err, setErr] = useState("");
 
+  // multi-select for bulk actions
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const lastClicked = useRef<number | null>(null);
+  const selSet = useMemo(() => new Set(selected), [selected]);
+
   // add flow
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchCard[]>([]);
@@ -169,12 +175,77 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   async function remove(id: string) {
     if (!confirm("Delete this card from the singles inventory?")) return;
     const r = await fetch(`/api/singles/${id}`, { method: "DELETE" });
-    if (r.ok) { setSingles((prev) => prev.filter((s) => s.id !== id)); toast("Card deleted"); }
+    if (r.ok) { setSingles((prev) => prev.filter((s) => s.id !== id)); setSelected((p) => p.filter((x) => x !== id)); toast("Card deleted"); }
     else { const e = (await r.json()).error || "Delete failed"; setErr(e); toast(e, "bad"); }
+  }
+
+  // Checkbox handling. Shift-click extends from the last box you touched, so
+  // clearing a run of cards down a binder page is one click and one shift-click.
+  function toggleOne(index: number, shiftKey: boolean) {
+    const row = shown[index];
+    if (!row) return;
+    if (shiftKey && lastClicked.current !== null && lastClicked.current !== index) {
+      const [a, b] = [lastClicked.current, index].sort((x, y) => x - y);
+      const range = shown.slice(a, b + 1).map((s) => s.id);
+      const turningOn = !selSet.has(row.id);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of range) turningOn ? next.add(id) : next.delete(id);
+        return Array.from(next);
+      });
+    } else {
+      setSelected((prev) => (prev.includes(row.id) ? prev.filter((x) => x !== row.id) : [...prev, row.id]));
+    }
+    lastClicked.current = index;
+  }
+
+  function toggleAllShown() {
+    const ids = shown.map((s) => s.id);
+    const allOn = ids.length > 0 && ids.every((id) => selSet.has(id));
+    lastClicked.current = null;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) allOn ? next.delete(id) : next.add(id);
+      return Array.from(next);
+    });
+  }
+
+  async function deleteSelected() {
+    const picked = shown.filter((s) => selSet.has(s.id));
+    if (picked.length === 0) return;
+    const onStream = picked.filter((s) => s.status === "In Stream").length;
+    const note = onStream ? `\n\n${onStream} of them ${onStream === 1 ? "is" : "are"} on a stream and will be skipped - pull the line from the stream first.` : "";
+    if (!confirm(`Delete ${picked.length} ${picked.length === 1 ? "card" : "cards"} from the singles inventory? This cannot be undone.${note}`)) return;
+    setBulkBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/singles/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: picked.map((s) => s.id) }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setErr(d.error || "Bulk delete failed"); toast(d.error || "Bulk delete failed", "bad"); return; }
+      const gone = new Set<string>(d.deleted || []);
+      setSingles((prev) => prev.filter((s) => !gone.has(s.id)));
+      setSelected((prev) => prev.filter((id) => !gone.has(id)));
+      lastClicked.current = null;
+      const skipped = (d.skipped || []).length;
+      toast(`${d.count} ${d.count === 1 ? "card" : "cards"} deleted` + (skipped ? ` - ${skipped} skipped` : ""), skipped ? "bad" : "ok");
+      if (skipped) setErr("Skipped: " + (d.skipped || []).map((x: any) => `${x.name || x.id} (${x.reason})`).join(", "));
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   const [setFilter, setSetFilter] = useState("All");
   const [sortBy, setSortBy] = useState("newest");
+
+  // a changed view means a changed list - drop the selection so nothing gets
+  // deleted that the user can no longer see
+  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode]);
+  // re-sorting keeps the selection but retires the shift-click anchor, since
+  // the row that index pointed at just moved
+  useEffect(() => { lastClicked.current = null; }, [sortBy]);
 
   const setNames = useMemo(
     () => Array.from(new Set(singles.map((s) => s.setName).filter(Boolean))).sort(),
@@ -219,6 +290,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     }
     return { cards, spend, market, profit };
   }, [shown]);
+
+  const selStats = useMemo(() => {
+    const rows = shown.filter((s) => selSet.has(s.id));
+    return {
+      rows: rows.length,
+      cards: rows.reduce((a, s) => a + (s.qty || 1), 0),
+      market: rows.reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0),
+      locked: rows.filter((s) => s.status === "In Stream").length,
+    };
+  }, [shown, selSet]);
+  const allShownSelected = shown.length > 0 && shown.every((s) => selSet.has(s.id));
 
   function exportCsv() {
     const header = [
@@ -499,11 +581,51 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             </div>
           )}
         </div>
+        {isAdmin && selStats.rows > 0 && (
+          <div className="sticky top-2 z-30 flex items-center gap-3 flex-wrap rounded-lg border border-foil/40 bg-panel/95 backdrop-blur px-4 py-2.5 shadow-2xl">
+            <span className="text-sm font-semibold">
+              {selStats.rows} selected
+              <span className="text-dim font-normal">
+                {" "}- {selStats.cards} {selStats.cards === 1 ? "card" : "cards"} worth <span className="num text-foil">{$(selStats.market)}</span>
+              </span>
+            </span>
+            {selStats.locked > 0 && (
+              <span className="text-xs text-dim">{selStats.locked} on a stream, will be skipped</span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <button className="btn-ghost !py-1.5 text-xs" onClick={() => { setSelected([]); lastClicked.current = null; }}>Clear</button>
+              <button
+                className="rounded-lg border border-bad/60 text-bad hover:bg-bad/10 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                disabled={bulkBusy}
+                onClick={deleteSelected}
+              >
+                {bulkBusy ? "Deleting..." : `Delete ${selStats.rows} selected`}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isAdmin && shown.length > 0 && (
+          <label className="md:hidden flex items-center gap-2 text-xs text-dim">
+            <input type="checkbox" className="accent-foil h-4 w-4" checked={allShownSelected} onChange={toggleAllShown} />
+            Select all {shown.length} shown
+          </label>
+        )}
+
         {/* mobile: one card per item, built for thumbs at a card show */}
         <div className="md:hidden space-y-2">
-          {shown.map((s) => (
-            <div key={s.id} className="card p-3">
+          {shown.map((s, i) => (
+            <div key={s.id} className={`card p-3 ${selSet.has(s.id) ? "border-foil/60" : ""}`}>
               <div className="flex gap-3">
+                {isAdmin && (
+                  <input
+                    type="checkbox"
+                    className="accent-foil h-4 w-4 self-start mt-1"
+                    aria-label={`Select ${s.name}`}
+                    checked={selSet.has(s.id)}
+                    onChange={(e) => toggleOne(i, (e.nativeEvent as any).shiftKey)}
+                  />
+                )}
                 {s.image && <Thumb src={s.image} size={48} className="self-start" />}
                 {s.location && <span className="text-[10px] font-bold text-foil border border-foil/40 rounded px-1 py-px self-start">#{s.location}</span>}
                 <div className="min-w-0 flex-1">
@@ -575,6 +697,18 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
           <table className="w-full">
             <thead>
               <tr>
+                {isAdmin && (
+                  <th className="w-8">
+                    <input
+                      type="checkbox"
+                      className="accent-foil h-4 w-4 align-middle"
+                      aria-label="Select all shown cards"
+                      title="Select every card currently shown"
+                      checked={allShownSelected}
+                      onChange={toggleAllShown}
+                    />
+                  </th>
+                )}
                 <th>Card</th><th>Condition</th><th>Qty</th>
                 <th className="whitespace-nowrap">Loc</th>
                 {isAdmin && <th>Buy</th>}
@@ -582,8 +716,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               </tr>
             </thead>
             <tbody>
-              {shown.map((s) => (
-                <tr key={s.id}>
+              {shown.map((s, i) => (
+                <tr key={s.id} className={selSet.has(s.id) ? "bg-foil/5" : ""}>
+                  {isAdmin && (
+                    <td className="w-8">
+                      <input
+                        type="checkbox"
+                        className="accent-foil h-4 w-4 align-middle"
+                        aria-label={`Select ${s.name}`}
+                        checked={selSet.has(s.id)}
+                        onChange={(e) => toggleOne(i, (e.nativeEvent as any).shiftKey)}
+                      />
+                    </td>
+                  )}
                   <td className="!font-medium">
                     <span className="inline-flex items-center gap-2">
                       {s.image && <Thumb src={s.image} size={28} />}
@@ -722,11 +867,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 </tr>
               ))}
               {shown.length === 0 && (
-                <tr><td colSpan={isAdmin ? 9 : 8} className="text-dim">No cards here yet - add one above</td></tr>
+                <tr><td colSpan={isAdmin ? 10 : 8} className="text-dim">No cards here yet - add one above</td></tr>
               )}
             </tbody>
           </table>
         </div>
+        {isAdmin && (
+          <p className="text-dim text-xs">
+            Tick the boxes to select cards, shift-click to grab a run of them, then delete the whole selection at once.
+            Cards sitting on a stream are skipped.
+          </p>
+        )}
         <p className="text-dim text-xs">
           Cards get pulled onto a Single Stream from the stream editor. When a sale price is entered there,
           the card flips to Sold here automatically. Removing it from the stream puts it back In Stock.
