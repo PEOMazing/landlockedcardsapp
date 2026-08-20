@@ -5,7 +5,7 @@ import { categoryForName } from "@/lib/categories";
 
 export const maxDuration = 60;
 
-// Bulk import from a Collectr (or generic) CSV, parsed client-side and sent
+// Bulk import from a Collectr or TCGplayer CSV, parsed client-side and sent
 // in chunks. Sealed rows merge into existing products by name (quantities
 // add, blank prices fill); singles create new records. Admin only.
 
@@ -13,6 +13,7 @@ type SealedRow = { name: string; qty: number; buy?: number; market?: number; dat
 type SingleRow = {
   name: string; setName?: string; number?: string; rarity?: string;
   condition: string; qty: number; buy?: number; comp?: number;
+  printing?: string; imageUrl?: string; compSource?: string;
   notes?: string; dateAdded?: string;
 };
 
@@ -102,13 +103,14 @@ export async function POST(req: Request) {
           "Added By": addedBy,
           "Date Added": r.dateAdded || today,
         };
-        if ((r as any).printing) fields["Printing"] = (r as any).printing;
+        if (r.printing) fields["Printing"] = r.printing;
+        if (r.imageUrl && /^https?:\/\//.test(r.imageUrl)) fields["Image URL"] = r.imageUrl;
         if (ownerRecId) fields["Owner Rec Id"] = ownerRecId;
         if (r.buy && r.buy > 0) fields["Buy Price"] = r.buy;
         if (r.comp && r.comp > 0) {
           fields["Comp"] = r.comp;
           fields["Entry Comp"] = r.comp;
-          fields["Comp Source"] = "Collectr import (market)";
+          fields["Comp Source"] = r.compSource || "Collectr import (market)";
           fields["Comp Date"] = today;
         }
         return fields;

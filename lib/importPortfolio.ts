@@ -78,12 +78,13 @@ export async function importPortfolio(opts: {
           "Date Added": r.dateAdded || today,
         };
         if (r.printing) fields["Printing"] = r.printing;
+        if (r.imageUrl && /^https?:\/\//.test(r.imageUrl)) fields["Image URL"] = r.imageUrl;
         if (!isTeam) fields["Owner Rec Id"] = profileRecId;
         if (r.buy && r.buy > 0) fields["Buy Price"] = r.buy;
         if (r.comp && r.comp > 0) {
           fields["Comp"] = r.comp;
           fields["Entry Comp"] = r.comp;
-          fields["Comp Source"] = "Collectr import (market)";
+          fields["Comp Source"] = r.compSource || "Collectr import (market)";
           fields["Comp Date"] = today;
         }
         return fields;

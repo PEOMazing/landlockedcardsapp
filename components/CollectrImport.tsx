@@ -2,9 +2,9 @@
 import { useEffect, useRef, useState } from "react";
 import { classifyCollectrCsv } from "@/lib/collectr";
 
-// CSV importer for Collectr exports (and similar files). Parses locally,
-// splits rows into sealed vs singles by whether a card number is present,
-// lets the user pick which portfolios to bring in, then uploads in chunks.
+// CSV importer for Collectr and TCGplayer exports. Parses locally, splits rows
+// into sealed vs singles by whether a card number is present, lets the user pick
+// which portfolios to bring in, then uploads in chunks.
 
 type Parsed = {
   portfolios: Record<string, { sealed: any[]; singles: any[] }>;
@@ -34,7 +34,7 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
     const reader = new FileReader();
     reader.onload = () => {
       const c = classifyCollectrCsv(String(reader.result || ""));
-      if (Object.keys(c.portfolios).length === 0) { setErr("No importable rows found - is this a Collectr export?"); return; }
+      if (Object.keys(c.portfolios).length === 0) { setErr("No importable rows found - upload a Collectr or TCGplayer CSV export"); return; }
       setParsed({ portfolios: c.portfolios, skipped: c.skipped + c.nonPokemon });
       if (c.nonPokemon > 0) setSummary(`${c.nonPokemon} non-Pokemon rows set aside - One Piece support is coming`);
       const init: Record<string, boolean> = {};
@@ -88,7 +88,7 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
         ref={fileRef} type="file" accept=".csv,text/csv" className="hidden"
         onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
       />
-      <button className="btn-ghost" onClick={() => { setShowStart(true); loadCode(); }}>Import from Collectr</button>
+      <button className="btn-ghost" onClick={() => { setShowStart(true); loadCode(); }}>Import CSV</button>
       {err && <span className="text-bad text-xs ml-2">{err}</span>}
       {summary && <span className="text-win text-xs ml-2">{summary}</span>}
       {progress && <span className="text-dim text-xs ml-2">{progress}</span>}
@@ -121,8 +121,12 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
               <div className="h-px bg-edge flex-1" />
             </div>
             <button className="btn-ghost w-full" onClick={() => { setShowStart(false); fileRef.current?.click(); }}>
-              Upload the CSV file instead
+              Upload a CSV instead
             </button>
+            <p className="text-dim text-[11px] text-center">
+              Collectr and TCGplayer exports both work. TCGplayer prices are per condition,
+              so each row lands with its own comp.
+            </p>
           </div>
         </div>
       )}
@@ -130,7 +134,7 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
       {parsed && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setParsed(null)}>
           <div className="card p-5 space-y-4 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-            <h2 className="label">Import from Collectr</h2>
+            <h2 className="label">Review the import</h2>
             <p className="text-dim text-xs">
               Rows with a card number become singles; the rest become sealed inventory. Sealed products
               that already exist merge quantities instead of duplicating. Pick which portfolios to import:
