@@ -36,6 +36,37 @@ function displayName(name: string, category: string): string {
   return stripped.length >= 3 ? stripped : name;
 }
 
+type StockTab = "in" | "out" | "all";
+type SortDir = "asc" | "desc";
+type SortKey = "name" | "category" | "buyPrice" | "marketPrice" | "retailPrice" | "priceChecked" | "margin" | "qtyOnHand";
+
+// One definition of "in stock", shared by the tabs, the counts and the row badge.
+function inStock(i: Item): boolean {
+  return (i.qtyOnHand ?? 0) > 0;
+}
+
+// null means "no value" - the comparator sinks those to the bottom either way,
+// so a product with no buy price never leads a cheapest-first sort.
+function sortValue(i: Item, key: SortKey): string | number | null {
+  switch (key) {
+    case "name": return i.name || "";
+    case "category": return i.category || "";
+    case "buyPrice": return i.buyPrice > 0 ? i.buyPrice : null;
+    case "marketPrice": return i.marketPrice > 0 ? i.marketPrice : null;
+    case "retailPrice": return i.retailPrice ?? null;
+    case "priceChecked": return i.priceChecked ? new Date(i.priceChecked + "T00:00:00").getTime() : null;
+    case "margin": return i.buyPrice > 0 ? (i.marketPrice || 0) - i.buyPrice : null;
+    case "qtyOnHand": return i.qtyOnHand ?? 0;
+  }
+}
+
+function emptyLabel(tab: StockTab, q: string): string {
+  if (q.trim()) return "No products match that filter";
+  if (tab === "in") return "Nothing in stock right now";
+  if (tab === "out") return "Nothing is out of stock - everything has quantity on hand";
+  return "No products yet";
+}
+
 export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean }) {
   const [items, setItems] = useState<Item[]>([]);
   const [q, setQ] = useState("");
@@ -50,11 +81,47 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const filtered = useMemo(() => {
+  const [stockTab, setStockTab] = useState<StockTab>("in");
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  // Clicking the active column flips it; a new column starts in the direction
+  // that reads best - A to Z for text, biggest-first for money and quantity.
+  function sortBy(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "name" || key === "category" ? "asc" : "desc");
+    }
+  }
+
+  const searched = useMemo(() => {
     const n = q.trim().toLowerCase();
     if (!n) return items;
     return items.filter((i) => i.name.toLowerCase().includes(n) || i.category.toLowerCase().includes(n));
   }, [items, q]);
+
+  // Counted off `searched` so the tab numbers respect whatever is in the filter box.
+  const counts = useMemo(() => {
+    const inCount = searched.reduce((n, i) => n + (inStock(i) ? 1 : 0), 0);
+    return { in: inCount, out: searched.length - inCount, all: searched.length };
+  }, [searched]);
+
+  const filtered = useMemo(() => {
+    const rows = stockTab === "all" ? searched.slice() : searched.filter((i) => (stockTab === "in" ? inStock(i) : !inStock(i)));
+    const dir = sortDir === "asc" ? 1 : -1;
+    return rows.sort((a, b) => {
+      const av = sortValue(a, sortKey);
+      const bv = sortValue(b, sortKey);
+      // Nulls sink to the bottom in both directions.
+      if (av === null && bv === null) return a.name.localeCompare(b.name);
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      const c = typeof av === "string" && typeof bv === "string" ? av.localeCompare(bv) : Number(av) - Number(bv);
+      return c !== 0 ? c * dir : a.name.localeCompare(b.name);
+    });
+  }, [searched, stockTab, sortKey, sortDir]);
 
   function exportCsv() {
     const header = ["Product", "Category", "Buy Price", "Market Price", "Retail Price", "Qty On Hand", "Price Checked", "TCGplayer URL"];
@@ -62,11 +129,14 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
     const csv = [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `inventory-${stockTab}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
   }
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // A row selected on one tab would otherwise stay selected while hidden, and a
+  // bulk edit or delete would hit rows the user cannot see.
+  useEffect(() => { setSelected(new Set()); }, [stockTab]);
   const [bulkCategory, setBulkCategory] = useState("");
   const [bulkBuy, setBulkBuy] = useState("");
   const [bulkBusy, setBulkBusy] = useState("");
@@ -273,6 +343,47 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         </button>
       </div>
 
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex rounded-lg border border-edge overflow-hidden" role="tablist" aria-label="Stock filter">
+          {([["in", "In stock", counts.in], ["out", "Out of stock", counts.out], ["all", "All", counts.all]] as [StockTab, string, number][]).map(([tab, label, n]) => (
+            <button
+              key={tab}
+              type="button"
+              role="tab"
+              aria-selected={stockTab === tab}
+              onClick={() => setStockTab(tab)}
+              className={`px-3 py-1.5 text-sm whitespace-nowrap transition-colors ${stockTab === tab ? "bg-foil/15 text-foil font-semibold" : "text-dim hover:text-body"}`}
+            >
+              {label}
+              <span className="num ml-1.5 text-xs opacity-70">{n}</span>
+            </button>
+          ))}
+        </div>
+        {/* the mobile cards have no header row to click, so sorting needs its own control */}
+        <label className="md:hidden flex items-center gap-2 label">
+          Sort
+          <select
+            className="input !w-auto !py-1 text-xs"
+            value={`${sortKey}:${sortDir}`}
+            onChange={(e) => {
+              const [k, d] = e.target.value.split(":");
+              setSortKey(k as SortKey);
+              setSortDir(d as SortDir);
+            }}
+          >
+            <option value="name:asc">Product A-Z</option>
+            <option value="marketPrice:desc">Market high to low</option>
+            <option value="marketPrice:asc">Market low to high</option>
+            <option value="buyPrice:desc">Buy high to low</option>
+            <option value="margin:desc">Margin high to low</option>
+            <option value="margin:asc">Margin low to high</option>
+            <option value="qtyOnHand:desc">On hand high to low</option>
+            <option value="qtyOnHand:asc">On hand low to high</option>
+            <option value="priceChecked:asc">Price checked oldest first</option>
+          </select>
+        </label>
+      </div>
+
       <input className="input" placeholder='Filter - try "ETB"' value={q} onChange={(e) => setQ(e.target.value)} />
 
       {/* mobile: card per product for restocks on the floor */}
@@ -297,7 +408,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                   </select>
                 </div>
                 <div className="text-right">
-                  <div className="label">On hand</div>
+                  <div className="label">On hand{!inStock(i) && <span className="text-bad ml-1">- out</span>}</div>
                   <div className="flex items-center gap-2 justify-end">
                     {num(i.id, "qtyOnHand", i.qtyOnHand, "1")}
                     <button className="text-foil text-xs" onClick={() => { setStockFor(stockFor === i.id ? null : i.id); setStockQty("1"); setStockCost(""); }}>+ stock</button>
@@ -332,13 +443,25 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
             </div>
           );
         })}
-        {filtered.length === 0 && <div className="text-dim text-sm">No products match</div>}
+        {filtered.length === 0 && <div className="text-dim text-sm">{emptyLabel(stockTab, q)}</div>}
       </div>
 
       <div className="card overflow-x-auto hidden md:block">
         <table className="w-full">
           <thead>
-            <tr><th className="!px-2 w-8"><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={() => toggleSelectAll(filtered.map((i) => i.id))} /></th><th>Product</th><th>Category</th><th>Buy (avg)</th><th>Market</th><th>Retail</th><th>Price checked</th><th>Margin</th><th>On hand</th><th>Links</th><th></th></tr>
+            <tr>
+              <th className="!px-2 w-8"><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={() => toggleSelectAll(filtered.map((i) => i.id))} /></th>
+              <Th label="Product" k="name" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="Category" k="category" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="Buy (avg)" k="buyPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="Market" k="marketPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="Retail" k="retailPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="Price checked" k="priceChecked" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="Margin" k="margin" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="On hand" k="qtyOnHand" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <th>Links</th>
+              <th></th>
+            </tr>
           </thead>
           <tbody>
             {filtered.map((i) => {
@@ -392,6 +515,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                   <td>
                     <div className="flex items-center gap-2">
                       {num(i.id, "qtyOnHand", i.qtyOnHand, "1")}
+                      {!inStock(i) && <span className="text-bad text-[10px] uppercase tracking-wide">out</span>}
                       <button
                         className="text-foil text-xs hover:underline whitespace-nowrap"
                         title="Receive stock: adds quantity, logs the lot, and rolls the average buy price"
@@ -478,7 +602,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 </Fragment>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={9} className="text-dim">No products match</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={11} className="text-dim">{emptyLabel(stockTab, q)}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -493,6 +617,31 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   );
 }
 
+
+function Th({ label, k, sortKey, sortDir, onSort }: { label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void }) {
+  const active = sortKey === k;
+  return (
+    // th already carries the uppercase dim label styling from globals.css, so the
+    // button only has to add the active tint.
+    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={`inline-flex items-center gap-1 whitespace-nowrap transition-colors hover:text-body ${active ? "text-foil" : ""}`}
+      >
+        {label}
+        {active ? (
+          <span className="text-[8px] leading-none">{sortDir === "asc" ? "\u25B2" : "\u25BC"}</span>
+        ) : (
+          <span className="text-[8px] leading-none opacity-30 flex flex-col">
+            <span>{"\u25B2"}</span>
+            <span>{"\u25BC"}</span>
+          </span>
+        )}
+      </button>
+    </th>
+  );
+}
 
 function PriceAge({ date }: { date: string | null }) {
   if (!date) return <span className="text-bad text-xs">never</span>;
