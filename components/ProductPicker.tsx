@@ -19,6 +19,14 @@ function outOfStock(i: PickerItem): boolean {
   return (i.qtyOnHand ?? 0) <= 0;
 }
 
+// Products left below zero by deductions made before the stock floor existed
+// show their real figure rather than a flat "out of stock", which would read
+// as a bug to anyone who knows the count is wrong.
+function unavailableLabel(i: PickerItem): string {
+  const n = i.qtyOnHand ?? 0;
+  return n < 0 ? `oversold - ${n} on hand` : "out of stock";
+}
+
 export default function ProductPicker({
   onAdd,
   busy,
@@ -67,7 +75,12 @@ export default function ProductPicker({
 
   function choose(item: PickerItem) {
     if (outOfStock(item)) {
-      setPickMsg(`${item.name} is out of stock - receive stock on the Inventory tab first.`);
+      const n = item.qtyOnHand ?? 0;
+      setPickMsg(
+        n < 0
+          ? `${item.name} is oversold at ${n} on hand - its count needs correcting on the Inventory tab before it can go on a set.`
+          : `${item.name} is out of stock (0 on hand) - receive stock on the Inventory tab first.`
+      );
       return;
     }
     setSelected(item);
@@ -181,7 +194,7 @@ export default function ProductPicker({
                     type="button"
                     disabled={out}
                     aria-disabled={out}
-                    title={out ? `${i.name} is out of stock` : undefined}
+                    title={out ? `${i.name}: ${unavailableLabel(i)}` : undefined}
                     className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 ${
                       out ? "opacity-40 cursor-not-allowed" : idx === hi ? "bg-foil/15" : "hover:bg-edge/40"
                     }`}
@@ -196,7 +209,7 @@ export default function ProductPicker({
                       </span>
                     </span>
                     {out ? (
-                      <span className="text-bad text-xs uppercase tracking-wide whitespace-nowrap">out of stock</span>
+                      <span className="text-bad text-xs uppercase tracking-wide whitespace-nowrap">{unavailableLabel(i)}</span>
                     ) : (
                       <span className="text-dim text-xs num whitespace-nowrap">
                         {typeof i.marketPrice === "number" && `$${i.marketPrice.toFixed(2)}`}
