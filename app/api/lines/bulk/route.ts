@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { stockAlert } from "@/lib/alerts";
 import { atCreate, atGet, atList, atUpdate, isRecId, T, AtRecord } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { onHandOf, stockShortfall } from "@/lib/stock";
 
 // Bulk-add pasted items to a show set.
 // Body: { streamId, items: [{ name, qty }] }
 // Matches names against active inventory (exact, then contains). Unmatched items
-// are auto-created in Inventory (admin only) with blank prices to fill in later.
+// are auto-created in Inventory (admin only) with blank prices to fill in later,
+// but are not added to the set - a product at 0 on hand has no stock to pull.
+// Every row that cannot be satisfied lands in `skipped` carrying its reason.
 export async function POST(req: Request) {
   const me = await getMe();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -47,24 +50,38 @@ export async function POST(req: Request) {
   for (const item of items) {
     let product = match(item.name);
     if (!product) {
-      if (me.isAdmin) {
-        product = await atCreate(T.inventory, {
-          "Product Name": item.name,
-          "Category": "Other",
-          "Buy Price": 0,
-          "Market Price": 0,
-          "Qty On Hand": 0,
-          "Active": true,
-        });
-        byLower.set(item.name.toLowerCase(), product);
-        inventory.push(product);
-        created.push(item.name);
-      } else {
-        skipped.push(item.name);
+      if (!me.isAdmin) {
+        skipped.push(`${item.name} - no match in inventory`);
+        continue;
+      }
+      // Auto-created products start at 0 on hand, so deducting from one could
+      // only ever go negative. Create the product so it can be priced and
+      // stocked, but do not put it on the set.
+      product = await atCreate(T.inventory, {
+        "Product Name": item.name,
+        "Category": "Other",
+        "Buy Price": 0,
+        "Market Price": 0,
+        "Qty On Hand": 0,
+        "Active": true,
+      });
+      byLower.set(item.name.toLowerCase(), product);
+      inventory.push(product);
+      created.push(item.name);
+      skipped.push(`${item.name} - created at 0 on hand, receive stock then add it`);
+      continue;
+    }
+    const name = product.fields["Product Name"];
+    if (!rebuildWindow) {
+      // The cached record is kept in step with each deduction below, so two
+      // pasted rows of the same product are checked against what the first one
+      // left behind rather than both seeing the original quantity.
+      const short = stockShortfall(product, item.qty);
+      if (short) {
+        skipped.push(`${item.name} - ${short}`);
         continue;
       }
     }
-    const name = product.fields["Product Name"];
     await atCreate(T.lines, {
       "Line": `${item.qty}x ${name}`,
       "Qty": item.qty,
@@ -76,10 +93,12 @@ export async function POST(req: Request) {
       "Stream Rec Id": b.streamId,
       "Product": [product.id],
     });
-    if (!rebuildWindow) stockChanges.push({ name, qtyNow: (product.fields["Qty On Hand"] ?? 0) - item.qty, delta: -item.qty });
-    if (!rebuildWindow) await atUpdate(T.inventory, product.id, {
-      "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) - item.qty,
-    });
+    if (!rebuildWindow) {
+      const qtyNow = onHandOf(product) - item.qty;
+      product.fields["Qty On Hand"] = qtyNow;
+      stockChanges.push({ name, qtyNow, delta: -item.qty });
+      await atUpdate(T.inventory, product.id, { "Qty On Hand": qtyNow });
+    }
     added.push(`${item.qty}x ${name}`);
   }
 
