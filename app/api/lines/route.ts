@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { stockShortfall } from "@/lib/stock";
 
 // Add a product line to a stream. Snapshots current prices, decrements inventory.
 export async function POST(req: Request) {
@@ -17,6 +18,15 @@ export async function POST(req: Request) {
   const qty = Math.max(1, parseInt(b.qty) || 1);
   const name = product.fields["Product Name"];
 
+  // During the rebuild window an add on a returned set skips the decrement, so
+  // there is nothing to floor. Everywhere else, refuse before writing the line -
+  // rejecting after the create would leave an orphan line on the stream.
+  const deducts = !(rebuildWindow && stream.fields["Items Returned"]);
+  if (deducts) {
+    const short = stockShortfall(product, qty);
+    if (short) return NextResponse.json({ error: short }, { status: 400 });
+  }
+
   const rec = await atCreate(T.lines, {
     "Line": `${qty}x ${name}`,
     "Qty": qty,
@@ -29,7 +39,7 @@ export async function POST(req: Request) {
     "Product": [b.productId],
   });
   const onHand = product.fields["Qty On Hand"] ?? 0;
-  if (!(rebuildWindow && stream.fields["Items Returned"])) {
+  if (deducts) {
     await atUpdate(T.inventory, b.productId, { "Qty On Hand": onHand - qty });
   }
   return NextResponse.json({ id: rec.id });

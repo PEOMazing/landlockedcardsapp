@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { stockAlert } from "@/lib/alerts";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
+import { stockShortfall } from "@/lib/stock";
 
 async function guard(lineId: string) {
   const me = await getMe();
@@ -60,6 +61,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const productId = g.line.fields["Product"]?.[0];
     if (productId) {
       const product = await atGet(T.inventory, productId);
+      // Only the increase direction pulls stock. Lowering the quantity returns
+      // units to inventory and is always allowed.
+      const delta = newQty - oldQty;
+      if (delta > 0) {
+        const short = stockShortfall(product, delta);
+        if (short) return NextResponse.json({ error: short }, { status: 400 });
+      }
       await atUpdate(T.inventory, productId, {
         "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) + oldQty - newQty,
       });

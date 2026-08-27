@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { stockAlert } from "@/lib/alerts";
+import { stockShortfall } from "@/lib/stock";
 
 // A store purchase: a customer bought an in-stock item off the shelf during
 // the stream. Creates a line flagged Is Store Purchase with the actual sold
@@ -24,6 +25,10 @@ export async function POST(req: Request) {
   }
   const product = await atGet(T.inventory, b.productId).catch(() => null);
   if (!product) return NextResponse.json({ error: "unknown product" }, { status: 400 });
+
+  // A store purchase pulls one unit off the shelf - it cannot sell what is not there.
+  const short = stockShortfall(product, 1);
+  if (short) return NextResponse.json({ error: short }, { status: 400 });
 
   const name = product.fields["Product Name"];
   const line = await atCreate(T.lines, {

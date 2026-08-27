@@ -216,11 +216,12 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
 
   async function addLine(item: PickerItem, qty: number) {
     setBusy(true);
-    await fetch("/api/lines", {
+    const r = await fetch("/api/lines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ streamId: id, productId: item.id, qty }),
     });
+    if (!r.ok) toast((await r.json().catch(() => ({}))).error || "Could not add that product", "bad");
     await load();
     setBusy(false);
   }
@@ -266,7 +267,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     else {
       let msg = `Added ${d.added.length} items`;
       if (d.created.length) msg += ` - created ${d.created.length} new products (set their prices!)`;
-      if (d.skipped.length) msg += ` - skipped (no match): ${d.skipped.join(", ")}`;
+      if (d.skipped.length) msg += ` - skipped: ${d.skipped.join("; ")}`;
       setPasteMsg(msg);
       setPasteText("");
     }
@@ -854,6 +855,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                 });
                 setBusy(false);
                 if (r.ok) { setStoreProduct(""); setStorePrice(""); await load(); }
+                else toast((await r.json().catch(() => ({}))).error || "Could not record that sale", "bad");
               }}
             >
               Sold
