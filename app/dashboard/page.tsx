@@ -34,7 +34,7 @@ export default async function Dashboard() {
   const [settings, streamRows, lineRows, myTimeRows, allStreamMeta] = await Promise.all([
     getSettings(),
     atList(T.streams, {
-      filterByFormula: `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`,
+      filterByFormula: `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}', {Override Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`,
       "sort[0][field]": "Stream Date",
       "sort[0][direction]": "desc",
     }),
@@ -51,8 +51,10 @@ export default async function Dashboard() {
     const sid = l.fields["Stream Rec Id"];
     if (!sid) continue;
     const line = toLine(l);
-    costByStream[sid] = (costByStream[sid] || 0) + line.qty * line.buy;
-    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qty * line.market;
+    // Charge DELIVERED hits, never the full wall. Unhit units go back to inventory
+    // when the show closes, so they were never a cost of it. Must match payroll.
+    costByStream[sid] = (costByStream[sid] || 0) + line.qtyHit * line.buy;
+    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qtyHit * line.market;
   }
 
   const rows: StreamRow[] = streamRows.map((r) => ({
@@ -69,10 +71,22 @@ export default async function Dashboard() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     managerId: r.fields["Manager Rec Id"] || null,
+    overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
     productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
   }));
+
+  // The pay query only returns shows this person streams or is assigned to manage.
+  // A streamer creating their own show stamps no manager, so weekend shows made
+  // that way were invisible to managers here. Managers get the full active list for
+  // the TABLE only, reusing allStreamMeta. Pay below still comes from `rows`.
+  const myStreamIds = new Set(streamRows.map((r) => r.id));
+  const visibleStreams = me.isManager
+    ? [...streamRows, ...(allStreamMeta as any[]).filter((r) => !myStreamIds.has(r.id))].sort((a, b) =>
+        String(b.fields["Stream Date"] || "").localeCompare(String(a.fields["Stream Date"] || ""))
+      )
+    : streamRows;
 
   const rate =
     typeof me.streamer.fields["Hourly Rate"] === "number"
@@ -96,7 +110,10 @@ export default async function Dashboard() {
   });
   const overridePct =
     typeof me.streamer.fields["Override %"] === "number" ? me.streamer.fields["Override %"] : 0;
-  const managedRows = rows.filter((r) => r.managerId === me.streamer!.id);
+  // manager pay reaches you two ways: you packed the show, or you earn its override
+  const managedRows = rows.filter(
+    (r) => r.managerId === me.streamer!.id || r.overrideId === me.streamer!.id
+  );
   const managedStreamerIds = Array.from(new Set(managedRows.map((r) => r.streamerId)));
   const rateByStreamer: Record<string, number> = {};
   if (managedStreamerIds.length > 0) {
@@ -209,12 +226,16 @@ export default async function Dashboard() {
         )}
 
         <section>
-          <h2 className="label mb-3">Your streams</h2>
+          <h2 className="label mb-3">{me.isManager ? "Streams" : "Your streams"}</h2>
           <div className="card overflow-x-auto">
             <table className="w-full">
               <thead><tr><th>Date</th><th>Title</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {streamRows.map((r) => (
+                {visibleStreams.map((r) => {
+                  const mine =
+                    r.fields["Streamer Rec Id"] === me.streamer!.id ||
+                    r.fields["Manager Rec Id"] === me.streamer!.id;
+                  return (
                   <tr key={r.id}>
                     <td>
                       <Link className="text-foil hover:underline num" href={`/streams/${r.id}`}>
@@ -228,6 +249,9 @@ export default async function Dashboard() {
                       {r.fields["Manager Rec Id"] === me.streamer!.id && (
                         <span className="text-foil text-xs ml-2">managing</span>
                       )}
+                      {!mine && (
+                        <span className="text-dim text-xs ml-2" title="Someone else's show - you can open and run it, but it earns you no override">team show</span>
+                      )}
                     </td>
                     <td>
                       <span className={r.fields["Status"] === "Complete" ? "text-win" : "text-foil"}>
@@ -238,8 +262,9 @@ export default async function Dashboard() {
                       <Link className="text-foil hover:underline" href={`/streams/${r.id}`}>Open</Link>
                     </td>
                   </tr>
-                ))}
-                {streamRows.length === 0 && (
+                  );
+                })}
+                {visibleStreams.length === 0 && (
                   <tr><td colSpan={4} className="text-dim">No streams yet</td></tr>
                 )}
               </tbody>
