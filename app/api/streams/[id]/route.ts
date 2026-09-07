@@ -47,7 +47,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
 
   let managerName = "";
   let streamerName = "";
+  let overrideName = "";
   const managerId = stream.fields["Manager Rec Id"];
+  const overrideId = stream.fields["Override Rec Id"] || null;
   const streamerRecId = stream.fields["Streamer Rec Id"] || null;
   let streamerRow: any = null;
   if (streamerRecId) {
@@ -55,6 +57,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   }
   if (managerId) {
     try { managerName = (await atGet(T.streamers, managerId)).fields["Name"] || ""; } catch {}
+  }
+  if (overrideId) {
+    if (overrideId === managerId) overrideName = managerName;
+    else { try { overrideName = (await atGet(T.streamers, overrideId)).fields["Name"] || ""; } catch {} }
   }
 
   const timeEntries = timeRows.map((t) => ({
@@ -90,6 +96,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       streamerName,
       streamerRecId,
       managerRecId: managerId || null,
+      overrideRecId: overrideId,
+      overrideName,
       overrideExcluded: !!stream.fields["Override Excluded"],
       notes: stream.fields["Notes"] || "",
       streamType: stream.fields["Stream Type"] || "Surprise Set",
@@ -198,6 +206,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (!isRecId(String(b.managerId))) return NextResponse.json({ error: "bad person id" }, { status: 400 });
       try { await atGet(T.streamers, b.managerId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
       fields["Manager Rec Id"] = b.managerId;
+    }
+  }
+  // who earns the override on this show - ADMIN ONLY, separate from packaging above
+  if (b.overrideRecId !== undefined) {
+    if (!me.isAdmin) return NextResponse.json({ error: "only the admin can assign the override" }, { status: 403 });
+    if (b.overrideRecId === null || b.overrideRecId === "") {
+      fields["Override Rec Id"] = "";
+    } else {
+      if (!isRecId(String(b.overrideRecId))) return NextResponse.json({ error: "bad person id" }, { status: 400 });
+      try { await atGet(T.streamers, b.overrideRecId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
+      fields["Override Rec Id"] = b.overrideRecId;
     }
   }
   // commission override eligibility - admin only, stored inverted so old streams stay eligible

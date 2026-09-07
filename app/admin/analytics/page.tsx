@@ -46,8 +46,9 @@ export default async function AnalyticsPage() {
     if (!sid) continue;
     const line = toLine(l);
     const isHit = isHitLine(line, settings);
-    costByStream[sid] = (costByStream[sid] || 0) + line.qty * line.buy;
-    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qty * line.market;
+    // Delivered hits only, matching payroll and the streamer dashboard.
+    costByStream[sid] = (costByStream[sid] || 0) + line.qtyHit * line.buy;
+    marketCostByStream[sid] = (marketCostByStream[sid] || 0) + line.qtyHit * line.market;
     if (!line.isGiveaway) spotsByStream[sid] = (spotsByStream[sid] || 0) + line.qty;
     // hits = higher-value non-pack items only (market > hit_threshold)
     if (isHit) {
@@ -92,6 +93,7 @@ export default async function AnalyticsPage() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     managerId: r.fields["Manager Rec Id"] || null,
+    overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
     productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
@@ -111,7 +113,13 @@ export default async function AnalyticsPage() {
   // per-stream P&L rows: everything here is exact per stream; wages settle weekly
   const pnl = rows.map((r) => {
     const packingCost = (r.packingHours + r.managerPackingHours) * settings.packing_rate;
-    const contribution = r.afterFees - r.promotion - r.productCost - r.tips - packingCost;
+    // same formula as buildWeekPay: tips are outside After Fees and never come out
+    // of profit; both givvy types are charged from their counters
+    const contribution =
+      r.afterFees - r.promotion
+      - (r.giveaways || 0) * settings.giveaway_cost
+      - (r.singlesGiveaways || 0) * settings.singles_giveaway_cost
+      - r.productCost - packingCost;
     return {
       ...r,
       packingCost,
@@ -153,12 +161,33 @@ export default async function AnalyticsPage() {
 
   // per-streamer rollup (wages = their weekly pay + any manager pay they earned)
   const byPerson = new Map<string, any>();
+  const blankPerson = (name: string) => ({ name, streams: 0, hours: 0, revenue: 0, contribution: 0, wages: 0 });
+  // Revenue and contribution belong to the streamer of record: they are the
+  // show's numbers, not a person's hours.
   for (const r of pnl) {
-    const p = byPerson.get(r.streamerId) || {
-      name: r.streamerName, streams: 0, hours: 0, revenue: 0, contribution: 0, wages: 0,
-    };
-    p.streams += 1; p.hours += r.hours; p.revenue += r.afterFees; p.contribution += r.contribution;
+    const p = byPerson.get(r.streamerId) || blankPerson(r.streamerName);
+    p.revenue += r.afterFees; p.contribution += r.contribution;
     byPerson.set(r.streamerId, p);
+  }
+  // hp-v1: shows worked and hours follow the TIMECLOCK, not the stream of record.
+  // A shared show counts for both streamers instead of dumping every hour on one,
+  // and the packing manager finally appears with his own hours - before this he
+  // clocked packing on 47 shows and the table showed him 0 streams and 0.0 hours.
+  const completedIds2 = new Set(pnl.map((r) => r.id));
+  const workedIds: Record<string, Set<string>> = {};
+  const clockedHours: Record<string, number> = {};
+  for (const e of timeRows as any[]) {
+    const sid = e.fields["Stream Rec Id"]; const pid = e.fields["Person Rec Id"];
+    if (!sid || !pid || !completedIds2.has(sid)) continue;
+    if (!workedIds[pid]) workedIds[pid] = new Set();
+    workedIds[pid].add(sid);
+    clockedHours[pid] = (clockedHours[pid] || 0) + (e.fields["Hours"] || 0);
+  }
+  for (const pid of Object.keys(workedIds)) {
+    const p = byPerson.get(pid) || blankPerson(nameById[pid] || "Team");
+    p.streams = workedIds[pid].size;
+    p.hours = Math.round((clockedHours[pid] || 0) * 100) / 100;
+    byPerson.set(pid, p);
   }
   for (const w of weeks) {
     const p = byPerson.get(w.streamerId);
@@ -228,7 +257,7 @@ export default async function AnalyticsPage() {
                     <td>{money(p.revenue)}</td>
                     <td className={p.contribution < 0 ? "text-bad" : ""}>{money(p.contribution)}</td>
                     <td>{money(p.wages)}</td>
-                    <td>{p.hours > 0 ? money(p.revenue / p.hours) : "-"}</td>
+                    <td>{p.hours > 0 && p.revenue > 0 ? money(p.revenue / p.hours) : "-"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -98,9 +98,15 @@ export type StreamRow = {
   hours: number;
   packingHours: number;
   managerPackingHours: number;
+  // managerId  = who PACKED the show (their packing hours are paid to them)
+  // overrideId = who EARNS THE OVERRIDE on it (admin only, Airtable "Override Rec Id").
+  // Blank override means nobody earns one here. Packing no longer grants the override.
   managerId: string | null;
-  productCost: number;        // buy-price snapshots x qty: the company's real cost
-  productMarketCost: number;  // market-price snapshots x qty: what streamer pay is measured against
+  overrideId?: string | null;
+  // Both costs are DELIVERED units only (qty hit), never the full wall - unhit units
+  // return to inventory, so they were never a cost of the show.
+  productCost: number;        // buy-price snapshots x qty hit: the company's real cost
+  productMarketCost: number;  // market-price snapshots x qty hit: what streamer pay is measured against
   status: string;
   overrideExcluded?: boolean;
 };
@@ -284,8 +290,10 @@ export type ManagerWeekPay = {
   streams: StreamRow[];
   weekStart: string;
   weekLabel: string;
-  managerId: string;
+  managerId: string;      // person being paid: override earner, packer, or both
   managerName: string;
+  earnsOverride: boolean;
+  packedCount: number;
   streamCount: number;
   managedCommissionable: number;
   streamerPayOnManaged: number;   // pay earned by the streamers on those streams
@@ -306,10 +314,13 @@ export function buildManagerPay(
 ): ManagerWeekPay[] {
   // group managed streams per (week, manager, streamer) so the streamer's
   // greater-of pay can be removed before the override is applied
+  // OVERRIDE side, keyed on each stream's override earner.
   const groups = new Map<string, StreamRow[]>();
   for (const st of streams) {
-    if (st.status !== "Complete" || !st.managerId) continue;
-    const key = `${weekStartOf(st.date)}|${st.managerId}|${st.streamerId}`;
+    if (st.status !== "Complete") continue;
+    const earner = st.overrideId || null;
+    if (!earner) continue;
+    const key = `${weekStartOf(st.date)}|${earner}|${st.streamerId}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(st);
   }
@@ -319,8 +330,17 @@ export function buildManagerPay(
     commissionable: number;
     streamerPay: number;
     packingHours: number;
+    packedCount: number;
+    earnsOverride: boolean;
   };
   const byManagerWeek = new Map<string, Agg>();
+  const touch = (key: string): Agg => {
+    const a = byManagerWeek.get(key) || {
+      rows: [], commissionable: 0, streamerPay: 0, packingHours: 0, packedCount: 0, earnsOverride: false,
+    };
+    byManagerWeek.set(key, a);
+    return a;
+  };
 
   for (const [key, rows] of groups) {
     const [weekStart, managerId, streamerId] = key.split("|");
@@ -340,15 +360,24 @@ export function buildManagerPay(
     const hours = rows.reduce((a, r) => a + r.hours, 0);
     const rate = ratesByStreamer[streamerId] ?? s.default_hourly_rate;
     const streamerPay = Math.max(hours * rate, tierCommission(commissionable, s));
-    const packingHours = rows.reduce((a, r) => a + (r.managerPackingHours || 0), 0);
 
-    const mwKey = `${weekStart}|${managerId}`;
-    const agg = byManagerWeek.get(mwKey) || { rows: [], commissionable: 0, streamerPay: 0, packingHours: 0 };
+    const agg = touch(`${weekStart}|${managerId}`);
     agg.rows.push(...rows);
     agg.commissionable += commissionable;
     agg.streamerPay += streamerPay;
-    agg.packingHours += packingHours;
-    byManagerWeek.set(mwKey, agg);
+    agg.earnsOverride = true;
+  }
+
+  // PACKING side, keyed on whoever actually packed the show. Packing is hourly and
+  // belongs to the packer whether or not they earn the override on it.
+  for (const st of streams) {
+    if (st.status !== "Complete" || !st.managerId) continue;
+    const hrs = st.managerPackingHours || 0;
+    if (hrs <= 0) continue;
+    const agg = touch(`${weekStartOf(st.date)}|${st.managerId}`);
+    agg.packingHours += hrs;
+    agg.packedCount += 1;
+    if (!agg.rows.some((r) => r.id === st.id)) agg.rows.push(st);
   }
 
   const out: ManagerWeekPay[] = [];
@@ -364,6 +393,8 @@ export function buildManagerPay(
       streams: agg.rows.sort((a, b) => a.date.localeCompare(b.date)),
       managerId,
       managerName: namesById[managerId] || "Manager",
+      earnsOverride: agg.earnsOverride,
+      packedCount: agg.packedCount,
       streamCount: agg.rows.length,
       managedCommissionable: agg.commissionable,
       streamerPayOnManaged: agg.streamerPay,

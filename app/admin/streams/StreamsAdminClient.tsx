@@ -7,6 +7,7 @@ const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractio
 
 export type StreamRowT = {
   id: string; date: string; title: string; streamer: string; manager: string;
+  overrideRecId?: string; overrideName?: string; overrideExcluded?: boolean;
   status: string; afterFees: number | null; hours: number | null; packingHours?: number; tips?: number | null; spots: number | null;
   payroll: number | null; netProfit: number | null;
 };
@@ -16,13 +17,27 @@ export default function StreamsAdminClient({
   streams,
   deleted,
   isAdmin = true,
+  team = [],
 }: {
   streams: StreamRowT[];
   deleted: DeletedRowT[];
   isAdmin?: boolean;
+  team?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
+
+  // Who earns the override on this show. Admin only, independent of Packaging.
+  async function setOverride(id: string, personId: string) {
+    setBusy(id);
+    await fetch(`/api/streams/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overrideRecId: personId || null }),
+    });
+    setBusy("");
+    router.refresh();
+  }
 
   async function softDelete(s: StreamRowT) {
     const ok = confirm(
@@ -68,7 +83,7 @@ export default function StreamsAdminClient({
         <table className="w-full">
           <thead>
             <tr>
-              <th>Date</th><th>Title</th><th>Streamer</th><th>Packaging</th>
+              <th>Date</th><th>Title</th><th>Streamer</th><th title="Who packed this show - their packing hours are paid to them">Packaging</th><th title="Who earns the commission override on this show. Independent of who packed it.">Override</th>
               <th>Status</th><th>After fees</th><th>Hours</th><th title="Packing + manager packing hours">Packing</th><th title="Tips paid through to the streamer">Tips</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
             </tr>
           </thead>
@@ -104,6 +119,20 @@ export default function StreamsAdminClient({
                 <td>{r.streamer || "-"}</td>
                 <td className="text-dim">{r.manager || "-"}</td>
                 <td>
+                  {isAdmin ? (
+                    <select className="input !py-1 !px-1 text-sm !w-28" value={r.overrideRecId || ""}
+                      disabled={busy === r.id} onChange={(e) => setOverride(r.id, e.target.value)}>
+                      <option value="">nobody</option>
+                      {team.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                    </select>
+                  ) : (
+                    <span className="text-dim">{r.overrideName || "-"}</span>
+                  )}
+                  {r.overrideExcluded && r.overrideRecId && (
+                    <span className="text-bad text-xs ml-1" title="Excluded from the override base">excl</span>
+                  )}
+                </td>
+                <td>
                   <span className={r.status === "Complete" ? "text-win" : "text-foil"}>{r.status}</span>
                 </td>
                 <td>{r.afterFees !== null ? $(r.afterFees) : "-"}</td>
@@ -127,7 +156,7 @@ export default function StreamsAdminClient({
               </tr>
             ))}
             {streams.length === 0 && (
-              <tr><td colSpan={9} className="text-dim">No streams yet</td></tr>
+              <tr><td colSpan={13} className="text-dim">No streams yet</td></tr>
             )}
           </tbody>
         </table>

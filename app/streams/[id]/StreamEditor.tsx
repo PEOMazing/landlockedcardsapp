@@ -727,7 +727,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             </button>
           )}
           {isAdmin && (
-            <label className="flex items-center gap-2 text-sm text-dim cursor-pointer select-none">
+            <>
+              <label className="flex items-center gap-2 text-sm text-dim cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={!stream.overrideExcluded}
@@ -738,6 +739,30 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               />
               Counts toward packing override
             </label>
+              <label className="flex items-center gap-2 text-sm text-dim" title="Who earns the commission override on this show. Independent of who packed it.">
+                Override earned by
+                <select
+                  className="input !py-1 !w-40"
+                  value={stream.overrideRecId || ""}
+                  disabled={busy}
+                  onChange={async (e) => {
+                    setBusy(true);
+                    await fetch(`/api/streams/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ overrideRecId: e.target.value || null }),
+                    });
+                    setBusy(false);
+                    await load();
+                  }}
+                >
+                  <option value="">nobody</option>
+                  {team.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+            </>
           )}
           {resultsErr && <span className="text-bad text-sm">{resultsErr}</span>}
           <span className="mx-2 text-edge">|</span>

@@ -16,7 +16,10 @@ export const dynamic = "force-dynamic";
 export default async function PayrollPage() {
   const me = await getMe();
   if (!me) redirect("/sign-in");
-  if (!me.isAdmin) redirect("/dashboard");
+  // Managers get payroll READ-ONLY. Both write paths (/api/payroll/paid and the
+  // paidOut flag on PATCH /api/streams/[id]) are already admin-only server-side.
+  if (!me.isAdmin && !me.isManager) redirect("/dashboard");
+  const canMarkPaid = me.isAdmin;
 
   const [settings, streamerRows, streamRows, lineRows, timeRows] = await Promise.all([
     getSettings(),
@@ -60,6 +63,7 @@ export default async function PayrollPage() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     managerId: r.fields["Manager Rec Id"] || null,
+    overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
     productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
@@ -148,11 +152,16 @@ export default async function PayrollPage() {
   for (const mw of managerWeeks) {
     if (mw.totalPay <= 0) continue;
     const breakdown: PayLine[] = mw.streams.map((r) => {
-      const packing = (r.managerPackingHours || 0) * settings.packing_rate;
-      const note = r.overrideExcluded
-        ? `excluded from override${packing > 0 ? ` + packing ${money(packing)}` : ""}`
-        : `profit ${money(streamProfit(r))} in override base${packing > 0 ? ` + packing ${money(packing)}` : ""}`;
-      return { label: `${r.date.slice(5)} ${r.title || "Stream"}`, note, amount: packing };
+      // packing pay only counts here if THIS person actually packed the show
+      const packed = r.managerId === mw.managerId;
+      const packing = packed ? (r.managerPackingHours || 0) * settings.packing_rate : 0;
+      const isEarner = r.overrideId === mw.managerId;
+      const bits: string[] = [];
+      if (isEarner && !r.overrideExcluded) bits.push(`profit ${money(streamProfit(r))} in override base`);
+      else if (isEarner) bits.push("excluded from override");
+      if (packing > 0) bits.push(`packing ${money(packing)}`);
+      if (bits.length === 0) bits.push("no pay from this show");
+      return { label: `${r.date.slice(5)} ${r.title || "Stream"}`, note: bits.join(" + "), amount: packing };
     });
     const accounted = breakdown.reduce((a, b) => a + b.amount, 0);
     if (Math.abs(mw.totalPay - accounted) > 0.01) {
@@ -160,8 +169,11 @@ export default async function PayrollPage() {
     }
     push(mw.weekStart, {
       name: mw.managerName,
-      role: "Manager",
-      detail: `override ${(mw.overridePct * 100).toFixed(0)}% on ${money(mw.overrideBase)}${mw.packingPay > 0 ? ` + packing ${mw.packingHours.toFixed(1)}h` : ""}`,
+      role: mw.earnsOverride ? "Manager" : "Packing",
+      detail: [
+        mw.earnsOverride ? `override ${(mw.overridePct * 100).toFixed(0)}% on ${money(mw.overrideBase)}` : "",
+        mw.packingPay > 0 ? `packing ${mw.packingHours.toFixed(1)}h on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}` : "",
+      ].filter(Boolean).join(" + ") || "manager pay",
       amount: mw.totalPay,
       breakdown,
       personId: mw.managerId,
@@ -203,10 +215,12 @@ export default async function PayrollPage() {
 
   return (
     <>
-      <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
+      <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Payroll</h1>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+            Payroll{!canMarkPaid && <span className="text-dim text-sm font-normal ml-3">view only</span>}
+          </h1>
           <p className="text-dim text-sm mt-1">
             Pay periods run Monday through Sunday and pay the following Tuesday. Only completed streams count -
             a show still open when you run payroll belongs to whoever completes it.
@@ -233,7 +247,7 @@ export default async function PayrollPage() {
                   <span className="text-dim text-sm">
                     {fullyPaid ? "paid" : inProgress ? "will pay" : "pays"} Tuesday {fmt(payDateOf(ws))}
                   </span>
-                  {ps.ids.length > 0 && !inProgress && <MarkPaidButton streamIds={ps.ids} paid={fullyPaid} />}
+                  {canMarkPaid && ps.ids.length > 0 && !inProgress && <MarkPaidButton streamIds={ps.ids} paid={fullyPaid} />}
                 </span>
               </div>
               <div className="text-sm">
@@ -247,7 +261,11 @@ export default async function PayrollPage() {
                       <span className="text-dim hidden sm:block">{p.role}</span>
                       <span className="text-dim text-xs hidden sm:block">{p.detail}</span>
                       <span className="text-right num font-semibold flex items-baseline justify-end gap-3">
-                        <PaidToggle week={ws} personId={p.personId} personName={p.name} amount={p.amount} paid={paidKeys.has(`${ws}|${p.personId}`)} />
+                        {canMarkPaid ? (
+                          <PaidToggle week={ws} personId={p.personId} personName={p.name} amount={p.amount} paid={paidKeys.has(`${ws}|${p.personId}`)} />
+                        ) : paidKeys.has(`${ws}|${p.personId}`) ? (
+                          <span className="text-win text-xs">paid &#10003;</span>
+                        ) : null}
                         {money(p.amount)}
                       </span>
                     </summary>
