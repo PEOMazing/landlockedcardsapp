@@ -32,6 +32,11 @@ export default async function AllStreamsPage() {
     nameById[s.id] = s.fields["Name"] || "Streamer";
     if (typeof s.fields["Hourly Rate"] === "number") rateById[s.id] = s.fields["Hourly Rate"];
   }
+  // people an override can be pointed at: the business itself, not external signups
+  const team = streamerRows
+    .filter((s) => ["admin", "manager", "streamer"].includes(s.fields["Role"]?.name || s.fields["Role"] || ""))
+    .map((s) => ({ id: s.id, name: s.fields["Name"] || "Streamer" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   // delivered product at market per stream: hits only, since unhit product returns to stock
   const hitMarketByStream: Record<string, number> = {};
   for (const l of lineRows) {
@@ -58,6 +63,9 @@ export default async function AllStreamsPage() {
       title: r.fields["Title"] || "",
       streamer: nameById[r.fields["Streamer Rec Id"]] || "",
       manager: nameById[r.fields["Manager Rec Id"]] || "",
+      overrideRecId: r.fields["Override Rec Id"] || "",
+      overrideName: nameById[r.fields["Override Rec Id"]] || "",
+      overrideExcluded: !!r.fields["Override Excluded"],
       status: r.fields["Status"] || "Planned",
       afterFees,
       hours: r.fields["Hours Streamed"] ?? null,
@@ -87,7 +95,7 @@ export default async function AllStreamsPage() {
           <Link href="/streams/new" className="btn-foil">+ New stream</Link>
         </div>
 
-        <StreamsAdminClient streams={streams} deleted={me.isAdmin ? deleted : []} isAdmin={me.isAdmin} />
+        <StreamsAdminClient streams={streams} deleted={me.isAdmin ? deleted : []} isAdmin={me.isAdmin} team={team} />
 
         <p className="text-dim text-xs">
           Every stream by every streamer, any status. Open any of them to view or edit the show set,
