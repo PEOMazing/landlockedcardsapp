@@ -53,7 +53,11 @@ export function ownsStream(me: Me, stream: AtRecord): boolean {
   );
 }
 
+// Any manager can RUN any stream, including one a streamer created for themselves
+// with no manager attached. ACCESS ONLY: the override keys on the stream, so working
+// a show you are not assigned to earns no override on it.
 export function canManageStream(me: Me, stream: AtRecord): boolean {
   if (me.isAdmin) return true;
+  if (me.isManager) return true;
   return !!me.streamer && stream.fields["Manager Rec Id"] === me.streamer.id;
 }
