@@ -58,11 +58,16 @@ export async function POST(req: Request) {
   if (me.streamer && assignedId !== me.streamer.id && !me.isAdmin) {
     fields["Manager"] = [me.streamer.id];
     fields["Manager Rec Id"] = me.streamer.id;
+    fields["Override Rec Id"] = me.streamer.id;
   }
   // admins can also explicitly assign a manager
   if (me.isAdmin && b.managerId) {
     fields["Manager"] = [b.managerId];
     fields["Manager Rec Id"] = b.managerId;
+    fields["Override Rec Id"] = b.managerId;
+  }
+  if (me.isAdmin && b.overrideRecId !== undefined) {
+    fields["Override Rec Id"] = b.overrideRecId || "";
   }
   const rec = await atCreate(T.streams, fields);
   return NextResponse.json({ id: rec.id });
