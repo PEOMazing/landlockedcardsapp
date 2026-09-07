@@ -54,6 +54,7 @@ export default async function AdminDashboard() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     managerId: r.fields["Manager Rec Id"] || null,
+    overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
     productMarketCost: marketCostByStream[r.id] || 0,
     status: r.fields["Status"] || "Planned",
