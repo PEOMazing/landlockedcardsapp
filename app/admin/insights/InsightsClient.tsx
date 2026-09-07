@@ -114,8 +114,9 @@ export default function InsightsClient({
           revenue: r.afterFees,
           sold,
           spinValue: sold > 0 ? r.afterFees / sold : 0,
-          profitPerSpin: sold > 0 ? (r.afterFees - r.promotion - r.productMarketCost - r.tips) / sold : 0,
-          buyProfitPerSpin: sold > 0 ? (r.afterFees - r.promotion - r.productCost - r.tips) / sold : 0,
+          // tips arrive outside After Fees, so they never come out of profit
+          profitPerSpin: sold > 0 ? (r.afterFees - r.promotion - r.productMarketCost) / sold : 0,
+          buyProfitPerSpin: sold > 0 ? (r.afterFees - r.promotion - r.productCost) / sold : 0,
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
