@@ -5,7 +5,7 @@ import { atCreate, atList, atUpdate, T } from "./airtable";
 // quantities change so someone adjusts the Whatnot listing to match.
 // Acknowledging clears the alert for everyone - it is a shared to-do.
 
-export async function recordAlert(type: "price" | "stock", title: string, payload: unknown) {
+export async function recordAlert(type: "price" | "stock" | "rename", title: string, payload: unknown) {
   await atCreate(T.alerts, {
     "Title": title.slice(0, 120),
     "Type": type,
