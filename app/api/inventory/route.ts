@@ -22,6 +22,9 @@ export async function GET() {
     dateAdded: r.fields["Date Added"] || "",
     priceChecked: r.fields["Price Checked"] || null,
     isGiveaway: r.fields["Category"] === "Giveaway",
+    // mapped = locked to one exact TCGplayer product, so the price is read
+    // straight from that product rather than guessed from the name
+    tcgMapped: Number(r.fields["TCG Group Id"]) > 0 && Number(r.fields["TCG Category Id"]) > 0,
     // buy prices: admins and managers only - streamers never receive them
     ...(me.isManager ? { buyPrice: r.fields["Buy Price"] ?? 0 } : {}),
   }));
