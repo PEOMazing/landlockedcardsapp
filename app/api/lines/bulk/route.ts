@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { stockAlert } from "@/lib/alerts";
 import { atCreate, atGet, atList, atUpdate, isRecId, T, AtRecord } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { indexByName, productAliases } from "@/lib/productNames";
 
 // Bulk-add pasted items to a show set.
 // Body: { streamId, items: [{ name, qty }] }
@@ -26,16 +27,20 @@ export async function POST(req: Request) {
   if (items.length === 0) return NextResponse.json({ error: "nothing to add" }, { status: 400 });
 
   const inventory = await atList(T.inventory, { filterByFormula: "{Active} = TRUE()" });
-  const byLower = new Map<string, AtRecord>();
-  for (const r of inventory) byLower.set(String(r.fields["Product Name"]).toLowerCase(), r);
+  // Matches on current names and on names products have been renamed away from,
+  // so a set pasted from memory after a rename finds the real product instead of
+  // creating a duplicate at $0. See lib/productNames.ts.
+  const byLower = indexByName(inventory);
 
   function match(name: string): AtRecord | null {
     const n = name.toLowerCase();
     if (byLower.has(n)) return byLower.get(n)!;
-    const contains = inventory.filter((r) => {
-      const p = String(r.fields["Product Name"]).toLowerCase();
-      return p.includes(n) || n.includes(p);
-    });
+    const contains = inventory.filter((r) =>
+      productAliases(r).some((a) => {
+        const p = a.toLowerCase();
+        return p.includes(n) || n.includes(p);
+      })
+    );
     return contains.length === 1 ? contains[0] : null;
   }
 
