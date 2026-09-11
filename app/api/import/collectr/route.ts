@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atCreateBatch, atList, atUpdate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { categoryForName } from "@/lib/categories";
+import { indexByName } from "@/lib/productNames";
 
 export const maxDuration = 60;
 
@@ -34,8 +35,9 @@ export async function POST(req: Request) {
 
   if (sealed.length) {
     const existing = await atList(T.inventory, {});
-    const byName = new Map<string, any>();
-    for (const r of existing) byName.set(String(r.fields["Product Name"] || "").trim().toLowerCase(), r);
+    // alias-aware: also matches names products have been renamed away from,
+    // so an import using an old name merges instead of creating a duplicate
+    const byName = indexByName(existing);
 
     const toCreate: Record<string, any>[] = [];
     for (const row of sealed) {
