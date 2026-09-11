@@ -1,6 +1,7 @@
 import { atCreate, atList, atUpdate, T, AtRecord } from "./airtable";
 import { recordAlert } from "./alerts";
 import { conditionSoldComp, tcgProductIdFromCardId } from "./tcgcsvCards";
+import { MappedTarget, isTcgUrl, priceMappedProducts } from "./tcgMap";
 
 // ---------------- tcgcsv (free nightly TCGplayer mirror) ----------------
 const TCGCSV = "https://tcgcsv.com/tcgplayer/3"; // category 3 = Pokemon
@@ -45,6 +46,32 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
     if (pid) idByRecord.set(r.id, pid);
   }
 
+  const priced = new Map<string, { price: number; matched: string; url: string; image: string; exact?: boolean }>();
+
+  // Products mapped to an exact TCGplayer product get priced straight from
+  // their own set. Name matching never sees them: it can only pick the shortlist
+  // of sets it happens to recognise, which is why a product like "151 Tin 4
+  // pack" could carry a perfectly good link and still never get a price.
+  const mappedTargets: MappedTarget[] = [];
+  for (const r of targets) {
+    const pid = idByRecord.get(r.id);
+    const groupId = Number(r.fields["TCG Group Id"]) || 0;
+    const categoryId = Number(r.fields["TCG Category Id"]) || 0;
+    if (pid && groupId > 0 && categoryId > 0 && isTcgUrl(r.fields["TCGplayer URL"])) {
+      mappedTargets.push({ recordId: r.id, productId: pid, categoryId, groupId });
+    }
+  }
+  if (mappedTargets.length > 0) {
+    try {
+      const hits = await priceMappedProducts(mappedTargets);
+      for (const [recId, hit] of hits) {
+        priced.set(recId, { price: hit.price, matched: hit.name, url: "", image: hit.image, exact: true });
+      }
+    } catch {
+      // a mirror hiccup on the mapped pass should not stop the name-match pass
+    }
+  }
+
   const groupsRes = await fetch(`${TCGCSV}/groups`, { cache: "no-store", headers: TCGCSV_HEADERS });
   if (!groupsRes.ok) throw new Error(`tcgcsv groups: ${groupsRes.status}`);
   const groups: any[] = (await groupsRes.json()).results || [];
@@ -52,7 +79,11 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
   // pick only groups that plausibly contain our products: shared name tokens with
   // any inventory item, plus the catch-all groups where one-off products live
   const ALWAYS = new Set(["Miscellaneous Cards & Products", "World Championship Decks", "First Partner Pack", "Blister Exclusives"]);
-  const productTokenSets = targets.map((r) => new Set(tokens(r.fields["Product Name"])));
+  // Mapped products are already priced, so they no longer compete for the
+  // limited set shortlist - it all goes to the products that still need a guess.
+  const productTokenSets = targets
+    .filter((r) => !priced.has(r.id))
+    .map((r) => new Set(tokens(r.fields["Product Name"])));
   const scored = groups.map((g) => {
     // strip short set-code prefixes like "ME04:", "SV10:", "SWSH12:"
     const stripped = String(g.name).replace(/^[A-Za-z0-9]{1,7}:\s*/, "");
@@ -75,7 +106,6 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       .map((x) => x.g),
   ];
 
-  const priced = new Map<string, { price: number; matched: string; url: string; image: string }>();
   // fetch candidate groups in parallel chunks to stay well inside the time limit
   const groupData: { g: any; prods: any[]; prices: any[] }[] = [];
   for (let i = 0; i < candidates.length; i += 4) {
@@ -148,7 +178,13 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       if (!rec.fields["Date Added"]) fields["Date Added"] = new Date().toISOString().slice(0, 10);
       await atUpdate(T.inventory, recId, fields);
     }
-    results.push({ id: recId, name: rec.fields["Product Name"], matched: hit?.matched ?? null, price: hit?.price ?? null });
+    results.push({
+      id: recId,
+      name: rec.fields["Product Name"],
+      matched: hit?.matched ?? null,
+      price: hit?.price ?? null,
+      exact: hit?.exact === true, // priced off a mapped product id, not a name guess
+    });
   }
   if (jumps.length > 0) {
     jumps.sort((a, b) => b.pct - a.pct);
