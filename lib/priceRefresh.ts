@@ -2,6 +2,7 @@ import { atCreate, atList, atUpdate, T, AtRecord } from "./airtable";
 import { recordAlert } from "./alerts";
 import { conditionSoldComp, tcgProductIdFromCardId } from "./tcgcsvCards";
 import { MappedTarget, isTcgUrl, priceMappedProducts } from "./tcgMap";
+import { renameFields } from "./productNames";
 
 // ---------------- tcgcsv (free nightly TCGplayer mirror) ----------------
 const TCGCSV = "https://tcgcsv.com/tcgplayer/3"; // category 3 = Pokemon
@@ -160,6 +161,7 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
   }
 
   const jumps: { name: string; old: number; now: number; pct: number }[] = [];
+  const renames: { from: string; to: string }[] = [];
   for (const [recId, rec] of pending) {
     const hit = priced.get(recId);
     if (hit) {
@@ -173,6 +175,17 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
       };
       if (hit.url && !rec.fields["TCGplayer URL"]) fields["TCGplayer URL"] = hit.url;
       if (hit.image && !rec.fields["Image URL"]) fields["Image URL"] = hit.image;
+      // Mapped products carry TCGplayer's own name for themselves. Only exact
+      // matches get this: a name-guessed match is not allowed to rename
+      // anything, because a wrong guess would rewrite the product's identity
+      // rather than just its price.
+      if (hit.exact) {
+        const rename = renameFields(rec, hit.matched);
+        if (rename) {
+          Object.assign(fields, rename);
+          renames.push({ from: rec.fields["Product Name"], to: rename["Product Name"] });
+        }
+      }
       // first time this product gets a market price, freeze the entry benchmark
       if (!(rec.fields["Entry Market"] > 0)) fields["Entry Market"] = hit.price;
       if (!rec.fields["Date Added"]) fields["Date Added"] = new Date().toISOString().slice(0, 10);
@@ -194,6 +207,18 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
         ? `${jumps[0].name} up ${jumps[0].pct.toFixed(1)}%`
         : `${jumps.length} sealed prices up 3%+ - top: ${jumps[0].name} +${jumps[0].pct.toFixed(1)}%`,
       { items: jumps }
+    ).catch(() => {});
+  }
+  // Renaming happens without anyone asking, so it gets announced. Silently
+  // changing what a product is called is the kind of thing you want to find out
+  // about from the app rather than from a wall that suddenly reads differently.
+  if (renames.length > 0) {
+    await recordAlert(
+      "rename",
+      renames.length === 1
+        ? `Renamed ${renames[0].from} to its TCGplayer name: ${renames[0].to}`
+        : `${renames.length} mapped products renamed to their TCGplayer names`,
+      { items: renames }
     ).catch(() => {});
   }
   return results;
