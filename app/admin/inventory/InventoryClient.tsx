@@ -19,6 +19,7 @@ import CollectrImport from "@/components/CollectrImport";
 import EditCell from "@/components/EditCell";
 import DeltaHover from "@/components/DeltaHover";
 import TcgMapper from "@/components/TcgMapper";
+import TcgNameSync from "@/components/TcgNameSync";
 import { toast } from "@/components/Toaster";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -345,6 +346,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 {backfilling ? "Mapping..." : "Map existing links"}
               </button>
             )}
+            {isAdmin && <TcgNameSync onDone={load} />}
             <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
           <CollectrImport onDone={load} />
         </div>
