@@ -84,7 +84,8 @@ export default function TcgMapper({
       setError(d.error || "Could not save that mapping.");
       return;
     }
-    toast(d.pricedNow ? `Mapped and priced at ${money(d.match.market)}` : "Mapped - TCGplayer has no market price for it yet");
+    const priced = d.pricedNow ? `priced at ${money(d.match.market)}` : "no market price on TCGplayer yet";
+    toast(d.renamedTo ? `Mapped, ${priced}, renamed to ${d.renamedTo}` : `Mapped, ${priced}`);
     close();
     await onDone();
   }

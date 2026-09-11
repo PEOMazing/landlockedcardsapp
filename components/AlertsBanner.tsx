@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-type Alert = { id: string; type: "price" | "stock"; title: string; created: string; payload: any };
+type Alert = { id: string; type: "price" | "stock" | "rename"; title: string; created: string; payload: any };
 
 // Shown to every signed-in team member at the top of every page until
 // someone acknowledges: sealed price jumps (adjust show pricing up) and
@@ -41,6 +41,8 @@ export default function AlertsBanner() {
                   <li key={i}>
                     {a.type === "price"
                       ? `${it.name}: $${Number(it.old).toFixed(2)} \u2192 $${Number(it.now).toFixed(2)} (+${Number(it.pct).toFixed(1)}%)`
+                      : a.type === "rename"
+                      ? `${it.from} \u2192 ${it.to}`
                       : `${it.name}: now ${it.qtyNow} on hand (${it.delta > 0 ? "+" : ""}${it.delta}) - set Whatnot to ${Math.max(it.qtyNow, 0)}`}
                   </li>
                 ))}
