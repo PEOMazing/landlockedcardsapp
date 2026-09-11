@@ -4,13 +4,21 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 type Item = {
   id: string; name: string; category: string; buyPrice: number;
   marketPrice: number; qtyOnHand: number; tcgUrl: string; imageUrl?: string; retailPrice?: number | null; entryMarket?: number | null; dateAdded?: string; priceChecked: string | null;
+  tcgMapped?: boolean;
 };
+
+// Graded cards are comped off eBay solds, never TCGplayer, so they are not
+// "unmapped" in any sense that needs fixing.
+function needsMapping(i: Item): boolean {
+  return !i.tcgMapped && i.category !== "Graded Card";
+}
 
 import { CATEGORIES as CATS } from "@/lib/categories";
 import Thumb from "@/components/Thumb";
 import CollectrImport from "@/components/CollectrImport";
 import EditCell from "@/components/EditCell";
 import DeltaHover from "@/components/DeltaHover";
+import TcgMapper from "@/components/TcgMapper";
 import { toast } from "@/components/Toaster";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -60,7 +68,8 @@ function sortValue(i: Item, key: SortKey): string | number | null {
   }
 }
 
-function emptyLabel(tab: StockTab, q: string): string {
+function emptyLabel(tab: StockTab, q: string, unmappedOnly = false): string {
+  if (unmappedOnly) return "Every product here is mapped to a TCGplayer product";
   if (q.trim()) return "No products match that filter";
   if (tab === "in") return "Nothing in stock right now";
   if (tab === "out") return "Nothing is out of stock - everything has quantity on hand";
@@ -75,6 +84,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   const [draft, setDraft] = useState({ name: "", category: "Elite Trainer Box", buyPrice: "", marketPrice: "", qtyOnHand: "", tcgUrl: "" });
 
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
   const load = useCallback(async () => {
     const d = await fetch("/api/inventory").then((r) => r.json());
     setItems(d.items || []);
@@ -82,6 +92,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   useEffect(() => { load(); }, [load]);
 
   const [stockTab, setStockTab] = useState<StockTab>("in");
+  const [unmappedOnly, setUnmappedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -108,8 +119,16 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
     return { in: inCount, out: searched.length - inCount, all: searched.length };
   }, [searched]);
 
+  // Counted against whatever the stock tab is showing, so "12 unmapped" on the
+  // In stock tab means twelve products you are actually selling have no link.
+  const unmappedCount = useMemo(() => {
+    const rows = stockTab === "all" ? searched : searched.filter((i) => (stockTab === "in" ? inStock(i) : !inStock(i)));
+    return rows.reduce((n, i) => n + (needsMapping(i) ? 1 : 0), 0);
+  }, [searched, stockTab]);
+
   const filtered = useMemo(() => {
-    const rows = stockTab === "all" ? searched.slice() : searched.filter((i) => (stockTab === "in" ? inStock(i) : !inStock(i)));
+    let rows = stockTab === "all" ? searched.slice() : searched.filter((i) => (stockTab === "in" ? inStock(i) : !inStock(i)));
+    if (unmappedOnly) rows = rows.filter(needsMapping);
     const dir = sortDir === "asc" ? 1 : -1;
     return rows.sort((a, b) => {
       const av = sortValue(a, sortKey);
@@ -121,7 +140,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
       const c = typeof av === "string" && typeof bv === "string" ? av.localeCompare(bv) : Number(av) - Number(bv);
       return c !== 0 ? c * dir : a.name.localeCompare(b.name);
     });
-  }, [searched, stockTab, sortKey, sortDir]);
+  }, [searched, stockTab, unmappedOnly, sortKey, sortDir]);
 
   function exportCsv() {
     const header = ["Product", "Category", "Buy Price", "Market Price", "Retail Price", "Qty On Hand", "Price Checked", "TCGplayer URL"];
@@ -304,6 +323,28 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 {refreshingAll ? "Refreshing..." : "Refresh all prices"}
               </button>
             )}
+            {isAdmin && (
+              <button
+                className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
+                disabled={backfilling}
+                title="Work out the TCGplayer set for every product that already has a link, so those get priced by exact product id too"
+                onClick={async () => {
+                  setBackfilling(true);
+                  const r = await fetch("/api/admin/backfill-tcg-map", { method: "POST" });
+                  setBackfilling(false);
+                  if (!r.ok) { toast("Backfill failed - try again in a minute", "bad"); return; }
+                  const d = await r.json();
+                  toast(
+                    `Mapped ${d.mapped} products from their existing links` +
+                      (d.already ? `, ${d.already} already mapped` : "") +
+                      (d.unresolved?.length ? `, ${d.unresolved.length} could not be worked out` : "")
+                  );
+                  await load();
+                }}
+              >
+                {backfilling ? "Mapping..." : "Map existing links"}
+              </button>
+            )}
             <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
           <CollectrImport onDone={load} />
         </div>
@@ -344,6 +385,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
         <div className="inline-flex rounded-lg border border-edge overflow-hidden" role="tablist" aria-label="Stock filter">
           {([["in", "In stock", counts.in], ["out", "Out of stock", counts.out], ["all", "All", counts.all]] as [StockTab, string, number][]).map(([tab, label, n]) => (
             <button
@@ -358,6 +400,21 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
               <span className="num ml-1.5 text-xs opacity-70">{n}</span>
             </button>
           ))}
+        </div>
+        {/* Products with no TCGplayer link are the ones the nightly refresh has
+            to guess at, which is where wrong and missing prices come from. */}
+        <button
+          type="button"
+          aria-pressed={unmappedOnly}
+          onClick={() => setUnmappedOnly((v) => !v)}
+          title="Show only products that are not locked to a TCGplayer product"
+          className={`px-3 py-1.5 text-sm whitespace-nowrap rounded-lg border transition-colors ${
+            unmappedOnly ? "border-givvy/60 bg-givvy/15 text-givvy font-semibold" : "border-edge text-dim hover:text-body"
+          }`}
+        >
+          Unmapped
+          <span className="num ml-1.5 text-xs opacity-70">{unmappedCount}</span>
+        </button>
         </div>
         {/* the mobile cards have no header row to click, so sorting needs its own control */}
         <label className="md:hidden flex items-center gap-2 label">
@@ -440,10 +497,16 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                   <span className={`num text-sm font-semibold ${margin >= 0 ? "text-win" : "text-bad"}`}>{i.buyPrice > 0 ? $(margin) : "-"}</span>
                 </div>
               </div>
+              {i.category !== "Graded Card" && (
+                <div className="mt-2 flex items-center gap-3 border-t border-edge pt-2">
+                  <TcgMapper id={i.id} name={i.name} currentUrl={i.tcgUrl} mapped={!!i.tcgMapped} onDone={load} />
+                  {needsMapping(i) && <span className="text-givvy text-[10px] uppercase tracking-wide">no TCGplayer link</span>}
+                </div>
+              )}
             </div>
           );
         })}
-        {filtered.length === 0 && <div className="text-dim text-sm">{emptyLabel(stockTab, q)}</div>}
+        {filtered.length === 0 && <div className="text-dim text-sm">{emptyLabel(stockTab, q, unmappedOnly)}</div>}
       </div>
 
       <div className="card overflow-x-auto hidden md:block">
@@ -557,6 +620,11 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                         eBay solds
                       </a>
                     )}
+                    {i.category !== "Graded Card" && (
+                      <span className="ml-3">
+                        <TcgMapper id={i.id} name={i.name} currentUrl={i.tcgUrl} mapped={!!i.tcgMapped} onDone={load} />
+                      </span>
+                    )}
                     <button className="text-dim text-xs ml-3 hover:text-body" onClick={() => refreshPrices(i.id)}>
                       refresh
                     </button>
@@ -602,12 +670,15 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 </Fragment>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={11} className="text-dim">{emptyLabel(stockTab, q)}</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={11} className="text-dim">{emptyLabel(stockTab, q, unmappedOnly)}</td></tr>}
           </tbody>
         </table>
       </div>
       <p className="text-dim text-xs">
-        Market prices are checked manually against TCGplayer (use the link on each row). Editing a market
+        <strong className="text-body">map</strong> locks a product to one exact TCGplayer product. Paste the
+        product link, check the match it shows you, save, and every refresh from then on reads that product&apos;s
+        price directly. Anything left <strong className="text-body">unmapped</strong> has to be recognised by name,
+        which is why oddly named products can sit at no price forever. Editing a market
         price stamps the checked date; amber means it has been more than 14 days.
         Buy price is what you paid, market price drives spot value and break-even. Retired products stay on past
         streams but disappear from the picker. Adding a product to a show set snapshots today&apos;s prices and
