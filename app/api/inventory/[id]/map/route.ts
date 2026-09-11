@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { T, atGet, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { resolveTcgUrl } from "@/lib/tcgMap";
+import { renameFields } from "@/lib/productNames";
 
 export const maxDuration = 60;
 
@@ -38,8 +39,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   if (m.imageUrl && !existing?.fields["Image URL"]) fields["Image URL"] = m.imageUrl;
 
+  // Mapping settles what the product actually is, so it takes the real name
+  // straight away. The old name is kept on the record so show sets, Collectr
+  // exports and portfolio imports that still use it keep resolving here.
+  const rename = renameFields(existing, m.productName);
+  if (rename) Object.assign(fields, rename);
+
   await atUpdate(T.inventory, params.id, fields);
-  return NextResponse.json({ ok: true, match: m, pricedNow: m.market !== null });
+  return NextResponse.json({
+    ok: true,
+    match: m,
+    pricedNow: m.market !== null,
+    renamedTo: rename ? m.productName : null,
+  });
 }
 
 // Unmap: drop the link and the set pointer. The last known market price stays
