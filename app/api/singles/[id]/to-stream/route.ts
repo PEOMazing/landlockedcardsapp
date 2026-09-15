@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { formatCardNo } from "@/lib/cardNo";
 
 // Put a single onto a stream's show set. The comp snapshots in as the line's
 // market price and the buy price snapshots as cost, so the pay engine and all
@@ -24,7 +25,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "set a comp on this card first - it drives spot value and pay" }, { status: 400 });
   }
 
+  // The sticker number leads the line so a hit on the live board tells whoever
+  // is packing exactly which sleeve to pull, without reading the card name back
+  // against a binder.
+  const cardNo = formatCardNo(single.fields["Card No"]);
   const name = [
+    cardNo ? `[${cardNo}]` : "",
     single.fields["Card Name"] || "Card",
     single.fields["Card Number"] ? `#${single.fields["Card Number"]}` : "",
     single.fields["Set Name"] || "",
