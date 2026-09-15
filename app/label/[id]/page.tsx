@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getMe } from "@/lib/auth";
 import { atGet, isRecId, T } from "@/lib/airtable";
 import QuickSell from "./QuickSell";
+import { formatCardNo } from "@/lib/cardNo";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
       id={params.id}
       isManager={!!me?.isManager}
       card={{
+        cardNo: formatCardNo(f["Card No"]),
         name: String(f["Card Name"] || "").replace(/\s*-\s*[\w]+\/[\w]+\s*$/, ""),
         setName: f["Set Name"] || "",
         number: f["Number"] || "",

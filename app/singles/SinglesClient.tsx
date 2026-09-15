@@ -1,5 +1,6 @@
 "use client";
 import QRCode from "qrcode";
+import { formatCardNo, parseCardNo } from "@/lib/cardNo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
@@ -17,7 +18,7 @@ const CONDITION_LABELS: Record<string, string> = {
 };
 
 type SingleT = {
-  id: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
+  id: string; cardNo?: number | null; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
   rarity: string; variant: string; condition: string;
   comp: number | null; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
@@ -258,12 +259,20 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
     // token search: every word must match somewhere, so "umbreon prismatic"
     // finds Umbreons in Prismatic Evolutions
-    const tokens = tableQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (tokens.length) {
-      list = list.filter((s) => {
-        const hay = `${s.name} ${s.setName} ${s.number} ${s.condition} ${s.rarity} ${s.language || ""}`.toLowerCase();
-        return tokens.every((t) => hay.includes(t));
-      });
+    // A bare number is someone reading a sticker or a called-out hit, so it
+    // means that exact card rather than "any card with a 142 in it anywhere".
+    const wantNo = parseCardNo(tableQ);
+    const exactNo = wantNo !== null ? list.filter((s) => s.cardNo === wantNo) : [];
+    if (exactNo.length > 0) {
+      list = exactNo;
+    } else {
+      const tokens = tableQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (tokens.length) {
+        list = list.filter((s) => {
+          const hay = `${formatCardNo(s.cardNo)} ${s.name} ${s.setName} ${s.number} ${s.condition} ${s.rarity} ${s.language || ""}`.toLowerCase();
+          return tokens.every((t) => hay.includes(t));
+        });
+      }
     }
     list = [...list];
     if (sortBy === "name") list.sort((a, b) => a.name.localeCompare(b.name));
@@ -304,12 +313,14 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   function exportCsv() {
     const header = [
+      "Card No", "Location",
       "Card", "Set", "Number", "Condition", "Printing", "Rarity", "Qty", "Status",
       "Comp", "Comp Source", "Comp Date",
       ...(isAdmin ? ["Buy Price"] : []),
       "Sale Price", "Sold Date", "Date Added", "Added By", "Notes",
     ];
     const rows = shown.map((s) => [
+      formatCardNo(s.cardNo), s.location ?? "",
       s.name.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, ""), s.setName, s.number, s.condition, s.printing, s.rarity, s.qty, s.status,
       s.comp ?? "", s.compSource, s.compDate,
       ...(isAdmin ? [s.buy ?? ""] : []),
@@ -627,7 +638,12 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   />
                 )}
                 {s.image && <Thumb src={s.image} size={48} className="self-start" />}
-                {s.location && <span className="text-[10px] font-bold text-foil border border-foil/40 rounded px-1 py-px self-start">#{s.location}</span>}
+                {s.cardNo ? (
+                  <span className="num text-[10px] font-bold text-foil border border-foil/40 rounded px-1 py-px self-start" title="Card number - printed on the sticker and shown on the stream line">
+                    {formatCardNo(s.cardNo)}
+                  </span>
+                ) : null}
+                {s.location && <span className="text-[10px] text-dim border border-edge rounded px-1 py-px self-start">{s.location}</span>}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold leading-tight">{s.name}</div>
                   <div className="text-dim text-xs">
@@ -709,6 +725,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     />
                   </th>
                 )}
+                <th className="whitespace-nowrap">No</th>
                 <th>Card</th><th>Condition</th><th>Qty</th>
                 <th className="whitespace-nowrap">Loc</th>
                 {isAdmin && <th>Buy</th>}
@@ -729,6 +746,9 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                       />
                     </td>
                   )}
+                  <td className="num text-xs font-bold text-foil whitespace-nowrap" title="Card number - printed on the sticker and shown on the stream line">
+                    {formatCardNo(s.cardNo)}
+                  </td>
                   <td className="!font-medium">
                     <span className="inline-flex items-center gap-2">
                       {s.image && <Thumb src={s.image} size={28} />}
@@ -867,7 +887,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 </tr>
               ))}
               {shown.length === 0 && (
-                <tr><td colSpan={isAdmin ? 10 : 8} className="text-dim">No cards here yet - add one above</td></tr>
+                <tr><td colSpan={isAdmin ? 11 : 9} className="text-dim">No cards here yet - add one above</td></tr>
               )}
             </tbody>
           </table>
