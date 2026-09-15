@@ -6,6 +6,8 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
   const f = r.fields;
   return {
     id: r.id,
+    // permanent sticker number, assigned by Airtable and never reused
+    cardNo: f["Card No"] ?? null,
     name: f["Card Name"] || "",
     setName: f["Set Name"] || "",
     number: f["Card Number"] || "",
