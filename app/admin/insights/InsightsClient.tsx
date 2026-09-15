@@ -59,14 +59,14 @@ export default function InsightsClient({
 
     type Wk = {
       week: string; label: string;
-      revenue: number; marketProfit: number; buyProfit: number;
+      revenue: number; marketProfit: number;
       streamerPay: number; supportPay: number; overridePay: number; companyProfit: number;
       commissionPaid: number; hourlyPaid: number; packingPay: number; tips: number;
       hours: number; packingHours: number; effHourly: number;
       spins: number; spinValue: number; profitPerSpin: number;
     };
     const blank = (week: string, label: string): Wk => ({
-      week, label, revenue: 0, marketProfit: 0, buyProfit: 0,
+      week, label, revenue: 0, marketProfit: 0,
       streamerPay: 0, supportPay: 0, overridePay: 0, companyProfit: 0,
       commissionPaid: 0, hourlyPaid: 0, packingPay: 0, tips: 0,
       hours: 0, packingHours: 0, effHourly: 0, spins: 0, spinValue: 0, profitPerSpin: 0,
@@ -75,7 +75,6 @@ export default function InsightsClient({
     for (const w of weeks) {
       const agg = wkMap.get(w.weekStart) || blank(w.weekStart, w.weekLabel);
       agg.marketProfit += w.profit;
-      agg.buyProfit += w.buyProfit;
       agg.streamerPay += w.totalPay;
       agg.supportPay += w.supportPay;
       agg.companyProfit += w.companyProfit;
@@ -116,7 +115,6 @@ export default function InsightsClient({
           spinValue: sold > 0 ? r.afterFees / sold : 0,
           // tips arrive outside After Fees, so they never come out of profit
           profitPerSpin: sold > 0 ? (r.afterFees - r.promotion - r.productMarketCost) / sold : 0,
-          buyProfitPerSpin: sold > 0 ? (r.afterFees - r.promotion - r.productCost) / sold : 0,
         };
       })
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -141,7 +139,6 @@ export default function InsightsClient({
       streams: scoped.length,
       revenue: sum((w) => w.revenue),
       marketProfit: sum((w) => w.marketProfit),
-      buyProfit: sum((w) => w.buyProfit),
       companyProfit: sum((w) => w.companyProfit),
       streamerPay: sum((w) => w.streamerPay),
       commissionPaid: sum((w) => w.commissionPaid),
@@ -155,7 +152,6 @@ export default function InsightsClient({
       spins: totalSpins,
       spinValue: totalSpins > 0 ? sum((w) => w.revenue) / totalSpins : 0,
       profitPerSpin: totalSpins > 0 ? sum((w) => w.marketProfit) / totalSpins : 0,
-      buyProfitPerSpin: totalSpins > 0 ? sum((w) => w.buyProfit) / totalSpins : 0,
     };
 
     return { weekly, perStream, streamers, totals };
@@ -196,7 +192,6 @@ export default function InsightsClient({
           <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Big label="Total sales (after fees)" v={$0(totals.revenue)} />
             <Big label="Profit over market" v={$0(totals.marketProfit)} win={totals.marketProfit >= 0} bad={totals.marketProfit < 0} />
-            <Big label="Profit over buy" v={$0(totals.buyProfit)} win={totals.buyProfit >= 0} bad={totals.buyProfit < 0} />
             {sel === "all" && (
               <Big label="Company profit" v={$0(totals.companyProfit)} win={totals.companyProfit >= 0} bad={totals.companyProfit < 0} />
             )}
@@ -208,7 +203,7 @@ export default function InsightsClient({
             <Big label="Hours worked (stream + pack)" v={(totals.hours + totals.packingHours).toFixed(1)} />
             <Big label="Effective hourly (pay / hrs)" v={$(totals.effHourly)} />
             <Big label="Avg spin value" v={$(totals.spinValue)} />
-            <Big label="Avg profit per spin (mkt / buy)" v={`${$(totals.profitPerSpin)} / ${$(totals.buyProfitPerSpin)}`} />
+            <Big label="Avg profit per spin" v={$(totals.profitPerSpin)} />
           </section>
 
           {/* Revenue vs profit by week */}
@@ -223,7 +218,6 @@ export default function InsightsClient({
                 <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
                 <Bar dataKey="revenue" name="Sales (after fees)" fill={C.blue} radius={[4, 4, 0, 0]} />
                 <Line dataKey="marketProfit" name="Profit over market" stroke={C.foil} strokeWidth={2} dot />
-                <Line dataKey="buyProfit" name="Profit over buy" stroke={C.win} strokeWidth={2} dot />
               </ComposedChart>
             </ResponsiveContainer>
           </section>
@@ -261,8 +255,7 @@ export default function InsightsClient({
                 />
                 <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
                 <Line dataKey="spinValue" name="Avg spin value" stroke={C.blue} strokeWidth={2} dot />
-                <Line dataKey="profitPerSpin" name="Profit per spin (mkt)" stroke={C.foil} strokeWidth={2} dot />
-                <Line dataKey="buyProfitPerSpin" name="Profit per spin (buy)" stroke={C.win} strokeWidth={2} dot />
+                <Line dataKey="profitPerSpin" name="Profit per spin" stroke={C.foil} strokeWidth={2} dot />
               </LineChart>
             </ResponsiveContainer>
           </section>
@@ -301,7 +294,7 @@ export default function InsightsClient({
                   <Tooltip {...tooltipStyle} formatter={(v: any, n: any) => [$(Number(v)), n]} />
                   <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
                   <Bar dataKey="pay" name="Total pay" fill={C.foil} radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="profit" name="Profit generated (mkt)" fill={C.win} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="profit" name="Profit generated" fill={C.win} radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </section>
