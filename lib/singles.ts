@@ -8,6 +8,9 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     id: r.id,
     // permanent sticker number, assigned by Airtable and never reused
     cardNo: f["Card No"] ?? null,
+    // the price bucket that was on the label last time it printed; compared
+    // against the live bucket to spot cards sitting in the wrong box
+    printedBucket: f["Printed Bucket"] || "",
     name: f["Card Name"] || "",
     setName: f["Set Name"] || "",
     number: f["Card Number"] || "",
