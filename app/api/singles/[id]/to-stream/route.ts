@@ -31,10 +31,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const cardNo = formatCardNo(single.fields["Card No"]);
   const name = [
     cardNo ? `[${cardNo}]` : "",
+    single.fields["Condition"] ? String(single.fields["Condition"]) : "",
     single.fields["Card Name"] || "Card",
     single.fields["Card Number"] ? `#${single.fields["Card Number"]}` : "",
     single.fields["Set Name"] || "",
-    single.fields["Condition"] && single.fields["Condition"] !== "Raw" ? `(${single.fields["Condition"]})` : "",
   ].filter(Boolean).join(" ");
 
   await atCreate(T.lines, {
