@@ -1,6 +1,6 @@
 "use client";
 import QRCode from "qrcode";
-import { formatCardNo, parseCardNo } from "@/lib/cardNo";
+import { formatCardNo, parseCardNo, bucketFor, bucketRange, bucketDrifted } from "@/lib/cardNo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
@@ -18,7 +18,7 @@ const CONDITION_LABELS: Record<string, string> = {
 };
 
 type SingleT = {
-  id: string; cardNo?: number | null; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
+  id: string; cardNo?: number | null; printedBucket?: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
   rarity: string; variant: string; condition: string;
   comp: number | null; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
@@ -41,6 +41,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   const [needsSetup, setNeedsSetup] = useState(false);
   const [setupMsg, setSetupMsg] = useState("");
   const [statusFilter, setStatusFilter] = useState("In Stock");
+  const [needsResticker, setNeedsResticker] = useState(false);
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
   const [qrFor, setQrFor] = useState<SingleT | null>(null);
@@ -243,7 +244,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   // a changed view means a changed list - drop the selection so nothing gets
   // deleted that the user can no longer see
-  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode]);
+  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker]);
   // re-sorting keeps the selection but retires the shift-click anchor, since
   // the row that index pointed at just moved
   useEffect(() => { lastClicked.current = null; }, [sortBy]);
@@ -255,6 +256,9 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   const shown = useMemo(() => {
     let list = statusFilter === "All" ? singles : singles.filter((s) => s.status === statusFilter);
+    // cards whose comp crossed a band since their sticker printed: they are
+    // physically in the wrong box until someone moves and reprints them
+    if (needsResticker) list = list.filter((s) => bucketDrifted(s.comp, s.printedBucket || ""));
     list = mode === "graded" ? list.filter((s) => GRADED.includes(s.condition)) : list.filter((s) => !GRADED.includes(s.condition));
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
     // token search: every word must match somewhere, so "umbreon prismatic"
@@ -280,7 +284,12 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     else if (sortBy === "price-asc") list.sort((a, b) => (a.comp || 0) - (b.comp || 0));
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortBy, tableQ, mode]);
+  }, [singles, statusFilter, setFilter, sortBy, tableQ, mode, needsResticker]);
+
+  const restickerCount = useMemo(
+    () => singles.filter((s) => bucketDrifted(s.comp, s.printedBucket || "")).length,
+    [singles]
+  );
 
   const stockValue = singles.filter((s) => s.status === "In Stock").reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0);
   const soldTotal = singles.filter((s) => s.status === "Sold").reduce((a, s) => a + (s.salePrice || 0), 0);
@@ -313,14 +322,14 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   function exportCsv() {
     const header = [
-      "Card No", "Location",
+      "Card No", "Bucket", "Printed Bucket", "Location",
       "Card", "Set", "Number", "Condition", "Printing", "Rarity", "Qty", "Status",
       "Comp", "Comp Source", "Comp Date",
       ...(isAdmin ? ["Buy Price"] : []),
       "Sale Price", "Sold Date", "Date Added", "Added By", "Notes",
     ];
     const rows = shown.map((s) => [
-      formatCardNo(s.cardNo), s.location ?? "",
+      formatCardNo(s.cardNo), bucketFor(s.comp), s.printedBucket ?? "", s.location ?? "",
       s.name.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, ""), s.setName, s.number, s.condition, s.printing, s.rarity, s.qty, s.status,
       s.comp ?? "", s.compSource, s.compDate,
       ...(isAdmin ? [s.buy ?? ""] : []),
@@ -566,6 +575,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             {isManager && (
               <button className="btn-ghost !py-1.5 text-xs" onClick={assignLocations} title="Number every card currently shown, in the order shown">Assign locations</button>
             )}
+            {restickerCount > 0 && (
+              <button
+                type="button"
+                aria-pressed={needsResticker}
+                onClick={() => setNeedsResticker((v) => !v)}
+                title="Cards whose comp has crossed a price band since their sticker was printed, so they are in the wrong box"
+                className={`px-3 py-1.5 text-xs whitespace-nowrap rounded-lg border transition-colors ${
+                  needsResticker ? "border-givvy/60 bg-givvy/15 text-givvy font-semibold" : "border-edge text-dim hover:text-body"
+                }`}
+              >
+                Needs re-sticker <span className="num ml-1 opacity-70">{restickerCount}</span>
+              </button>
+            )}
             <button className="btn-ghost !py-1.5 text-xs" onClick={exportCsv}>Export CSV</button>
             <CollectrImport onDone={load} />
           </div>
@@ -641,6 +663,23 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 {s.cardNo ? (
                   <span className="num text-[10px] font-bold text-foil border border-foil/40 rounded px-1 py-px self-start" title="Card number - printed on the sticker and shown on the stream line">
                     {formatCardNo(s.cardNo)}
+                  </span>
+                ) : null}
+                {bucketFor(s.comp) ? (
+                  <span
+                    className={`text-[10px] font-bold rounded px-1 py-px self-start ${
+                      bucketDrifted(s.comp, s.printedBucket || "")
+                        ? "text-givvy border border-givvy/60 bg-givvy/10"
+                        : "text-dim border border-edge"
+                    }`}
+                    title={
+                      bucketDrifted(s.comp, s.printedBucket || "")
+                        ? `Sticker says ${s.printedBucket}, comp now puts it in ${bucketFor(s.comp)} (${bucketRange(bucketFor(s.comp))}). Move the card and reprint.`
+                        : `Box ${bucketFor(s.comp)} (${bucketRange(bucketFor(s.comp))})`
+                    }
+                  >
+                    {bucketFor(s.comp)}
+                    {bucketDrifted(s.comp, s.printedBucket || "") ? ` was ${s.printedBucket}` : ""}
                   </span>
                 ) : null}
                 {s.location && <span className="text-[10px] text-dim border border-edge rounded px-1 py-px self-start">{s.location}</span>}
