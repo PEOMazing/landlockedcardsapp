@@ -22,7 +22,9 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 export default function LabelsClient() {
   const [labels, setLabels] = useState<L[] | null>(null);
   const [includePrice, setIncludePrice] = useState(false);
-  const [mode, setMode] = useState<Mode>("sheet");
+  // The roll is the printer that actually gets used at a show, so it is what
+  // you get unless you have said otherwise on this browser before.
+  const [mode, setMode] = useState<Mode>("roll");
   const [err, setErr] = useState("");
 
   // Remember which printer you last used, so you are not re-picking every time.
@@ -93,27 +95,45 @@ export default function LabelsClient() {
           their own @page rule rather than sharing one. */}
       <style>{roll ? `
         @page { size: 2in 0.75in; margin: 0; }
+        /* One label per page, and nothing else on the page.
+           The break lives on .page, a plain block wrapper, not on the label
+           itself: the label is a flex box, and a break asked for on a flex
+           container is the first thing a print pipeline drops. Every ancestor
+           between the page box and the label is flattened to zero padding at
+           print time for the same reason - 24px of leftover screen padding on
+           <main> is enough to push a 0.75in label past a 0.75in page and turn
+           one label per page into one long strip. */
+        .page { display: block; width: 2in; height: 0.75in; overflow: hidden; break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; }
+        .page:last-child { break-after: auto; page-break-after: auto; }
         .sheet { display: block; }
         .lbl {
           width: 2in; height: 0.75in; padding: 0.03in 0.05in; box-sizing: border-box;
           display: flex; gap: 0.05in; align-items: center; overflow: hidden;
-          break-after: page; page-break-after: always;
         }
-        .lbl:last-child { break-after: auto; page-break-after: auto; }
         /* 0.6in at 203dpi is ~122 dots, still 3+ dots per QR module, which scans */
         .lbl img { width: 0.6in; height: 0.6in; flex-shrink: 0; }
         .cardno { font-weight: 800; font-size: 10.5pt; letter-spacing: 0.3px; font-variant-numeric: tabular-nums; }
         .bucketcond { font-weight: 700; font-size: 7pt; letter-spacing: 0.2px; }
         .cardname { font-weight: 700; font-size: 6.5pt; }
         .cardset { font-size: 5pt; }
-        @media print { body { background: #fff !important; } .no-print { display: none !important; } .lbl { color: #000; } }
+        @media print {
+          html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; width: 2in; }
+          .printroot { margin: 0 !important; padding: 0 !important; }
+          .no-print { display: none !important; }
+          .lbl { color: #000; }
+        }
         @media screen {
           .sheet { display: flex; flex-wrap: wrap; gap: 0.12in; justify-content: center; }
+          .page { width: auto; height: auto; overflow: visible; }
           .lbl { background: #fff; color: #000; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
         }
       ` : `
-        @page { size: letter; margin: 0.5in 0.19in; }
-        .sheet { display: grid; grid-template-columns: repeat(3, 2.625in); column-gap: 0.125in; }
+        /* Zero page margin on purpose. A browser draws the URL and the page
+           title into the @page margin box, and there is no CSS that turns that
+           off - but with no margin there is nowhere to draw it. The Avery inset
+           moves onto .sheet, which prints the same and stays ours. */
+        @page { size: letter; margin: 0; }
+        .sheet { display: grid; grid-template-columns: repeat(3, 2.625in); column-gap: 0.125in; padding: 0.5in 0.19in; box-sizing: border-box; }
         .lbl { width: 2.625in; height: 1in; padding: 0.07in 0.1in; box-sizing: border-box; display: flex; gap: 0.08in; align-items: center; overflow: hidden; break-inside: avoid; }
         .lbl img { width: 0.7in; height: 0.7in; flex-shrink: 0; }
         .idcol { flex-shrink: 0; text-align: center; line-height: 1.05; }
@@ -121,12 +141,17 @@ export default function LabelsClient() {
         .bucketcond { font-weight: 700; font-size: 9pt; letter-spacing: 0.3px; }
         .cardname { font-weight: 700; font-size: 9.5pt; }
         .cardset { font-size: 7pt; }
-        @media print { body { background: #fff !important; } .no-print { display: none !important; } .lbl { color: #000; } }
+        @media print {
+          html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+          .printroot { margin: 0 !important; padding: 0 !important; }
+          .no-print { display: none !important; }
+          .lbl { color: #000; }
+        }
         @media screen {
-          .sheet { background: #fff; color: #000; padding: 0.5in 0.19in; margin: 0 auto; width: 8.5in; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+          .sheet { background: #fff; color: #000; margin: 0 auto; width: 8.5in; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
         }
       `}</style>
-      <main className="py-6">
+      <main className="py-6 printroot">
         <div className="no-print max-w-[8.5in] mx-auto mb-4 flex items-start justify-between gap-4 px-2">
           <div>
             <div className="font-bold">
@@ -145,8 +170,8 @@ export default function LabelsClient() {
             </div>
             <div className="text-dim text-xs mt-1">
               {roll
-                ? "For the iDPRT SP310. Set paper size to 2 x 0.75 inch, margins none, scale 100%, and turn OFF headers and footers, or every label picks up a URL and a page number."
-                : "Load 1in x 2 5/8in label sheets and print at 100% scale on a laser printer."}
+                ? "For the iDPRT SP310. One label per page. Set paper size to 2 x 0.75 inch, margins Default or None, scale 100%. The page asks for no margins so the browser has nowhere to print the URL and page number - if they still appear, untick Headers and footers under More settings."
+                : "Load 1in x 2 5/8in label sheets and print at 100% scale on a laser printer. If the URL or page number shows up, untick Headers and footers under More settings."}
             </div>
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
@@ -171,13 +196,19 @@ export default function LabelsClient() {
             </label>
             <div className="flex items-center gap-3">
               <a href="/singles" className="btn-ghost">Back</a>
-              <button className="btn-foil" onClick={printAndRecord}>Print</button>
+              {/* The button says what is about to come out of the printer. The
+                  two modes produce completely different paper and the only
+                  thing that used to distinguish them was a toggle above. */}
+              <button className="btn-foil" onClick={printAndRecord}>
+                Print {labels.length} {roll ? "- one per page" : `- ${Math.ceil(labels.length / 30)} sheet${Math.ceil(labels.length / 30) === 1 ? "" : "s"}`}
+              </button>
             </div>
           </div>
         </div>
         <div className="sheet">
           {labels.map((l) => (
-            <div key={l.id} className="lbl">
+            <Page key={l.id} on={roll}>
+            <div className="lbl">
               <img src={l.qr} alt="" />
               {!roll && (
                 <div className="idcol">
@@ -205,9 +236,17 @@ export default function LabelsClient() {
                 )}
               </div>
             </div>
+            </Page>
           ))}
         </div>
       </main>
     </>
   );
+}
+
+// The page box a roll label sits on, and nothing in sheet mode. The Avery
+// layout is a CSS grid and an extra wrapper would break it out of the grid,
+// so on that path this renders the label straight through.
+function Page({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return on ? <div className="page">{children}</div> : <>{children}</>;
 }
