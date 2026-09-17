@@ -13,7 +13,14 @@ const HEADERS = {
 const TTL = 1000 * 60 * 60 * 12;
 const RECENT_SETS = 16;
 
-type GroupCache = { at: number; prods: any[]; market: Map<number, number> };
+type GroupCache = {
+  at: number;
+  prods: any[];
+  market: Map<number, number>;
+  // marketPrice per printing, because a card that exists as both Holofoil and
+  // Reverse Holofoil has two very different prices under one productId
+  bySub: Map<number, Map<string, number>>;
+};
 const cache: { groups?: { at: number; data: any[] }; byGroup: Map<number, GroupCache> } = {
   byGroup: new Map(),
 };
@@ -50,12 +57,15 @@ async function loadGroup(g: any): Promise<GroupCache | null> {
       jget(`${TCGCSV}/${g.groupId}/prices`),
     ]);
     const market = new Map<number, number>();
+    const bySub = new Map<number, Map<string, number>>();
     for (const p of pc.results || []) {
-      if (typeof p.marketPrice === "number" && p.marketPrice > 0 && !market.has(p.productId)) {
-        market.set(p.productId, p.marketPrice);
-      }
+      if (!(typeof p.marketPrice === "number" && p.marketPrice > 0)) continue;
+      if (!market.has(p.productId)) market.set(p.productId, p.marketPrice);
+      const m = bySub.get(p.productId) || new Map<string, number>();
+      m.set(String(p.subTypeName || ""), p.marketPrice);
+      bySub.set(p.productId, m);
     }
-    const entry = { at: Date.now(), prods: pd.results || [], market };
+    const entry = { at: Date.now(), prods: pd.results || [], market, bySub };
     cache.byGroup.set(g.groupId, entry);
     return entry;
   } catch {
@@ -115,16 +125,147 @@ export async function searchTcgcsvCards(q: string): Promise<PokeCard[]> {
   return out.slice(0, 30);
 }
 
-export async function getTcgcsvCard(id: string): Promise<PokeCard | null> {
-  const m = String(id).match(/^tcg:(\d+):(\d+)$/);
+// ---------------- card ids ----------------
+//
+// A card id is "tcg:<productId>:<groupId>" and, since the printings fix,
+// optionally "tcg:<productId>:<groupId>:<subtype-slug>".
+//
+// The fourth part matters: one productId covers every printing of a card, so a
+// Reverse Holofoil and a Holofoil share an id but not a price. Leafeon 7/100
+// Majestic Dawn is $92 as a Holofoil and $44 as a Reverse. Without the subtype
+// a refresh just took whichever printing happened to come first in the price
+// file. Old three-part ids still parse, so nothing already stored breaks.
+const CARD_ID = /^tcg:(\d+):(\d+)(?::([a-z0-9-]+))?$/;
+
+export const subSlug = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+export function makeCardId(productId: number, groupId: number, subType?: string): string {
+  const slug = subSlug(subType || "");
+  return slug ? `tcg:${productId}:${groupId}:${slug}` : `tcg:${productId}:${groupId}`;
+}
+
+export function parseCardId(id: string): { productId: number; groupId: number; sub: string } | null {
+  const m = String(id).match(CARD_ID);
   if (!m) return null;
-  const productId = parseInt(m[1]), groupId = parseInt(m[2]);
+  return { productId: parseInt(m[1]), groupId: parseInt(m[2]), sub: m[3] || "" };
+}
+
+// The printing a card in our inventory actually is. The Variant column is what
+// the TCGplayer export wrote, so it is already in TCGplayer's own vocabulary.
+export function subTypeForVariant(variant: string, rarity: string): string {
+  const v = norm(variant);
+  if (v.includes("reverse")) return "Reverse Holofoil";
+  if (v.includes("1st")) return "1st Edition Holofoil";
+  if (v.includes("holo") || v.includes("foil")) return "Holofoil";
+  const r = norm(rarity);
+  if (r.includes("holo") || r.includes("ultra") || r.includes("secret")) return "Holofoil";
+  return "Normal";
+}
+
+// Pick the market price for the printing we hold, falling back through the
+// other printings rather than returning nothing: a wrong-printing price beats
+// a blank comp, and the caller records which printing it used.
+function marketFor(d: GroupCache, productId: number, want: string): { price: number; sub: string } | null {
+  const subs = d.bySub.get(productId);
+  if (!subs || subs.size === 0) return null;
+  const slug = subSlug(want);
+  for (const [name, price] of subs) if (subSlug(name) === slug) return { price, sub: name };
+  const first = [...subs.entries()][0];
+  return { price: first[1], sub: first[0] };
+}
+
+export async function getTcgcsvCard(id: string): Promise<PokeCard | null> {
+  const parsed = parseCardId(id);
+  if (!parsed) return null;
+  const { productId, groupId, sub } = parsed;
   const g = (await allGroups()).find((x) => x.groupId === groupId);
   if (!g) return null;
   const d = await loadGroup(g);
   if (!d) return null;
   const p = d.prods.find((x) => x.productId === productId);
-  return p ? toCard(p, g, d.market.get(productId)) : null;
+  if (!p) return null;
+  const hit = sub ? marketFor(d, productId, sub) : null;
+  const card = toCard(p, g, hit ? hit.price : d.market.get(productId));
+  if (hit) card.variant = hit.sub;
+  return card;
+}
+
+// ---------------- resolving an unlinked single ----------------
+//
+// Cards that came in from a TCGplayer or Collectr export carry a set name, a
+// card number and a variant, but no card id, so nothing could ever reprice
+// them - not the nightly job, which filters on Card ID, and not the per-card
+// Refresh comp button, which errors out. This finds the id from what the
+// export did give us.
+
+// "7/100", "007/100" and "7" all mean card 7. Promo numbers like "DP45" and
+// "HGSS07" are compared as-is, uppercased.
+const numKey = (raw: string): string => {
+  const n = String(raw || "").split("/")[0].trim().toUpperCase();
+  const i = parseInt(n, 10);
+  return !isNaN(i) && /^\d+$/.test(n) ? String(i) : n;
+};
+
+// Set names drift between sources, in three ways that all actually occur in
+// our data:
+//   "League & Championship Cards" vs "League and Championship Cards"
+//   "SV: Paldean Fates" vs "Paldean Fates"   (tcgcsv prefixes the era code)
+//   "Pokemon Base Set" vs "Base Set"
+// so compare on a flattened form rather than the raw string.
+export const setKey = (s: string) =>
+  norm(s)
+    .replace(/^[a-z0-9]{1,7}:\s*/, "")
+    .replace(/\s*&\s*/g, " and ")
+    .replace(/^(pokemon|pok.mon)\s+/, "")
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export type TcgResolution = { cardId: string; productId: number; groupId: number; subType: string; market: number | null; productName: string; image: string };
+
+export async function resolveSingleToTcg(input: {
+  setName: string; number: string; name: string; variant?: string; rarity?: string;
+}): Promise<TcgResolution | null> {
+  const want = setKey(input.setName);
+  if (!want) return null;
+  const g = (await allGroups()).find((x) => setKey(x.name) === want)
+    || (await allGroups()).find((x) => setKey(x.name).replace(/^ex /, "") === want.replace(/^ex /, ""));
+  if (!g) return null;
+  const d = await loadGroup(g);
+  if (!d) return null;
+
+  const key = numKey(input.number);
+  const cards = d.prods.filter(isCard);
+  let hits = key ? cards.filter((p) => numKey(ext(p, "Number")) === key) : [];
+
+  // Number is the reliable key, but promos and reprints can repeat one, so the
+  // card name breaks ties. Name alone is the last resort.
+  if (hits.length > 1) {
+    const n = norm(input.name);
+    const byName = hits.filter((p) => norm(p.name) === n);
+    if (byName.length > 0) hits = byName;
+  }
+  if (hits.length === 0) {
+    const n = norm(input.name);
+    hits = cards.filter((p) => norm(p.name) === n);
+  }
+  // Two products still matching the same number and name is genuinely
+  // ambiguous - guessing would write a wrong price with full confidence.
+  if (hits.length !== 1) return null;
+
+  const p = hits[0];
+  const wantSub = subTypeForVariant(input.variant || "", input.rarity || ext(p, "Rarity"));
+  const hit = marketFor(d, p.productId, wantSub);
+  const subType = hit ? hit.sub : wantSub;
+  return {
+    cardId: makeCardId(p.productId, g.groupId, subType),
+    productId: p.productId,
+    groupId: g.groupId,
+    subType,
+    market: hit ? Math.round(hit.price * 100) / 100 : null,
+    productName: p.name,
+    image: p.imageUrl || "",
+  };
 }
 
 // ---- per-condition comps from TCGplayer latest sales ----
@@ -174,8 +315,8 @@ export async function conditionSoldComp(
 }
 
 export function tcgProductIdFromCardId(id: string): number | null {
-  const m = String(id).match(/^tcg:(\d+):(\d+)$/);
-  return m ? parseInt(m[1]) : null;
+  const p = parseCardId(id);
+  return p ? p.productId : null;
 }
 
 

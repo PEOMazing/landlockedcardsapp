@@ -21,10 +21,24 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     variant: f["Variant"] || "",
     condition: f["Condition"] || "Raw",
     comp: f["Comp"] ?? null,
+    // Lowest live TCGplayer listing for this card's exact printing AND
+    // condition - the number you get on their site after picking a condition.
+    // marketBasis spells out what it covers, and says "any condition" on the
+    // rare card with no live listings, where it falls back to the mirror.
+    market: f["Market"] ?? null,
+    marketBasis: f["Market Basis"] || "",
     compSource: f["Comp Source"] || "",
     compDate: f["Comp Date"] || "",
     compDetail: (() => {
       try { return f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null; } catch { return null; }
+    })(),
+    // most recent sale the comp was built from - the sales feed returns
+    // newest first, so this is the freshest real transaction we have
+    lastSale: (() => {
+      try {
+        const d = f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null;
+        return Array.isArray(d) && d.length ? { date: d[0].date, price: d[0].price } : null;
+      } catch { return null; }
     })(),
     tcgProductId: (() => {
       const m = String(f["Card ID"] || "").match(/^tcg:(\d+):/);
