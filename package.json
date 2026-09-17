@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --import tsx --test lib/__tests__/*.test.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.7.5",
