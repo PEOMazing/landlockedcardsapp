@@ -50,6 +50,23 @@ export type Floor = {
 // keyed "<Printing>|<Condition>", e.g. "Reverse Holofoil|Near Mint"
 export type FloorMap = Map<string, Floor>;
 
+// How far under the next ask the cheapest one has to sit before it is worth a
+// second look.
+export const ODD_LOW_GAP = 0.75;
+
+// Is the cheapest ask out of step with the rest of the board?
+//
+// This only flags. It deliberately does not price, and that distinction is the
+// whole lesson of the Blissey Prime: its cheapest "Near Mint" ask was a CGC 7.5
+// slab filed against the raw card, and nothing in the feed says so. Acting on
+// this signal was tested and thrown out - dropping the flagged ask moved 14 of
+// 98 cards, one of them 10x, because on thin vintage cards the cheapest ask is
+// often the only honest one. Flagging costs nothing when it is wrong.
+export function oddLowAsk(prices: number[]): boolean {
+  const p = (prices || []).filter((n) => Number(n) > 0).sort((a, b) => a - b);
+  return p.length > 1 && p[0] < p[1] * ODD_LOW_GAP;
+}
+
 const cache = new Map<number, { at: number; data: FloorMap }>();
 
 export const floorKey = (printing: string, condition: string) => `${printing}|${condition}`;
