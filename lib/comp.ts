@@ -10,14 +10,14 @@ import {
 import { getCard } from "./pokemon";
 import { Floor, conditionFloor } from "./tcgListings";
 
-const $pct = (x: number) => `${Math.round(x * 100)}%`;
 const money = (n: number) => "$" + n.toFixed(2);
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // One place that decides what a single is worth, so the per-card button, the
 // bulk refresh and the nightly job cannot drift apart.
 //
 // Order of preference, every step condition-specific until the last:
-//   1. median of recent TCGplayer sales in this exact condition
+//   1. average of TCGplayer sales in this exact condition in the last 30 days
 //   2. lowest live listing for this exact printing AND condition
 //   3. mirror market for the printing, times a flat condition discount
 //
@@ -53,14 +53,8 @@ export const EST_MARKER = "est.";
 export const SOLDS_MARKER = "solds";
 export const LISTING_MARKER = "lowest";
 
-export function soldsCompSource(cond: string, sales: number): string {
-  return `TCGplayer ${SOLDS_MARKER} (${cond}, median of ${sales})`;
-}
-
-// Still a sales-derived number, so it keeps the solds marker: the change is
-// which sale it trusts, not where the data came from.
-export function lastSaleCompSource(cond: string, date: string, overPct: string, sales: number): string {
-  return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date} ${overPct} over median of ${sales})`;
+export function soldsCompSource(cond: string, fresh: number): string {
+  return `TCGplayer ${SOLDS_MARKER} (${cond}, average of ${fresh} in last 30d)`;
 }
 
 export function listingCompSource(cond: string, printing: string, count: number, note = ""): string {
@@ -82,29 +76,35 @@ export type CompResult = {
   needsReview?: boolean; // an estimate that moved the price far enough to check by hand
 };
 
-// When the newest sale sits this far above the median, the median is treated
-// as lagging rather than as the truth.
-//
-// A median is the right default because it shrugs off one weird sale, but that
-// same property makes it slow: three sales of $100, $105 and $400 give a
-// median of $105 on a card that just changed hands for $400. Pricing off that
-// hands someone a card at a third of what the market is currently paying.
-const RECENT_JUMP = 0.25;
+// How recent a sale has to be to count as evidence of what the card is worth
+// now. Past this, the sale describes a market that has since moved on and the
+// live asking prices are the better answer.
+const FRESH_DAYS = 30;
 
-// The floor caps it. The most recent sale is one data point and it can be a
-// lot, a misdescribed card, or someone who did not check - and the giveaway is
-// live listings in the same condition sitting well below it. If a buyer can
-// purchase the card for the floor price right now, a comp above the floor is
-// not a price anyone has to pay. Capping keeps the jump honest without
-// throwing away the signal.
-const capToFloor = (price: number, floor: Floor | null): number =>
-  floor && floor.low > 0 ? Math.min(price, floor.low) : price;
-
-// A lone listing is not a market. Gengar (17) shows why: five real sales at
-// $119.99 against a single asking price of $604.90. One seller's optimism
-// should not become the card's value, so the floor only overrides when at
-// least this many people are asking around that number.
+// A lone listing is not a market. Gengar (17) shows why: real sales around
+// $120 against a single asking price of $604.90. One seller's optimism should
+// not become the card's value, so the floor only answers when at least this
+// many people are asking around that number.
 const MIN_FLOOR_LISTINGS = 2;
+
+// Standing listings are self-selecting: the ones still visible are the ones
+// nobody bought, so on a thin card the asks can sit far above the clearing
+// price indefinitely. That is why a recent sale beats a live ask, and the ask
+// only answers when no sale is recent enough to.
+//
+// Machamp (Prime) is the case that proved it: five sales inside a month at
+// $60.88 to $118 against four NM asks starting at $448.59. The asks are what
+// four people want, the sales are what the card is worth.
+
+// Below this share of the cheapest standing ask, the sales are not a discount
+// on the market, they are evidence of something other than the market. Wash
+// trading only works when the fake sales dominate the window, and then every
+// one of them sits far under what anyone will part with a copy for.
+//
+// The margin is the point: Machamp trades at 26% of its asking floor and must
+// stay on the sales side of this line; a card pushed to $1 against $180 asks
+// is under 1%.
+const IMPLAUSIBLE_FRACTION = 0.15;
 
 // A floor this far above the sold median still gets used, but gets named in
 // the refresh report. At 2x the two sources disagree enough that one of them
@@ -113,15 +113,14 @@ const FLOOR_REVIEW = 2;
 
 export type SoldPick = {
   price: number;
-  /** the newest sale was far enough above the median to override it */
-  usedLastSale: boolean;
-  /** that sale was above what the card can be bought for, so the floor won */
-  cappedByFloor: boolean;
-  /** nobody is selling this as cheap as the sales suggest, so the floor won */
+  /** no sale inside the window, so the listing floor answered instead */
   usedFloor: boolean;
-  /** what the sales alone would have produced, for the record */
+  /** nothing sold in the window at all */
+  staleSales: boolean;
+  /** how many real sales the average was taken over */
+  freshCount: number;
+  /** what the sales alone produced, 0 when there were none */
   priceFromSales: number;
-  jump: number;
   latestDate: string;
 };
 
@@ -159,44 +158,38 @@ const medianOf = (xs: number[]): number => {
 export function pickSoldPrice(
   medianIn: number,
   detailIn: { date: string; price: number }[],
-  floor: Floor | null
+  floor: Floor | null,
+  now: Date = new Date()
 ): SoldPick {
-  const detail = dropWashSales(detailIn || []);
-  // Re-median over the surviving sales; the caller's median was taken before
-  // wash trades were removed.
-  const median = detail.length ? Math.round(medianOf(detail.map((d) => d.price)) * 100) / 100 : medianIn;
+  const clean = dropWashSales(detailIn || []);
+  const cutoff = new Date(now.getTime() - FRESH_DAYS * 86400000).toISOString().slice(0, 10);
+  const recent = clean.filter((d) => String(d.date) >= cutoff);
 
   const usableFloor = floor && floor.low > 0 && floor.count >= MIN_FLOOR_LISTINGS ? floor : null;
-  const base = { price: median, usedLastSale: false, cappedByFloor: false, usedFloor: false, priceFromSales: median, jump: 0, latestDate: "" };
+  const latest = [...clean].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const avg = recent.length ? round2(recent.reduce((a, d) => a + d.price, 0) / recent.length) : 0;
 
-  // Nobody is actually selling it that cheap. When the cheapest standing ask
-  // in this exact printing and condition is above what the sales say, the
-  // sales are the weaker number - they can be manufactured, a live ask that
-  // survives cannot.
-  if (usableFloor && usableFloor.low > median) {
+  const base: SoldPick = {
+    price: avg || (clean.length ? round2(medianOf(clean.map((d) => d.price))) : medianIn),
+    usedFloor: false,
+    staleSales: recent.length === 0,
+    freshCount: recent.length,
+    priceFromSales: avg,
+    latestDate: latest ? latest.date : "",
+  };
+
+  // Every recent sale sitting far under what anyone will part with a copy for
+  // is not a discount, it is wash trading that the sale count should not
+  // launder. The margin matters: Machamp trades at 26% of its asking floor and
+  // has to stay on the sales side of this line.
+  const implausible = !!(usableFloor && avg > 0 && avg < usableFloor.low * IMPLAUSIBLE_FRACTION);
+
+  // No real sale inside the window, so there is nothing to average. What the
+  // card is listed at becomes the best available answer.
+  if (usableFloor && (base.staleSales || implausible)) {
     return { ...base, price: usableFloor.low, usedFloor: true };
   }
-
-  if (detail.length === 0 || !(median > 0)) return base;
-
-  // Sorted rather than assumed: the feed returns newest first today, but the
-  // whole rule turns on which sale is genuinely the latest.
-  const latest = [...detail].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-  if (!latest || !(latest.price > 0)) return base;
-
-  const jump = (latest.price - median) / median;
-  if (jump < RECENT_JUMP) return { ...base, jump, latestDate: latest.date };
-
-  const capped = capToFloor(latest.price, usableFloor);
-  return {
-    price: Math.round(capped * 100) / 100,
-    usedLastSale: true,
-    cappedByFloor: capped < latest.price,
-    usedFloor: false,
-    priceFromSales: median,
-    jump,
-    latestDate: latest.date,
-  };
+  return base;
 }
 
 // How far an ESTIMATED comp may move an existing one before it gets called out.
@@ -285,14 +278,15 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
     const pick = pickSoldPrice(sold.price, sold.detail, floor);
     fields["Comp"] = pick.price;
     if (pick.usedFloor) {
-      fields["Comp Source"] = listingCompSource(cond, printing, floor!.count, `sales only reached ${money(pick.priceFromSales)}`);
+      fields["Comp Source"] = listingCompSource(
+        cond, printing, floor!.count,
+        pick.staleSales
+          ? `no sale since ${pick.latestDate || "the window opened"}`
+          : `recent sales only reached ${money(pick.priceFromSales)}`
+      );
       floorLift = pick.priceFromSales > 0 ? pick.price / pick.priceFromSales : 0;
-    } else if (!pick.usedLastSale) {
-      fields["Comp Source"] = soldsCompSource(cond, sold.sales);
-    } else if (pick.cappedByFloor) {
-      fields["Comp Source"] = listingCompSource(cond, printing, floor!.count, `capped from a last sale ${$pct(pick.jump)} over median`);
     } else {
-      fields["Comp Source"] = lastSaleCompSource(cond, pick.latestDate, $pct(pick.jump), sold.sales);
+      fields["Comp Source"] = soldsCompSource(cond, pick.freshCount);
     }
     fields["Comp Detail"] = JSON.stringify(sold.detail);
   } else if (floor) {
