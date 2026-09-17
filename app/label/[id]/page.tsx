@@ -46,6 +46,14 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
           } catch { return []; }
         })(),
         compSource: f["Comp Source"] || "",
+        // the cheapest live asks, so a mislabeled graded card sitting in the
+        // raw bucket is visible - nothing in the feed marks it as graded
+        listings: (() => {
+          try {
+            const d = f["Listing Detail"] ? JSON.parse(f["Listing Detail"]) : null;
+            return Array.isArray(d) ? d.map((x: any) => Number(x)).filter((n: number) => n > 0) : [];
+          } catch { return []; }
+        })(),
         status: f["Status"] || "In Stock",
         salePrice: f["Sale Price"] ?? null,
       }}

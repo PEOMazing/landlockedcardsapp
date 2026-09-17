@@ -8,7 +8,7 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 export default function QuickSell({ id, isManager, card }: {
   id: string;
   isManager: boolean;
-  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; sales?: { date: string; price: number; qty?: number }[]; compSource?: string; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
+  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; sales?: { date: string; price: number; qty?: number }[]; listings?: number[]; compSource?: string; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
 }) {
   const [price, setPrice] = useState(card.comp !== null ? String(card.comp) : "");
   const [busy, setBusy] = useState(false);
@@ -134,6 +134,25 @@ export default function QuickSell({ id, isManager, card }: {
                   sub={lastSale ? lastSale.date : "no sales on record"}
                 />
               </div>
+            )}
+            {isManager && (card.listings || []).length > 1 && (
+              <details className="mt-3 text-left">
+                <summary className="label !text-[10px] cursor-pointer select-none hover:text-body">
+                  Live {card.condition} Asks:
+                </summary>
+                {/* Shown rather than filtered. A graded slab listed against the
+                    raw card carries no marker in the feed, and price alone
+                    cannot separate one from a real bargain - trimming the
+                    cheapest ask moved 14 of 98 cards in this collection, some
+                    by 10x. One glance at the spread does what no rule could. */}
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {(card.listings || []).map((p, i) => (
+                    <span key={i} className={`num text-[11px] rounded px-1.5 py-0.5 border ${
+                      i === 0 ? "border-foil/50 text-foil" : "border-edge text-dim"
+                    }`}>{$(p)}</span>
+                  ))}
+                </div>
+              </details>
             )}
             {isManager && judged.length > 0 && (
               <details className="mt-3 text-left group" open>
