@@ -8,7 +8,9 @@ import {
   subTypeForVariant,
 } from "./tcgcsvCards";
 import { getCard } from "./pokemon";
-import { conditionFloor } from "./tcgListings";
+import { Floor, conditionFloor } from "./tcgListings";
+
+const $pct = (x: number) => `${Math.round(x * 100)}%`;
 
 // One place that decides what a single is worth, so the per-card button, the
 // bulk refresh and the nightly job cannot drift apart.
@@ -38,10 +40,31 @@ export const isRawCondition = (c: string) => CONDITION_MULT[String(c || "Raw")] 
 // conditions the pipeline can actually price.
 export const RAW_CONDITIONS = Object.keys(CONDITION_MULT);
 
-// The singles table shows its amber "unverified comp" warning when the source
-// string contains "est.", so a fallback comp MUST say so. Built here rather
-// than inline so the contract can be tested instead of hoped for.
+// ---------------- comp source strings ----------------
+//
+// Every Comp Source string is built here, and every one carries a marker that
+// lib/pricingHealth.ts reads back to classify it. That coupling has broken
+// twice already - once when the fallback shipped without "est." and its amber
+// warning silently stopped firing, and nearly again when the last-sale rule
+// below introduced two new phrasings that matched nothing. Prose drifts;
+// builders and their tests do not.
 export const EST_MARKER = "est.";
+export const SOLDS_MARKER = "solds";
+export const LISTING_MARKER = "lowest";
+
+export function soldsCompSource(cond: string, sales: number): string {
+  return `TCGplayer ${SOLDS_MARKER} (${cond}, median of ${sales})`;
+}
+
+// Still a sales-derived number, so it keeps the solds marker: the change is
+// which sale it trusts, not where the data came from.
+export function lastSaleCompSource(cond: string, date: string, overPct: string, sales: number): string {
+  return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date} ${overPct} over median of ${sales})`;
+}
+
+export function listingCompSource(cond: string, printing: string, count: number, note = ""): string {
+  return `TCGplayer ${LISTING_MARKER} ${cond} listing (${printing}, ${count} live${note ? `, ${note}` : ""})`;
+}
 
 export function fallbackCompSource(variant: string, mult: number, cond: string): string {
   return `${EST_MARKER} from TCGplayer market${variant ? ` (${variant})` : ""}${mult === 1 ? "" : ` x${mult} for ${cond}`}`;
@@ -57,6 +80,62 @@ export type CompResult = {
   estimated?: boolean; // comp came from market x a condition guess, not real sales
   needsReview?: boolean; // an estimate that moved the price far enough to check by hand
 };
+
+// When the newest sale sits this far above the median, the median is treated
+// as lagging rather than as the truth.
+//
+// A median is the right default because it shrugs off one weird sale, but that
+// same property makes it slow: three sales of $100, $105 and $400 give a
+// median of $105 on a card that just changed hands for $400. Pricing off that
+// hands someone a card at a third of what the market is currently paying.
+const RECENT_JUMP = 0.25;
+
+// The floor caps it. The most recent sale is one data point and it can be a
+// lot, a misdescribed card, or someone who did not check - and the giveaway is
+// live listings in the same condition sitting well below it. If a buyer can
+// purchase the card for the floor price right now, a comp above the floor is
+// not a price anyone has to pay. Capping keeps the jump honest without
+// throwing away the signal.
+const capToFloor = (price: number, floor: Floor | null): number =>
+  floor && floor.low > 0 ? Math.min(price, floor.low) : price;
+
+export type SoldPick = {
+  price: number;
+  /** the newest sale was far enough above the median to override it */
+  usedLastSale: boolean;
+  /** that sale was above what the card can be bought for, so the floor won */
+  cappedByFloor: boolean;
+  jump: number;
+  latestDate: string;
+};
+
+// Which number a set of sold sales should actually produce. Pure, because this
+// is the function that decides what cards get priced at.
+export function pickSoldPrice(
+  median: number,
+  detail: { date: string; price: number }[],
+  floor: Floor | null
+): SoldPick {
+  const base = { price: median, usedLastSale: false, cappedByFloor: false, jump: 0, latestDate: "" };
+  if (!Array.isArray(detail) || detail.length === 0 || !(median > 0)) return base;
+
+  // Sorted rather than assumed: the feed returns newest first today, but the
+  // whole rule turns on which sale is genuinely the latest.
+  const latest = [...detail].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  if (!latest || !(latest.price > 0)) return base;
+
+  const jump = (latest.price - median) / median;
+  if (jump < RECENT_JUMP) return { ...base, jump, latestDate: latest.date };
+
+  const capped = capToFloor(latest.price, floor);
+  return {
+    price: Math.round(capped * 100) / 100,
+    usedLastSale: true,
+    cappedByFloor: capped < latest.price,
+    jump,
+    latestDate: latest.date,
+  };
+}
 
 // How far an ESTIMATED comp may move an existing one before it gets called out.
 // Real sales can move a price this much legitimately and are left alone; a
@@ -140,15 +219,20 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
 
   let estimated = false;
   if (sold) {
-    fields["Comp"] = sold.price;
-    fields["Comp Source"] = `TCGplayer solds (${cond}, median of ${sold.sales})`;
+    const pick = pickSoldPrice(sold.price, sold.detail, floor);
+    fields["Comp"] = pick.price;
+    fields["Comp Source"] = !pick.usedLastSale
+      ? soldsCompSource(cond, sold.sales)
+      : pick.cappedByFloor
+        ? listingCompSource(cond, printing, floor!.count, `capped from a last sale ${$pct(pick.jump)} over median`)
+        : lastSaleCompSource(cond, pick.latestDate, $pct(pick.jump), sold.sales);
     fields["Comp Detail"] = JSON.stringify(sold.detail);
   } else if (floor) {
     // No recent sales, but real listings in our condition. Asking prices run
     // above what things sell for, so this is a ceiling rather than a comp;
     // still far better than a condition-blind number times a guess.
     fields["Comp"] = floor.low;
-    fields["Comp Source"] = `TCGplayer lowest ${cond} listing (${printing}, ${floor.count} live)`;
+    fields["Comp Source"] = listingCompSource(cond, printing, floor.count);
     fields["Comp Detail"] = "";
   } else if (card && card.market !== null) {
     // The word "est." is load-bearing: the singles table keys its amber

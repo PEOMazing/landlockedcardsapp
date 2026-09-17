@@ -1,4 +1,5 @@
 import { AtRecord, T, atList } from "./airtable";
+import { EST_MARKER, LISTING_MARKER, SOLDS_MARKER } from "./comp";
 import { conditionFloors, floorKey } from "./tcgListings";
 
 // Does the pricing pipeline still work?
@@ -63,12 +64,15 @@ export async function listingsCanary(): Promise<CanaryResult> {
 // How a comp was actually arrived at, read back off the stored source string.
 export type CompBasis = "solds" | "listing" | "estimate" | "manual" | "none";
 
+// Matched on the markers lib/comp.ts builds into every source string, not on
+// the surrounding prose, so rewording a message cannot silently reclassify a
+// third of the collection as hand-set.
 export function basisOf(rec: AtRecord): CompBasis {
   if (rec.fields["Comp"] === undefined || rec.fields["Comp"] === null) return "none";
   const s = String(rec.fields["Comp Source"] || "");
-  if (/solds/i.test(s)) return "solds";
-  if (/lowest .* listing/i.test(s)) return "listing";
-  if (/est\./i.test(s)) return "estimate";
+  if (s.includes(EST_MARKER)) return "estimate";
+  if (new RegExp(`\\b${SOLDS_MARKER}\\b`, "i").test(s)) return "solds";
+  if (new RegExp(`\\b${LISTING_MARKER}\\b.*listing`, "i").test(s)) return "listing";
   return "manual";
 }
 
