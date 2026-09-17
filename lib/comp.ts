@@ -9,9 +9,11 @@ import {
 } from "./tcgcsvCards";
 import { getCard } from "./pokemon";
 import { Floor, conditionFloor } from "./tcgListings";
+import { FRESH_DAYS, dropWashSales, medianOf, round2, windowCutoff } from "./salesWindow";
+
+export { dropWashSales } from "./salesWindow";
 
 const money = (n: number) => "$" + n.toFixed(2);
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 // One place that decides what a single is worth, so the per-card button, the
 // bulk refresh and the nightly job cannot drift apart.
@@ -76,11 +78,6 @@ export type CompResult = {
   needsReview?: boolean; // an estimate that moved the price far enough to check by hand
 };
 
-// How recent a sale has to be to count as evidence of what the card is worth
-// now. Past this, the sale describes a market that has since moved on and the
-// live asking prices are the better answer.
-const FRESH_DAYS = 30;
-
 // A lone listing is not a market. Gengar (17) shows why: real sales around
 // $120 against a single asking price of $604.90. One seller's optimism should
 // not become the card's value, so the floor only answers when at least this
@@ -126,35 +123,6 @@ export type SoldPick = {
   latestDate: string;
 };
 
-// Sales this far below the strongest recent sale are thrown out before the
-// median is taken.
-//
-// Sold data can be pushed down on purpose: list a card far under value, have
-// it bought immediately, and the recorded sale drags the published average
-// with it - then buy up copies from everyone who priced off that average. A
-// median resists one bad print, but on three or four sales a single $1 wash
-// trade still moves it a long way.
-//
-// Nothing legitimate sells at a fifth of what the same card in the same
-// condition sold for days earlier, so those get dropped rather than averaged.
-const WASH_FRACTION = 0.2;
-
-export function dropWashSales<T extends { price: number }>(sales: T[]): T[] {
-  const real = (sales || []).filter((s) => Number(s?.price) > 0);
-  if (real.length < 2) return real;
-  const high = Math.max(...real.map((s) => s.price));
-  const kept = real.filter((s) => s.price >= high * WASH_FRACTION);
-  // Never discard everything: if the whole window looks like an outlier the
-  // problem is the comparison, not the sales.
-  return kept.length > 0 ? kept : real;
-}
-
-const medianOf = (xs: number[]): number => {
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-};
-
 // Which number a set of sold sales should actually produce. Pure, because this
 // is the function that decides what cards get priced at.
 export function pickSoldPrice(
@@ -164,7 +132,7 @@ export function pickSoldPrice(
   now: Date = new Date()
 ): SoldPick {
   const clean = dropWashSales(detailIn || []);
-  const cutoff = new Date(now.getTime() - FRESH_DAYS * 86400000).toISOString().slice(0, 10);
+  const cutoff = windowCutoff(now);
   const recent = clean.filter((d) => String(d.date) >= cutoff);
 
   const usableFloor = floor && floor.low > 0 && floor.count >= MIN_FLOOR_LISTINGS ? floor : null;
