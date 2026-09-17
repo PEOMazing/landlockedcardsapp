@@ -53,8 +53,8 @@ export const EST_MARKER = "est.";
 export const SOLDS_MARKER = "solds";
 export const LISTING_MARKER = "lowest";
 
-export function soldsCompSource(cond: string, fresh: number): string {
-  return `TCGplayer ${SOLDS_MARKER} (${cond}, average of ${fresh} in last 30d)`;
+export function soldsCompSource(cond: string, count: number, range = ""): string {
+  return `TCGplayer ${SOLDS_MARKER} (${cond}, median of ${count} in last 30d${range ? `, ${range}` : ""})`;
 }
 
 export function listingCompSource(cond: string, printing: string, count: number, note = ""): string {
@@ -117,8 +117,10 @@ export type SoldPick = {
   usedFloor: boolean;
   /** nothing sold in the window at all */
   staleSales: boolean;
-  /** how many real sales the average was taken over */
+  /** how many real sales the median was taken over */
   freshCount: number;
+  /** the low-high of those sales, so a split set is visible without digging */
+  freshRange: string;
   /** what the sales alone produced, 0 when there were none */
   priceFromSales: number;
   latestDate: string;
@@ -167,14 +169,28 @@ export function pickSoldPrice(
 
   const usableFloor = floor && floor.low > 0 && floor.count >= MIN_FLOOR_LISTINGS ? floor : null;
   const latest = [...clean].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-  const avg = recent.length ? round2(recent.reduce((a, d) => a + d.price, 0) / recent.length) : 0;
+
+  // The middle sale, not the average of them.
+  //
+  // An average assumes the sales cluster around one number. Real card sales
+  // often do not. Machamp (Prime) sold five times in a month at $60.88,
+  // $74.99, $115, $118 and $118 - three tight at the top, two stragglers -
+  // and the mean of that is $97.37, a price at which nothing actually sold.
+  // The median lands at $115, inside the cluster where the card really trades.
+  //
+  // When the sales do agree the two are the same number anyway, so the median
+  // costs nothing in the easy case and is right in the hard one.
+  const fresh = recent.length ? round2(medianOf(recent.map((d) => d.price))) : 0;
 
   const base: SoldPick = {
-    price: avg || (clean.length ? round2(medianOf(clean.map((d) => d.price))) : medianIn),
+    price: fresh || (clean.length ? round2(medianOf(clean.map((d) => d.price))) : medianIn),
     usedFloor: false,
     staleSales: recent.length === 0,
     freshCount: recent.length,
-    priceFromSales: avg,
+    freshRange: recent.length > 1
+      ? `${money(Math.min(...recent.map((d) => d.price)))}-${money(Math.max(...recent.map((d) => d.price)))}`
+      : "",
+    priceFromSales: fresh,
     latestDate: latest ? latest.date : "",
   };
 
@@ -182,7 +198,7 @@ export function pickSoldPrice(
   // is not a discount, it is wash trading that the sale count should not
   // launder. The margin matters: Machamp trades at 26% of its asking floor and
   // has to stay on the sales side of this line.
-  const implausible = !!(usableFloor && avg > 0 && avg < usableFloor.low * IMPLAUSIBLE_FRACTION);
+  const implausible = !!(usableFloor && fresh > 0 && fresh < usableFloor.low * IMPLAUSIBLE_FRACTION);
 
   // No real sale inside the window, so there is nothing to average. What the
   // card is listed at becomes the best available answer.
@@ -286,7 +302,7 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
       );
       floorLift = pick.priceFromSales > 0 ? pick.price / pick.priceFromSales : 0;
     } else {
-      fields["Comp Source"] = soldsCompSource(cond, pick.freshCount);
+      fields["Comp Source"] = soldsCompSource(cond, pick.freshCount, pick.freshRange);
     }
     fields["Comp Detail"] = JSON.stringify(sold.detail);
   } else if (floor) {
