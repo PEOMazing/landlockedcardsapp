@@ -54,7 +54,7 @@ describe("bucketListings", () => {
       { price: 42, printing: "Holofoil", condition: "Near Mint" },
     ]);
     assert.equal(m2.size, 1);
-    assert.deepEqual(m2.get(floorKey("Holofoil", "Near Mint")), { low: 42, count: 1 });
+    assert.deepEqual(m2.get(floorKey("Holofoil", "Near Mint")), { low: 42, count: 1, prices: [42] });
   });
 
   it("survives an empty or malformed response without throwing", () => {
@@ -75,5 +75,40 @@ describe("condition names", () => {
 
   it("treats Raw as Near Mint, since that is how the table stores unspecified", () => {
     assert.equal(CONDITION_NAMES.Raw, CONDITION_NAMES.NM);
+  });
+});
+
+
+// The cheapest asks are kept so a screen can show the spread. A graded slab
+// filed against the raw card is invisible to this feed, and filtering on price
+// alone is not viable: across the whole collection, dropping a suspiciously
+// cheap ask moved 14 of 98 cards, one of them 10x, because on thin vintage
+// cards the cheapest ask is often the only real one.
+describe("listing spread", () => {
+  it("keeps the asks cheapest first", () => {
+    const m = bucketListings([
+      { price: 100, printing: "Holofoil", condition: "Near Mint" },
+      { price: 70, printing: "Holofoil", condition: "Near Mint" },
+      { price: 94.98, printing: "Holofoil", condition: "Near Mint" },
+    ]);
+    assert.deepEqual(m.get(floorKey("Holofoil", "Near Mint"))!.prices, [70, 94.98, 100]);
+  });
+
+  it("caps the list so a deep book does not become noise", () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({ price: i + 1, printing: "Holofoil", condition: "Near Mint" }));
+    const f = bucketListings(rows).get(floorKey("Holofoil", "Near Mint"))!;
+    assert.equal(f.prices.length, 6);
+    assert.equal(f.count, 12);
+    assert.equal(f.low, 1);
+  });
+
+  it("keeps each printing and condition separate", () => {
+    const m = bucketListings([
+      { price: 70, printing: "Holofoil", condition: "Near Mint" },
+      { price: 30, printing: "Reverse Holofoil", condition: "Near Mint" },
+      { price: 20, printing: "Holofoil", condition: "Damaged" },
+    ]);
+    assert.deepEqual(m.get(floorKey("Holofoil", "Near Mint"))!.prices, [70]);
+    assert.deepEqual(m.get(floorKey("Reverse Holofoil", "Near Mint"))!.prices, [30]);
   });
 });
