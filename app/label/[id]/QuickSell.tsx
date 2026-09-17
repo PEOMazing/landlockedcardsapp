@@ -1,18 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
 import { toast } from "@/components/Toaster";
+import { JudgedSale, judgeSales } from "@/lib/salesWindow";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function QuickSell({ id, isManager, card }: {
   id: string;
   isManager: boolean;
-  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; lastSale?: { date: string; price: number } | null; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
+  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; sales?: { date: string; price: number; qty?: number }[]; compSource?: string; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
 }) {
   const [price, setPrice] = useState(card.comp !== null ? String(card.comp) : "");
   const [busy, setBusy] = useState(false);
   const [sold, setSold] = useState(card.status === "Sold");
-  const [live, setLive] = useState<{ comp: number | null; market: number | null; marketBasis: string; lastSale: { date: string; price: number } | null } | null>(null);
+  const [live, setLive] = useState<{ comp: number | null; market: number | null; marketBasis: string; sales: { date: string; price: number }[] } | null>(null);
   const [pricing, setPricing] = useState(false);
 
   // Scanning a sticker is the moment the price gets acted on, so it gets a
@@ -34,7 +35,7 @@ export default function QuickSell({ id, isManager, card }: {
         const d = await r.json();
         const s = d.single;
         if (!s || cancelled) return;
-        setLive({ comp: s.comp ?? null, market: s.market ?? null, marketBasis: s.marketBasis || "", lastSale: s.lastSale ?? null });
+        setLive({ comp: s.comp ?? null, market: s.market ?? null, marketBasis: s.marketBasis || "", sales: Array.isArray(s.compDetail) ? s.compDetail : [] });
         // Only move the input if it is still showing the price we put there.
         // Overwriting a number somebody has started typing would be maddening.
         setPrice((cur) => (cur === (card.comp !== null ? String(card.comp) : "") && s.comp !== null ? String(s.comp) : cur));
@@ -59,8 +60,14 @@ export default function QuickSell({ id, isManager, card }: {
     comp: live ? live.comp : card.comp,
     market: live ? live.market : (card.market ?? null),
     marketBasis: live ? live.marketBasis : (card.marketBasis || ""),
-    lastSale: live ? live.lastSale : (card.lastSale ?? null),
+    sales: live ? live.sales : (card.sales || []),
   };
+
+  // Same module the pricing uses, so the working shown here cannot disagree
+  // with the number it is working out.
+  const judged = judgeSales(shown.sales);
+  const used = judged.filter((j) => j.used);
+  const lastSale = judged[0] || null;
 
   async function sell() {
     const v = parseFloat(price);
@@ -113,7 +120,7 @@ export default function QuickSell({ id, isManager, card }: {
 
                 Both carry the condition they belong to. An unlabelled price
                 here is worse than no price, because it gets trusted. */}
-            {isManager && (shown.market != null || shown.lastSale) && (
+            {isManager && (shown.market != null || lastSale) && (
               <div className="mt-3 grid grid-cols-2 gap-2 text-left">
                 <Ref
                   label={blindMarket ? "Market, any cond." : `Lowest ${card.condition} listed`}
@@ -124,10 +131,25 @@ export default function QuickSell({ id, isManager, card }: {
                 />
                 <Ref
                   label={`Last ${card.condition} sale`}
-                  value={shown.lastSale ? shown.lastSale.price : null}
-                  sub={shown.lastSale ? shown.lastSale.date : "none in range"}
+                  value={lastSale ? lastSale.price : null}
+                  sub={lastSale ? lastSale.date : "no sales on record"}
                 />
               </div>
+            )}
+            {isManager && judged.length > 0 && (
+              <details className="mt-3 text-left group" open>
+                <summary className="label !text-[10px] cursor-pointer select-none hover:text-body">
+                  {used.length > 0
+                    ? `Why ${$(shown.comp)} - ${used.length} ${card.condition} sale${used.length === 1 ? "" : "s"} in 30 days`
+                    : `No ${card.condition} sale in 30 days`}
+                </summary>
+                <div className="mt-1.5 space-y-0.5">
+                  {judged.slice(0, 8).map((j, i) => <SaleRow key={i} s={j} />)}
+                  {judged.length > 8 && (
+                    <div className="text-dim text-[10px] pt-0.5">+{judged.length - 8} older</div>
+                  )}
+                </div>
+              </details>
             )}
           </div>
         )}
@@ -172,4 +194,22 @@ function Ref({ label, value, sub, href, warn }: {
   return href && value != null
     ? <a href={href} target="_blank" rel="noreferrer" className={`${cls} hover:border-foil/60 transition-colors`}>{body}</a>
     : <div className={cls}>{body}</div>;
+}
+
+// One sale, and whether it counted. Excluded sales are shown rather than
+// hidden: "five sales, we used three" is a statement someone can check, and
+// silently dropping the other two is how a price stops being explainable.
+function SaleRow({ s }: { s: JudgedSale }) {
+  const dim = !s.used;
+  return (
+    <div className={`flex items-baseline justify-between text-[11px] ${dim ? "text-dim opacity-60" : "text-body"}`}>
+      <span className="tabular-nums">{s.date}</span>
+      <span className="flex items-baseline gap-1.5">
+        {s.excluded === "old" && <span className="text-[9px] uppercase tracking-wide">past 30d</span>}
+        {s.excluded === "outlier" && <span className="text-[9px] uppercase tracking-wide text-givvy">outlier</span>}
+        {s.isMedian && <span className="text-[9px] uppercase tracking-wide text-foil">median</span>}
+        <span className={`num ${dim ? "line-through" : s.isMedian ? "font-bold text-foil" : ""}`}>{$(s.price)}</span>
+      </span>
+    </div>
+  );
 }

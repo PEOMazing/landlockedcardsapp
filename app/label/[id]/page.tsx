@@ -37,12 +37,15 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
           const m = String(f["Card ID"] || "").match(/^tcg:(\d+):/);
           return m ? parseInt(m[1]) : null;
         })(),
-        lastSale: (() => {
+        // the whole sales list, not just the newest, so the scan page can show
+        // the working behind the price rather than asserting it
+        sales: (() => {
           try {
             const d = f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null;
-            return Array.isArray(d) && d.length ? { date: String(d[0].date), price: Number(d[0].price) } : null;
-          } catch { return null; }
+            return Array.isArray(d) ? d.map((x: any) => ({ date: String(x.date), price: Number(x.price), qty: Number(x.qty) || 1 })) : [];
+          } catch { return []; }
         })(),
+        compSource: f["Comp Source"] || "",
         status: f["Status"] || "In Stock",
         salePrice: f["Sale Price"] ?? null,
       }}
