@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "@/components/Toaster";
 import { JudgedSale, judgeSales } from "@/lib/salesWindow";
+import { oddLowAsk } from "@/lib/tcgListings";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -68,6 +69,11 @@ export default function QuickSell({ id, isManager, card }: {
   const judged = judgeSales(shown.sales);
   const lastSale = judged[0] || null;
 
+  // The cheapest live asks for this exact condition, and whether the cheapest
+  // one is far enough below the rest to deserve a look before it gets quoted.
+  const asks = card.listings || [];
+  const oddLow = oddLowAsk(asks);
+
   async function sell() {
     const v = parseFloat(price);
     if (isNaN(v) || v <= 0) { toast("Enter the sale price first", "bad"); return; }
@@ -126,7 +132,7 @@ export default function QuickSell({ id, isManager, card }: {
                   value={shown.market}
                   sub={shown.marketBasis.replace(/^.*?,\s*/, "") || undefined}
                   href={tcgUrl}
-                  warn={blindMarket}
+                  warn={blindMarket || oddLow}
                 />
                 <Ref
                   label={`Last ${card.condition} sale`}
@@ -135,20 +141,25 @@ export default function QuickSell({ id, isManager, card }: {
                 />
               </div>
             )}
-            {isManager && (card.listings || []).length > 1 && (
-              <details className="mt-3 text-left">
+            {isManager && asks.length > 1 && (
+              <details className="mt-3 text-left" open>
                 <summary className="label !text-[10px] cursor-pointer select-none hover:text-body">
                   Live {card.condition} Asks:
+                  {oddLow && <span className="ml-1.5 text-givvy normal-case">check the cheapest one</span>}
                 </summary>
                 {/* Shown rather than filtered. A graded slab listed against the
                     raw card carries no marker in the feed, and price alone
                     cannot separate one from a real bargain - trimming the
                     cheapest ask moved 14 of 98 cards in this collection, some
-                    by 10x. One glance at the spread does what no rule could. */}
+                    by 10x. One glance at the spread does what no rule could,
+                    so this opens by default: a $70 sitting under four asks at
+                    $95-$100 is obvious to a person and invisible to a filter. */}
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {(card.listings || []).map((p, i) => (
+                  {asks.map((p, i) => (
                     <span key={i} className={`num text-[11px] rounded px-1.5 py-0.5 border ${
-                      i === 0 ? "border-foil/50 text-foil" : "border-edge text-dim"
+                      i === 0 && oddLow ? "border-givvy/60 text-givvy"
+                        : i === 0 ? "border-foil/50 text-foil"
+                        : "border-edge text-dim"
                     }`}>{$(p)}</span>
                   ))}
                 </div>
