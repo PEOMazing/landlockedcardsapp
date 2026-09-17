@@ -11,6 +11,7 @@ import { getCard } from "./pokemon";
 import { Floor, conditionFloor } from "./tcgListings";
 
 const $pct = (x: number) => `${Math.round(x * 100)}%`;
+const money = (n: number) => "$" + n.toFixed(2);
 
 // One place that decides what a single is worth, so the per-card button, the
 // bulk refresh and the nightly job cannot drift apart.
@@ -99,25 +100,84 @@ const RECENT_JUMP = 0.25;
 const capToFloor = (price: number, floor: Floor | null): number =>
   floor && floor.low > 0 ? Math.min(price, floor.low) : price;
 
+// A lone listing is not a market. Gengar (17) shows why: five real sales at
+// $119.99 against a single asking price of $604.90. One seller's optimism
+// should not become the card's value, so the floor only overrides when at
+// least this many people are asking around that number.
+const MIN_FLOOR_LISTINGS = 2;
+
+// A floor this far above the sold median still gets used, but gets named in
+// the refresh report. At 2x the two sources disagree enough that one of them
+// is measuring something else, and that is worth a human glance.
+const FLOOR_REVIEW = 2;
+
 export type SoldPick = {
   price: number;
   /** the newest sale was far enough above the median to override it */
   usedLastSale: boolean;
   /** that sale was above what the card can be bought for, so the floor won */
   cappedByFloor: boolean;
+  /** nobody is selling this as cheap as the sales suggest, so the floor won */
+  usedFloor: boolean;
+  /** what the sales alone would have produced, for the record */
+  priceFromSales: number;
   jump: number;
   latestDate: string;
+};
+
+// Sales this far below the strongest recent sale are thrown out before the
+// median is taken.
+//
+// Sold data can be pushed down on purpose: list a card far under value, have
+// it bought immediately, and the recorded sale drags the published average
+// with it - then buy up copies from everyone who priced off that average. A
+// median resists one bad print, but on three or four sales a single $1 wash
+// trade still moves it a long way.
+//
+// Nothing legitimate sells at a fifth of what the same card in the same
+// condition sold for days earlier, so those get dropped rather than averaged.
+const WASH_FRACTION = 0.2;
+
+export function dropWashSales<T extends { price: number }>(sales: T[]): T[] {
+  const real = (sales || []).filter((s) => Number(s?.price) > 0);
+  if (real.length < 2) return real;
+  const high = Math.max(...real.map((s) => s.price));
+  const kept = real.filter((s) => s.price >= high * WASH_FRACTION);
+  // Never discard everything: if the whole window looks like an outlier the
+  // problem is the comparison, not the sales.
+  return kept.length > 0 ? kept : real;
+}
+
+const medianOf = (xs: number[]): number => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
 // Which number a set of sold sales should actually produce. Pure, because this
 // is the function that decides what cards get priced at.
 export function pickSoldPrice(
-  median: number,
-  detail: { date: string; price: number }[],
+  medianIn: number,
+  detailIn: { date: string; price: number }[],
   floor: Floor | null
 ): SoldPick {
-  const base = { price: median, usedLastSale: false, cappedByFloor: false, jump: 0, latestDate: "" };
-  if (!Array.isArray(detail) || detail.length === 0 || !(median > 0)) return base;
+  const detail = dropWashSales(detailIn || []);
+  // Re-median over the surviving sales; the caller's median was taken before
+  // wash trades were removed.
+  const median = detail.length ? Math.round(medianOf(detail.map((d) => d.price)) * 100) / 100 : medianIn;
+
+  const usableFloor = floor && floor.low > 0 && floor.count >= MIN_FLOOR_LISTINGS ? floor : null;
+  const base = { price: median, usedLastSale: false, cappedByFloor: false, usedFloor: false, priceFromSales: median, jump: 0, latestDate: "" };
+
+  // Nobody is actually selling it that cheap. When the cheapest standing ask
+  // in this exact printing and condition is above what the sales say, the
+  // sales are the weaker number - they can be manufactured, a live ask that
+  // survives cannot.
+  if (usableFloor && usableFloor.low > median) {
+    return { ...base, price: usableFloor.low, usedFloor: true };
+  }
+
+  if (detail.length === 0 || !(median > 0)) return base;
 
   // Sorted rather than assumed: the feed returns newest first today, but the
   // whole rule turns on which sale is genuinely the latest.
@@ -127,11 +187,13 @@ export function pickSoldPrice(
   const jump = (latest.price - median) / median;
   if (jump < RECENT_JUMP) return { ...base, jump, latestDate: latest.date };
 
-  const capped = capToFloor(latest.price, floor);
+  const capped = capToFloor(latest.price, usableFloor);
   return {
     price: Math.round(capped * 100) / 100,
     usedLastSale: true,
     cappedByFloor: capped < latest.price,
+    usedFloor: false,
+    priceFromSales: median,
     jump,
     latestDate: latest.date,
   };
@@ -218,14 +280,20 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
   }
 
   let estimated = false;
+  let floorLift = 0;
   if (sold) {
     const pick = pickSoldPrice(sold.price, sold.detail, floor);
     fields["Comp"] = pick.price;
-    fields["Comp Source"] = !pick.usedLastSale
-      ? soldsCompSource(cond, sold.sales)
-      : pick.cappedByFloor
-        ? listingCompSource(cond, printing, floor!.count, `capped from a last sale ${$pct(pick.jump)} over median`)
-        : lastSaleCompSource(cond, pick.latestDate, $pct(pick.jump), sold.sales);
+    if (pick.usedFloor) {
+      fields["Comp Source"] = listingCompSource(cond, printing, floor!.count, `sales only reached ${money(pick.priceFromSales)}`);
+      floorLift = pick.priceFromSales > 0 ? pick.price / pick.priceFromSales : 0;
+    } else if (!pick.usedLastSale) {
+      fields["Comp Source"] = soldsCompSource(cond, sold.sales);
+    } else if (pick.cappedByFloor) {
+      fields["Comp Source"] = listingCompSource(cond, printing, floor!.count, `capped from a last sale ${$pct(pick.jump)} over median`);
+    } else {
+      fields["Comp Source"] = lastSaleCompSource(cond, pick.latestDate, $pct(pick.jump), sold.sales);
+    }
     fields["Comp Detail"] = JSON.stringify(sold.detail);
   } else if (floor) {
     // No recent sales, but real listings in our condition. Asking prices run
@@ -273,6 +341,12 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
     ? Math.abs(fields["Comp"] - before) / before
     : 0;
 
+  // A floor that sits miles above the sales still gets used - that is the
+  // point - but the two sources disagreeing by this much usually means one of
+  // them is measuring something else, so the card gets named rather than
+  // quietly repriced.
+  const floorDisagrees = floorLift >= FLOOR_REVIEW;
+
   return {
     ok: true,
     fields,
@@ -280,6 +354,6 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
     before,
     linked,
     estimated,
-    needsReview: swing > REVIEW_SWING,
+    needsReview: swing > REVIEW_SWING || floorDisagrees,
   };
 }
