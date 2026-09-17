@@ -66,7 +66,6 @@ export default function QuickSell({ id, isManager, card }: {
   // Same module the pricing uses, so the working shown here cannot disagree
   // with the number it is working out.
   const judged = judgeSales(shown.sales);
-  const used = judged.filter((j) => j.used);
   const lastSale = judged[0] || null;
 
   async function sell() {
@@ -139,9 +138,7 @@ export default function QuickSell({ id, isManager, card }: {
             {isManager && judged.length > 0 && (
               <details className="mt-3 text-left group" open>
                 <summary className="label !text-[10px] cursor-pointer select-none hover:text-body">
-                  {used.length > 0
-                    ? `Why ${$(shown.comp)} - ${used.length} ${card.condition} sale${used.length === 1 ? "" : "s"} in 30 days`
-                    : `No ${card.condition} sale in 30 days`}
+                  TCG Sales History:
                 </summary>
                 <div className="mt-1.5 space-y-0.5">
                   {judged.slice(0, 8).map((j, i) => <SaleRow key={i} s={j} />)}
