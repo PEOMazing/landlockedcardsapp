@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { bucketListings, floorKey, CONDITION_NAMES } from "../tcgListings";
+import { bucketListings, floorKey, CONDITION_NAMES, oddLowAsk } from "../tcgListings";
 
 // Real rows pulled from mp-search-api on 2026-09-17 for Leafeon 7/100
 // Majestic Dawn (productId 86677), trimmed to the fields we read. This card is
@@ -110,5 +110,38 @@ describe("listing spread", () => {
     ]);
     assert.deepEqual(m.get(floorKey("Holofoil", "Near Mint"))!.prices, [70]);
     assert.deepEqual(m.get(floorKey("Reverse Holofoil", "Near Mint"))!.prices, [30]);
+  });
+});
+
+// Flagging the odd cheapest ask. The Blissey Prime is the case: its cheapest
+// "Near Mint" ask was a CGC 7.5 slab filed against the raw card, sitting at $70
+// under four honest asks at $95-$100, with nothing in the feed to say so. The
+// flag is display only - the same test applied to the price was measured across
+// the whole collection and thrown out.
+describe("oddLowAsk", () => {
+  it("flags the Blissey slab under the real board", () => {
+    assert.equal(oddLowAsk([70, 94.98, 94.99, 99.99, 100]), true);
+  });
+
+  it("leaves a normal spread alone", () => {
+    assert.equal(oddLowAsk([94.98, 99.99, 100, 110]), false);
+  });
+
+  it("says nothing when there is only one ask to go on", () => {
+    assert.equal(oddLowAsk([70]), false);
+    assert.equal(oddLowAsk([]), false);
+  });
+
+  it("does not care what order the asks arrive in", () => {
+    assert.equal(oddLowAsk([100, 99.99, 70, 94.98]), true);
+  });
+
+  it("ignores junk prices rather than flagging on them", () => {
+    assert.equal(oddLowAsk([0, -5, 100, 105]), false);
+  });
+
+  it("holds the line exactly at the gap", () => {
+    assert.equal(oddLowAsk([75, 100]), false);
+    assert.equal(oddLowAsk([74.99, 100]), true);
   });
 });
