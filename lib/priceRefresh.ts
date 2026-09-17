@@ -1,6 +1,6 @@
 import { atCreate, atList, atUpdate, T, AtRecord } from "./airtable";
 import { recordAlert } from "./alerts";
-import { conditionSoldComp, tcgProductIdFromCardId } from "./tcgcsvCards";
+import { RAW_CONDITIONS, isRawCondition, recompSingle } from "./comp";
 import { MappedTarget, isTcgUrl, priceMappedProducts } from "./tcgMap";
 import { renameFields } from "./productNames";
 
@@ -232,40 +232,50 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
 
 // ---------------- nightly singles comp refresh ----------------
 // re-comps raw in-stock singles from fresh condition sales, capped per run
-export async function refreshSingleComps(cap = 50): Promise<{ updated: number; checked: number }> {
-  const RAWISH = new Set(["Raw", "NM", "LP", "MP", "HP", "DM"]);
+export async function refreshSingleComps(cap = 50): Promise<{ updated: number; checked: number; linked: number }> {
   let rows: AtRecord[] = [];
   try {
+    // No Card ID filter here any more. It used to look sensible and was
+    // quietly the reason most of the collection never repriced: everything
+    // that came in from a TCGplayer or Collectr export has no card id, so the
+    // nightly job skipped it and its comp stayed frozen at its import date.
+    // recompSingle now finds and stores the id on first pass.
+    //
+    // Sorted and capped by Airtable rather than here. This runs every 15
+    // minutes; pulling the whole table each time to sort it and keep 40 rows
+    // is 96 full-table reads a day for no reason.
+    //
+    // Ordered on Comp Checked, not Comp Date: day granularity cannot order a
+    // rotation that runs four times an hour - every card done today sorts
+    // equal and the job never reaches the back of the collection. Empty sorts
+    // first in Airtable, so never-checked cards lead, which is what we want.
+    const raws = RAW_CONDITIONS.map((c) => `{Condition} = '${c}'`).join(", ");
     rows = await atList(T.singles, {
-      filterByFormula: "AND({Status} = 'In Stock', NOT({Card ID} = BLANK()))",
+      filterByFormula: `AND({Status} = 'In Stock', OR(${raws}))`,
+      "sort[0][field]": "Comp Checked",
+      "sort[0][direction]": "asc",
+      maxRecords: String(cap),
     });
   } catch {
-    return { updated: 0, checked: 0 };
+    return { updated: 0, checked: 0, linked: 0 };
   }
-  let updated = 0, checked = 0;
+
+  let updated = 0, checked = 0, linked = 0;
   for (const rec of rows) {
     if (checked >= cap) break;
-    const cond = String(rec.fields["Condition"] || "Raw");
-    if (!RAWISH.has(cond)) continue;
-    const pid = tcgProductIdFromCardId(String(rec.fields["Card ID"] || ""));
-    if (!pid) continue;
+    // Belt and braces: the formula already excludes graded, but recompSingle
+    // rejects them anyway and a silent mismatch here would waste the batch.
+    if (!isRawCondition(String(rec.fields["Condition"] || "Raw"))) continue;
     checked++;
-    const sold = await conditionSoldComp(pid, cond);
-    if (!sold) continue;
     try {
-      const compFields: Record<string, any> = {};
-      if (!(rec.fields["Entry Comp"] > 0)) compFields["Entry Comp"] = sold.price;
-      await atUpdate(T.singles, rec.id, {
-        ...compFields,
-        "Comp": sold.price,
-        "Comp Source": `TCGplayer solds (${cond}, median of ${sold.sales})`,
-        "Comp Date": new Date().toISOString().slice(0, 10),
-        "Comp Detail": JSON.stringify(sold.detail),
-      });
+      const r = await recompSingle(rec);
+      if (!r.ok || !r.fields) continue;
+      await atUpdate(T.singles, rec.id, r.fields);
+      if (r.linked) linked++;
       updated++;
     } catch {}
   }
-  return { updated, checked };
+  return { updated, checked, linked };
 }
 
 

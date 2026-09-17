@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { formatCardNo } from "@/lib/cardNo";
+import { isRawCondition, recompSingle } from "@/lib/comp";
 
 // Put a single onto a stream's show set. The comp snapshots in as the line's
 // market price and the buy price snapshots as cost, so the pay engine and all
@@ -13,7 +14,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const b = await req.json();
   if (!b.streamId || !isRecId(b.streamId)) return NextResponse.json({ error: "streamId required" }, { status: 400 });
 
-  const [single, stream] = await Promise.all([atGet(T.singles, params.id), atGet(T.streams, b.streamId)]);
+  let [single, stream] = await Promise.all([atGet(T.singles, params.id), atGet(T.streams, b.streamId)]);
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (stream.fields["Items Returned"]) {
     return NextResponse.json({ error: "items were already returned for this stream" }, { status: 400 });
@@ -21,6 +22,20 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if ((single.fields["Status"] || "In Stock") !== "In Stock") {
     return NextResponse.json({ error: "card is not in stock" }, { status: 400 });
   }
+  // Re-price at the moment it goes on the stream. This snapshot becomes the
+  // line's market price, which drives spot value and what the streamer gets
+  // paid, so it is the single worst number in the app to let go stale. One
+  // card's worth of latency is a fair trade for that, and a failure here falls
+  // through to the stored comp rather than blocking the card.
+  if (isRawCondition(String(single.fields["Condition"] || "Raw"))) {
+    try {
+      const r = await recompSingle(single, { live: true });
+      if (r.ok && r.fields) single = await atUpdate(T.singles, params.id, r.fields);
+    } catch {
+      // stored comp it is - a pricing hiccup must not stop a card going live
+    }
+  }
+
   if (single.fields["Comp"] === undefined || single.fields["Comp"] === null) {
     return NextResponse.json({ error: "set a comp on this card first - it drives spot value and pay" }, { status: 400 });
   }

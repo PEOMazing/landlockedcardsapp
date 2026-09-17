@@ -30,6 +30,14 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
         printing: f["Printing"] || "",
         image: f["Image URL"] || "",
         comp: f["Comp"] ?? null,
+        market: f["Market"] ?? null,
+        marketBasis: f["Market Basis"] || "",
+        lastSale: (() => {
+          try {
+            const d = f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null;
+            return Array.isArray(d) && d.length ? { date: String(d[0].date), price: Number(d[0].price) } : null;
+          } catch { return null; }
+        })(),
         status: f["Status"] || "In Stock",
         salePrice: f["Sale Price"] ?? null,
       }}

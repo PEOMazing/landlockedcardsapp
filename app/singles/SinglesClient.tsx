@@ -20,8 +20,9 @@ const CONDITION_LABELS: Record<string, string> = {
 type SingleT = {
   id: string; cardNo?: number | null; printedBucket?: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
   rarity: string; variant: string; condition: string;
-  comp: number | null; compSource: string; compDate: string; entryComp: number | null; printing: string;
+  comp: number | null; market?: number | null; marketBasis?: string; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
+  lastSale?: { date: string; price: number } | null;
   image: string; qty: number; status: string; salePrice: number | null; soldDate: string;
   notes: string; addedBy: string; dateAdded: string; buy?: number;
 };
@@ -34,6 +35,171 @@ type SearchCard = {
 function csvEscape(v: any): string {
   const x = v === null || v === undefined ? "" : String(v);
   return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x;
+}
+
+// ---------------- sorting ----------------
+
+type SortKey = "newest" | "cardNo" | "name" | "condition" | "bucket" | "location" | "buy" | "comp" | "qty" | "status" | "salePrice";
+type SortDir = "asc" | "desc";
+
+// Columns that read best A to Z on first click. Everything else opens
+// biggest-first, because nobody clicks Comp hoping to see the cheap cards.
+const TEXTUAL = new Set<SortKey>(["name", "condition", "bucket", "location", "status"]);
+
+// Condition is not alphabetical: NM before LP before MP is the order the
+// cards actually rank in, so sort on position in CONDITIONS instead.
+const CONDITION_RANK = new Map(CONDITIONS.map((c, i) => [c, i]));
+
+// The value a row sorts on. null means "no value", and the comparator sinks
+// those to the bottom in both directions rather than letting blanks lead.
+function sortValue(s: SingleT, key: SortKey): string | number | null {
+  switch (key) {
+    case "cardNo": return s.cardNo ?? null;
+    case "name": return s.name || null;
+    case "condition": {
+      const r = CONDITION_RANK.get(s.condition);
+      return r === undefined ? null : r;
+    }
+    case "bucket": return bucketFor(s.comp) || null;
+    case "location": return s.location || null;
+    case "buy": return s.buy ?? null;
+    case "comp": return s.comp ?? null;
+    case "qty": return s.qty ?? null;
+    case "status": return s.status || null;
+    case "salePrice": return s.salePrice ?? null;
+    default: return null;
+  }
+}
+
+// Market and the most recent real sale, shown under the comp.
+//
+// Market lags: it is an average over a window, so on a thin vintage card the
+// last real sale is often the truer number. Showing only one of them is how a
+// card ends up mispriced on a sticker.
+//
+// "TCG low" is the cheapest live listing for this card's exact printing and
+// condition, which is the number you land on after picking a condition on
+// their site. It is directly comparable to the comp, so the gap between them
+// is meaningful and gets flagged.
+//
+// One case is not comparable: the fallback where a card had no live listings
+// and the price came from the condition-blind mirror instead. marketBasis says
+// "any condition" there, and the number is shown greyed and unlabelled as a
+// low, because a price that quietly means some other condition is what put the
+// comps wrong in the first place.
+function PriceContext({
+  market, marketBasis, lastSale, comp, condition,
+}: {
+  market: number | null; marketBasis: string;
+  lastSale: { date: string; price: number } | null;
+  comp: number | null; condition: string;
+}) {
+  if (market === null && !lastSale) return null;
+  const blind = /any condition/i.test(marketBasis);
+  const comparable = market !== null && comp !== null && market > 0 && !blind;
+  const gap = comparable ? (comp! - market!) / market! : 0;
+  const under = comparable && gap <= -0.2; // comp well under the cheapest listing
+  return (
+    <div className="text-[10px] text-dim flex items-center gap-2 flex-wrap">
+      {market !== null && (
+        <span title={marketBasis || "lowest live TCGplayer listing"} className={under ? "text-amber-400" : ""}>
+          {blind ? "mkt" : `TCG low ${condition}`} <span className="num">{$(market)}</span>
+          {blind && <span className="opacity-60"> any cond.</span>}
+          {under && <span className="ml-1">(comp {Math.round(gap * 100)}%)</span>}
+        </span>
+      )}
+      {lastSale && (
+        <span title={`Most recent ${condition} sale, ${lastSale.date}`}>
+          last {condition} sale <span className="num">{$(lastSale.price)}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+type Health = {
+  canary: { ok: boolean; detail: string };
+  coverage: { total: number; solds: number; listing: number; estimate: number; manual: number; none: number; conditionSpecific: number; stale: number; oldestHours: number | null };
+  healthy: boolean;
+  problems: string[];
+};
+
+// A standing readout of where the prices came from.
+//
+// The failure this exists to catch is not a crash, it is a quiet downgrade:
+// the listings endpoint stops answering, every comp falls back to a blended
+// number, and nothing looks broken. Coverage makes that visible as a number
+// that moves. It loads on its own so nobody has to think to check it.
+function PricingHealth({ isManager }: { isManager: boolean }) {
+  const [h, setH] = useState<Health | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function check(force = false) {
+    setChecking(true);
+    try {
+      const r = await fetch(`/api/singles/pricing-health${force ? "?force=1" : ""}`);
+      if (r.ok) setH(await r.json());
+    } catch {
+      // a health widget that breaks the page it is reporting on would be a joke
+    } finally {
+      setChecking(false);
+    }
+  }
+  useEffect(() => { if (isManager) check(false); }, [isManager]);
+
+  if (!isManager || !h) return null;
+  const c = h.coverage;
+  const priced = c.total - c.none;
+  const pct = priced > 0 ? Math.round((c.conditionSpecific / priced) * 100) : 0;
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-xs flex items-start gap-3 flex-wrap ${
+      h.healthy ? "border-edge text-dim" : "border-givvy/60 bg-givvy/10 text-body"
+    }`}>
+      <div className="flex-1 min-w-[16rem]">
+        <span className={h.canary.ok ? "text-win font-semibold" : "text-bad font-semibold"}>
+          {h.canary.ok ? "Condition pricing live" : "Condition pricing DOWN"}
+        </span>
+        <span className="text-dim"> - {pct}% of priced cards use data for their own condition </span>
+        {c.oldestHours !== null && (
+          <span className="text-dim opacity-80">- every card repriced within {c.oldestHours}h </span>
+        )}
+        <span className="text-dim opacity-80">
+          ({c.solds} from sales, {c.listing} from listings, {c.estimate} estimated, {c.manual} hand-set
+          {c.none > 0 ? `, ${c.none} unpriced` : ""})
+        </span>
+        {h.problems.map((p, i) => (
+          <div key={i} className="text-givvy mt-1">{p}</div>
+        ))}
+      </div>
+      <button className="btn-ghost !py-1 text-[11px] shrink-0" onClick={() => check(true)} disabled={checking}>
+        {checking ? "Checking..." : "Re-check"}
+      </button>
+    </div>
+  );
+}
+
+function Th({ label, k, sortKey, sortDir, onSort }: { label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void }) {
+  const active = sortKey === k;
+  return (
+    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={`inline-flex items-center gap-1 whitespace-nowrap transition-colors hover:text-body ${active ? "text-foil" : ""}`}
+      >
+        {label}
+        {active ? (
+          <span className="text-[8px] leading-none">{sortDir === "asc" ? "▲" : "▼"}</span>
+        ) : (
+          <span className="text-[8px] leading-none opacity-30 flex flex-col">
+            <span>{"▲"}</span>
+            <span>{"▼"}</span>
+          </span>
+        )}
+      </button>
+    </th>
+  );
 }
 
 export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { isAdmin: boolean; isManager: boolean; mode?: "raw" | "graded" }) {
@@ -212,6 +378,83 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     });
   }
 
+  // Hand the chosen cards to the label page. sessionStorage rather than a query
+  // string because a hundred record ids will not fit in a URL, and the list is
+  // throwaway: it belongs to this tab and this trip to the printer.
+  function printLabels(ids: string[]) {
+    if (ids.length === 0) { toast("Nothing selected to print", "bad"); return; }
+    try {
+      sessionStorage.setItem("llc-label-ids", JSON.stringify(ids));
+    } catch {
+      toast("Could not hand the list to the label page", "bad");
+      return;
+    }
+    // Same tab on purpose. A new tab only inherits sessionStorage by spec, and
+    // anything that strips the opener relationship would land the label page
+    // with an empty list and no clue why. The label page has a Back link.
+    window.location.href = "/singles/labels";
+  }
+
+  // Re-pull prices for a batch of cards.
+  //
+  // Sticker-safe by construction: this only writes price fields. The QR on a
+  // printed label encodes the card's record id and the big number is a fixed
+  // Airtable autoNumber, so neither can move. What a refresh CAN change is the
+  // price bucket letter, which is exactly what the Printed Bucket stamp and
+  // the Needs re-sticker filter exist to catch.
+  async function refreshComps(ids: string[]) {
+    if (ids.length === 0) { toast("Nothing to refresh", "bad"); return; }
+    setBulkBusy(true); setErr("");
+    let done = 0, linkedTotal = 0, skippedTotal = 0, estTotal = 0;
+    const reasons: { id: string; reason: string }[] = [];
+    const review: { name: string; condition: string; before: number | null; after: number }[] = [];
+    try {
+      // The route caps each call so a long batch cannot be killed mid-write.
+      // Loop until it reports nothing remaining.
+      let queue = [...ids];
+      while (queue.length > 0) {
+        toast(`Refreshing prices... ${done}/${ids.length}`);
+        const r = await fetch("/api/singles/comps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: queue }),
+        });
+        const d = await r.json();
+        if (!r.ok) { setErr(d.error || "Price refresh failed"); break; }
+        done += d.updated;
+        linkedTotal += d.linked || 0;
+        skippedTotal += d.skipped || 0;
+        estTotal += d.estimated || 0;
+        if (Array.isArray(d.reasons)) reasons.push(...d.reasons);
+        if (Array.isArray(d.review)) review.push(...d.review);
+        if (!d.remaining) break;
+        queue = queue.slice(queue.length - d.remaining);
+      }
+      const bits = [`${done} ${done === 1 ? "price" : "prices"} updated`];
+      if (linkedTotal) bits.push(`${linkedTotal} newly linked to TCGplayer`);
+      if (estTotal) bits.push(`${estTotal} estimated (no recent sales)`);
+      if (skippedTotal) bits.push(`${skippedTotal} skipped`);
+      toast(bits.join(" - "), skippedTotal && !done ? "bad" : "ok");
+
+      // Named, not counted. A card whose price just doubled off a guess is
+      // something to go look at, and a number in a toast does not get looked at.
+      const notes: string[] = [];
+      if (review.length) {
+        notes.push(
+          `Check these ${review.length} by hand - the new price is an estimate and moved a long way: ` +
+          review.map((x) => `${x.name} (${x.condition}) ${x.before !== null ? $(x.before) : "no comp"} to ${$(x.after)}`).join("; ")
+        );
+      }
+      if (reasons.length) {
+        notes.push("Skipped: " + reasons.map((x) => x.reason).filter((v, i, a) => a.indexOf(v) === i).join("; "));
+      }
+      if (notes.length) setErr(notes.join("  |  "));
+      await load();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function deleteSelected() {
     const picked = shown.filter((s) => selSet.has(s.id));
     if (picked.length === 0) return;
@@ -240,14 +483,26 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   }
 
   const [setFilter, setSetFilter] = useState("All");
-  const [sortBy, setSortBy] = useState("newest");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Clicking the active column flips it; a new column opens in the direction
+  // that reads best - A to Z for text, biggest first for money and quantity.
+  function sortByCol(k: SortKey) {
+    if (k === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(k);
+      setSortDir(TEXTUAL.has(k) ? "asc" : "desc");
+    }
+  }
 
   // a changed view means a changed list - drop the selection so nothing gets
   // deleted that the user can no longer see
   useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker]);
   // re-sorting keeps the selection but retires the shift-click anchor, since
   // the row that index pointed at just moved
-  useEffect(() => { lastClicked.current = null; }, [sortBy]);
+  useEffect(() => { lastClicked.current = null; }, [sortKey, sortDir]);
 
   const setNames = useMemo(
     () => Array.from(new Set(singles.map((s) => s.setName).filter(Boolean))).sort(),
@@ -279,12 +534,26 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
       }
     }
     list = [...list];
-    if (sortBy === "name") list.sort((a, b) => a.name.localeCompare(b.name));
-    else if (sortBy === "price-desc") list.sort((a, b) => (b.comp || 0) - (a.comp || 0));
-    else if (sortBy === "price-asc") list.sort((a, b) => (a.comp || 0) - (b.comp || 0));
+    if (sortKey !== "newest") {
+      const dir = sortDir === "asc" ? 1 : -1;
+      list.sort((a, b) => {
+        const av = sortValue(a, sortKey);
+        const bv = sortValue(b, sortKey);
+        // Nulls sink to the bottom whichever way you sort, so a card with no
+        // comp never leads a cheapest-first list.
+        if (av === null && bv === null) return a.name.localeCompare(b.name);
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        const c = typeof av === "string" && typeof bv === "string" ? av.localeCompare(bv) : Number(av) - Number(bv);
+        return c !== 0 ? c * dir : a.name.localeCompare(b.name);
+      });
+    } else if (sortDir === "asc") {
+      // API order is newest first, so oldest first is just the reverse
+      list.reverse();
+    }
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortBy, tableQ, mode, needsResticker]);
+  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker]);
 
   const restickerCount = useMemo(
     () => singles.filter((s) => bucketDrifted(s.comp, s.printedBucket || "")).length,
@@ -566,11 +835,28 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               <option value="All">All sets</option>
               {setNames.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
-            <select className="input !w-40" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-              <option value="newest">Newest first</option>
-              <option value="name">Name A-Z</option>
-              <option value="price-desc">Price high-low</option>
-              <option value="price-asc">Price low-high</option>
+            <select
+              className="input !w-44"
+              value={`${sortKey}:${sortDir}`}
+              onChange={(e) => {
+                const [k, d] = e.target.value.split(":");
+                setSortKey(k as SortKey);
+                setSortDir(d as SortDir);
+              }}
+            >
+              <option value="newest:desc">Newest first</option>
+              <option value="newest:asc">Oldest first</option>
+              <option value="cardNo:asc">Card no low-high</option>
+              <option value="cardNo:desc">Card no high-low</option>
+              <option value="name:asc">Name A-Z</option>
+              <option value="name:desc">Name Z-A</option>
+              <option value="condition:asc">Condition NM first</option>
+              <option value="bucket:asc">Price box A-H</option>
+              <option value="location:asc">Location A-Z</option>
+              <option value="comp:desc">Comp high-low</option>
+              <option value="comp:asc">Comp low-high</option>
+              <option value="qty:desc">Qty high-low</option>
+              <option value="status:asc">Status A-Z</option>
             </select>
             {isManager && (
               <button className="btn-ghost !py-1.5 text-xs" onClick={assignLocations} title="Number every card currently shown, in the order shown">Assign locations</button>
@@ -588,10 +874,30 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 Needs re-sticker <span className="num ml-1 opacity-70">{restickerCount}</span>
               </button>
             )}
+            {isManager && shown.length > 0 && (
+              <button
+                className="btn-ghost !py-1.5 text-xs"
+                onClick={() => printLabels(shown.map((s) => s.id))}
+                title="Print a sticker for every card currently shown, in the order shown"
+              >
+                Print labels ({shown.length})
+              </button>
+            )}
+            {isManager && shown.length > 0 && (
+              <button
+                className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
+                disabled={bulkBusy}
+                onClick={() => refreshComps(shown.map((s) => s.id))}
+                title="Re-pull comps and market prices for every card shown. Card numbers and printed QR codes are not affected."
+              >
+                {bulkBusy ? "Refreshing..." : `Refresh prices (${shown.length})`}
+              </button>
+            )}
             <button className="btn-ghost !py-1.5 text-xs" onClick={exportCsv}>Export CSV</button>
             <CollectrImport onDone={load} />
           </div>
         </div>
+        <PricingHealth isManager={isManager} />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="rounded-lg border border-edge p-3">
             <div className="label">Cards shown</div>
@@ -627,6 +933,21 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             )}
             <div className="ml-auto flex items-center gap-2">
               <button className="btn-ghost !py-1.5 text-xs" onClick={() => { setSelected([]); lastClicked.current = null; }}>Clear</button>
+              <button
+                className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
+                disabled={bulkBusy}
+                onClick={() => refreshComps(Array.from(selSet))}
+                title="Re-pull comps and market prices for the selected cards"
+              >
+                {bulkBusy ? "Refreshing..." : `Refresh ${selStats.rows} prices`}
+              </button>
+              <button
+                className="btn-foil !py-1.5 text-xs"
+                onClick={() => printLabels(Array.from(selSet))}
+                title="Print a sticker for each selected card"
+              >
+                Print {selStats.rows} labels
+              </button>
               <button
                 className="rounded-lg border border-bad/60 text-bad hover:bg-bad/10 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
                 disabled={bulkBusy}
@@ -764,11 +1085,16 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     />
                   </th>
                 )}
-                <th className="whitespace-nowrap">No</th>
-                <th>Card</th><th>Condition</th><th>Qty</th>
-                <th className="whitespace-nowrap">Loc</th>
-                {isAdmin && <th>Buy</th>}
-                <th>Comp</th><th>Status</th><th>Sale</th><th></th>
+                <Th label="No" k="cardNo" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <Th label="Card" k="name" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <Th label="Condition" k="condition" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <Th label="Qty" k="qty" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <Th label="Loc" k="location" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                {isAdmin && <Th label="Buy" k="buy" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />}
+                <Th label="Comp" k="comp" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <Th label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <Th label="Sale" k="salePrice" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -785,8 +1111,25 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                       />
                     </td>
                   )}
-                  <td className="num text-xs font-bold text-foil whitespace-nowrap" title="Card number - printed on the sticker and shown on the stream line">
-                    {formatCardNo(s.cardNo)}
+                  <td className="whitespace-nowrap align-top">
+                    <div className="num text-xs font-bold text-foil" title="Card number - printed on the sticker and shown on the stream line">
+                      {formatCardNo(s.cardNo)}
+                    </div>
+                    {bucketFor(s.comp) ? (
+                      <div
+                        className={`text-[10px] font-bold leading-tight ${
+                          bucketDrifted(s.comp, s.printedBucket || "") ? "text-givvy" : "text-dim"
+                        }`}
+                        title={
+                          bucketDrifted(s.comp, s.printedBucket || "")
+                            ? `Sticker says ${s.printedBucket}, comp now puts it in ${bucketFor(s.comp)} (${bucketRange(bucketFor(s.comp))}). Move the card and reprint.`
+                            : `Box ${bucketFor(s.comp)} (${bucketRange(bucketFor(s.comp))})`
+                        }
+                      >
+                        {bucketFor(s.comp)}
+                        {bucketDrifted(s.comp, s.printedBucket || "") ? ` was ${s.printedBucket}` : ""}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="!font-medium">
                     <span className="inline-flex items-center gap-2">
@@ -833,6 +1176,13 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                         </span>
                       )}
                     </div>
+                    <PriceContext
+                      market={s.market ?? null}
+                      marketBasis={s.marketBasis || ""}
+                      lastSale={s.lastSale ?? null}
+                      comp={s.comp}
+                      condition={s.condition}
+                    />
                     {s.compDate && <div className="text-dim text-[10px]">{s.compSource} {s.compDate}</div>}
 
                   </td>
