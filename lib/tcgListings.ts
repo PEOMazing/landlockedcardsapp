@@ -34,7 +34,19 @@ export const CONDITION_NAMES: Record<string, string> = {
   MP: "Moderately Played", HP: "Heavily Played", DM: "Damaged",
 };
 
-export type Floor = { low: number; count: number };
+export type Floor = {
+  low: number;
+  count: number;
+  /** the cheapest few asks, kept so a screen can show the spread.
+   *  A graded slab filed against the raw card is invisible to this feed - no
+   *  grade field, no listing title - and price alone cannot separate one from
+   *  a genuine bargain. Measured across the whole collection, dropping a
+   *  suspiciously cheap listing moved 14 of 98 cards, some by 10x, because on
+   *  thin vintage cards the cheapest ask is often the only real one. So the
+   *  spread is shown rather than filtered: a human spots $70 sitting under
+   *  four asks at $95-$100 instantly. */
+  prices: number[];
+};
 // keyed "<Printing>|<Condition>", e.g. "Reverse Holofoil|Near Mint"
 export type FloorMap = Map<string, Floor>;
 
@@ -54,9 +66,11 @@ export function bucketListings(rows: any[]): FloorMap {
     if (!printing || !condition) continue;
     const k = floorKey(printing, condition);
     const cur = data.get(k);
-    if (!cur) data.set(k, { low: price, count: 1 });
-    else data.set(k, { low: Math.min(cur.low, price), count: cur.count + 1 });
+    if (!cur) data.set(k, { low: price, count: 1, prices: [price] });
+    else data.set(k, { low: Math.min(cur.low, price), count: cur.count + 1, prices: [...cur.prices, price] });
   }
+  // cheapest first, capped: past the first handful it is noise
+  for (const [k, v] of data) data.set(k, { ...v, prices: v.prices.sort((a, b) => a - b).slice(0, 6) });
   return data;
 }
 

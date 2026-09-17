@@ -59,6 +59,12 @@ export function soldsCompSource(cond: string, count: number, range = ""): string
   return `TCGplayer ${SOLDS_MARKER} (${cond}, median of ${count} in last 30d${range ? `, ${range}` : ""})`;
 }
 
+// Stale but sales-derived, so it keeps the solds marker: what changed is
+// which sale answered, not where the number came from.
+export function lastSaleCompSource(cond: string, date: string): string {
+  return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date}, none in 30d)`;
+}
+
 export function listingCompSource(cond: string, printing: string, count: number, note = ""): string {
   return `TCGplayer ${LISTING_MARKER} ${cond} listing (${printing}, ${count} live${note ? `, ${note}` : ""})`;
 }
@@ -168,10 +174,38 @@ export function pickSoldPrice(
   // has to stay on the sales side of this line.
   const implausible = !!(usableFloor && fresh > 0 && fresh < usableFloor.low * IMPLAUSIBLE_FRACTION);
 
-  // No real sale inside the window, so there is nothing to average. What the
-  // card is listed at becomes the best available answer.
-  if (usableFloor && (base.staleSales || implausible)) {
+  // Recent sales exist but are manufactured: the asks are the only honest
+  // number left.
+  if (usableFloor && implausible && !base.staleSales) {
     return { ...base, price: usableFloor.low, usedFloor: true };
+  }
+
+  // Nothing sold inside the window. Both remaining signals are weak, so take
+  // whichever is higher: the last real sale, or the cheapest live ask.
+  //
+  // Higher rather than either one alone, because each fails in the opposite
+  // direction and we have hit both:
+  //
+  //   Milotic 70/147 - last sale $49 back in July, three live asks from $88.
+  //   The sale is stale and the asks are the truth.
+  //
+  //   Blissey (Prime) - last sale $94.98, and a $70 "Near Mint" ask that is
+  //   really a CGC 7.5 slab listed against the raw card. Four genuine NM asks
+  //   sit at $94.98 to $100. The listing is junk and the sale is the truth.
+  //
+  // The feed carries no grade field and no listing title, so a graded card
+  // filed under the raw product is not detectable directly. Taking the higher
+  // of the two neutralises it without having to.
+  if (base.staleSales) {
+    const lastPrice = latest ? latest.price : 0;
+    const askPrice = usableFloor ? usableFloor.low : 0;
+    if (askPrice > 0 || lastPrice > 0) {
+      return {
+        ...base,
+        price: round2(Math.max(lastPrice, askPrice)),
+        usedFloor: askPrice >= lastPrice,
+      };
+    }
   }
   return base;
 }
@@ -253,6 +287,8 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
   // ends up being, because it is the figure to sanity-check a price against.
   if (floor) {
     fields["Market"] = floor.low;
+    // the spread, for the scan page to show
+    fields["Listing Detail"] = JSON.stringify(floor.prices || []);
     fields["Market Basis"] = `${printing} ${cond}, low of ${floor.count} listing${floor.count === 1 ? "" : "s"}`;
   }
 
@@ -265,10 +301,12 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
       fields["Comp Source"] = listingCompSource(
         cond, printing, floor!.count,
         pick.staleSales
-          ? `no sale since ${pick.latestDate || "the window opened"}`
+          ? `above the last sale, none in 30d`
           : `recent sales only reached ${money(pick.priceFromSales)}`
       );
       floorLift = pick.priceFromSales > 0 ? pick.price / pick.priceFromSales : 0;
+    } else if (pick.staleSales) {
+      fields["Comp Source"] = lastSaleCompSource(cond, pick.latestDate);
     } else {
       fields["Comp Source"] = soldsCompSource(cond, pick.freshCount, pick.freshRange);
     }
