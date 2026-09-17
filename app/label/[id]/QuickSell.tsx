@@ -7,7 +7,7 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 export default function QuickSell({ id, isManager, card }: {
   id: string;
   isManager: boolean;
-  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; lastSale?: { date: string; price: number } | null; status: string; salePrice: number | null; location?: string };
+  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; lastSale?: { date: string; price: number } | null; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
 }) {
   const [price, setPrice] = useState(card.comp !== null ? String(card.comp) : "");
   const [busy, setBusy] = useState(false);
@@ -47,6 +47,14 @@ export default function QuickSell({ id, isManager, card }: {
     return () => { cancelled = true; };
   }, [id, isManager, sold, card.comp]);
 
+  // TCGplayer's own page for this card, filtered to the condition in hand, so
+  // the number on screen can be checked against the source in one tap rather
+  // than retyping the card name into a phone at a table.
+  const CONDITION_FULL: Record<string, string> = {
+    NM: "Near Mint", Raw: "Near Mint", LP: "Lightly Played",
+    MP: "Moderately Played", HP: "Heavily Played", DM: "Damaged",
+  };
+
   const shown = {
     comp: live ? live.comp : card.comp,
     market: live ? live.market : (card.market ?? null),
@@ -67,6 +75,13 @@ export default function QuickSell({ id, isManager, card }: {
     if (r.ok) { setSold(true); toast(`Sold for ${$(v)}`); }
     else toast((await r.json()).error || "Could not mark sold", "bad");
   }
+
+  const blindMarket = /any condition/i.test(shown.marketBasis);
+  const tcgUrl = card.tcgProductId
+    ? `https://www.tcgplayer.com/product/${card.tcgProductId}?Language=English${
+        CONDITION_FULL[card.condition] ? `&Condition=${encodeURIComponent(CONDITION_FULL[card.condition])}` : ""
+      }`
+    : null;
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6 gap-4">
@@ -91,22 +106,27 @@ export default function QuickSell({ id, isManager, card }: {
               {live && !pricing && <span className="ml-1.5 text-win normal-case">live</span>}
             </div>
             <div className="num text-3xl font-bold holo-text inline-block">{$(shown.comp)}</div>
-            {/* This is the screen someone reads while deciding what to take
-                for a card, so both reference numbers are spelled out with the
-                condition they belong to. An unlabelled price here is worse
-                than no price: it gets trusted. */}
-            {(shown.market != null || shown.lastSale) && (
-              <div className="text-dim text-xs mt-1 flex items-center justify-center gap-3 flex-wrap">
-                {shown.market != null && (
-                  <span title={shown.marketBasis || "lowest live TCGplayer listing"}>
-                    {/any condition/i.test(shown.marketBasis)
-                      ? <>market <span className="num">{$(shown.market)}</span> <span className="opacity-60">any cond.</span></>
-                      : <>TCG low {card.condition} <span className="num">{$(shown.market)}</span></>}
-                  </span>
-                )}
-                {shown.lastSale && (
-                  <span>last {card.condition} sale <span className="num">{$(shown.lastSale.price)}</span> <span className="opacity-70">{shown.lastSale.date}</span></span>
-                )}
+            {/* The two reference numbers, side by side and big enough to read
+                at arm's length. This is a phone screen being glanced at across
+                a table mid-break, so the previous single line of 10px grey was
+                technically correct and practically invisible.
+
+                Both carry the condition they belong to. An unlabelled price
+                here is worse than no price, because it gets trusted. */}
+            {isManager && (shown.market != null || shown.lastSale) && (
+              <div className="mt-3 grid grid-cols-2 gap-2 text-left">
+                <Ref
+                  label={blindMarket ? "Market, any cond." : `Lowest ${card.condition} listed`}
+                  value={shown.market}
+                  sub={shown.marketBasis.replace(/^.*?,\s*/, "") || undefined}
+                  href={tcgUrl}
+                  warn={blindMarket}
+                />
+                <Ref
+                  label={`Last ${card.condition} sale`}
+                  value={shown.lastSale ? shown.lastSale.price : null}
+                  sub={shown.lastSale ? shown.lastSale.date : "none in range"}
+                />
               </div>
             )}
           </div>
@@ -133,4 +153,23 @@ export default function QuickSell({ id, isManager, card }: {
       </div>
     </main>
   );
+}
+
+// One reference number, labelled with what it actually is. Tapping through to
+// TCGplayer matters more here than anywhere else in the app: this is the one
+// screen where someone is about to name a price out loud.
+function Ref({ label, value, sub, href, warn }: {
+  label: string; value: number | null; sub?: string; href?: string | null; warn?: boolean;
+}) {
+  const body = (
+    <>
+      <div className={`label !text-[10px] ${warn ? "text-givvy" : ""}`}>{label}</div>
+      <div className="num text-lg font-bold">{value != null ? $(value) : "-"}</div>
+      {sub && <div className="text-dim text-[10px] leading-tight">{sub}</div>}
+    </>
+  );
+  const cls = "rounded-lg border border-edge px-2.5 py-2 block";
+  return href && value != null
+    ? <a href={href} target="_blank" rel="noreferrer" className={`${cls} hover:border-foil/60 transition-colors`}>{body}</a>
+    : <div className={cls}>{body}</div>;
 }

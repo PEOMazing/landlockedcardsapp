@@ -32,6 +32,11 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
         comp: f["Comp"] ?? null,
         market: f["Market"] ?? null,
         marketBasis: f["Market Basis"] || "",
+        // the productId out of the stored card id, for the tap-through link
+        tcgProductId: (() => {
+          const m = String(f["Card ID"] || "").match(/^tcg:(\d+):/);
+          return m ? parseInt(m[1]) : null;
+        })(),
         lastSale: (() => {
           try {
             const d = f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null;
