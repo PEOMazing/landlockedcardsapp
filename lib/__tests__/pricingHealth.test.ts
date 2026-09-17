@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { basisOf } from "../pricingHealth";
-import { fallbackCompSource, lastSaleCompSource, listingCompSource, soldsCompSource } from "../comp";
+import { fallbackCompSource, listingCompSource, soldsCompSource } from "../comp";
 
 const rec = (fields: Record<string, any>) => ({ id: "rec1", fields } as any);
 
@@ -65,15 +65,8 @@ describe("basisOf covers every source string comp.ts can produce", () => {
     assert.equal(basisOf(rec({ Comp: 245, "Comp Source": soldsCompSource("LP", 3) })), "solds");
   });
 
-  it("classifies a last-sale comp as sales-based, not manual", () => {
-    // The rule Gabe asked for: median lags, newest sale wins. It is still a
-    // sales number, so it must not drop out of the condition-specific count.
-    const s = lastSaleCompSource("LP", "2026-09-02", "62%", 3);
-    assert.equal(basisOf(rec({ Comp: 400, "Comp Source": s })), "solds");
-  });
-
   it("classifies a floor-capped comp as listing-based", () => {
-    const s = listingCompSource("LP", "Holofoil", 3, "capped from a last sale 62% over median");
+    const s = listingCompSource("LP", "Holofoil", 3, "no sale since 2026-07-17");
     assert.equal(basisOf(rec({ Comp: 250, "Comp Source": s })), "listing");
   });
 
@@ -84,9 +77,8 @@ describe("basisOf covers every source string comp.ts can produce", () => {
   it("never lets a builder output fall through to manual", () => {
     const all = [
       soldsCompSource("NM", 5),
-      lastSaleCompSource("NM", "2026-09-02", "30%", 5),
       listingCompSource("NM", "Reverse Holofoil", 2),
-      listingCompSource("NM", "Reverse Holofoil", 2, "capped from a last sale 40% over median"),
+      listingCompSource("NM", "Reverse Holofoil", 2, "no sale since 2026-07-17"),
       fallbackCompSource("Holofoil", 0.9, "LP"),
     ];
     for (const s of all) {
