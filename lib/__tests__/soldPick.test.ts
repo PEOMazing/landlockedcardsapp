@@ -12,15 +12,23 @@ const pick = (detail: { date: string; price: number }[], floor: any = null, medi
 // The rule: real sales inside 30 days, no outliers, average them. No sale in
 // 30 days, and the lowest listing is the better answer.
 describe("a card that has sold recently", () => {
-  it("averages the sales in the window", () => {
-    // Machamp (Prime): five sales inside a month, no outlier.
+  it("takes the middle sale, not the average, when the sales split", () => {
+    // Machamp (Prime): $60.88, $74.99, $115, $118, $118. Three tight at the
+    // top, two stragglers. The mean is $97.37 - a price at which none of the
+    // five actually sold. The median sits in the cluster.
     const p = pick([
-      s("2026-09-10", 74.99), s("2026-09-06", 115), s("2026-09-04", 60.88),
-      s("2026-08-22", 118), s("2026-08-22", 118),
+      s("2026-09-10", 74.99), s("2026-09-06", 115), s("2026-09-03", 60.88),
+      s("2026-08-22", 118), s("2026-08-21", 118),
     ], f(448.59, 4));
-    assert.equal(p.price, 97.37);
+    assert.equal(p.price, 115);
     assert.equal(p.freshCount, 5);
+    assert.equal(p.freshRange, "$60.88-$118.00");
     assert.equal(p.usedFloor, false);
+  });
+
+  it("gives the same answer as an average when the sales agree", () => {
+    const p = pick([s("2026-09-10", 114), s("2026-09-06", 115), s("2026-09-03", 116)], null);
+    assert.equal(p.price, 115);
   });
 
   it("does not let four people's asking price outrank five real sales", () => {
@@ -42,7 +50,7 @@ describe("a card that has sold recently", () => {
     const inside = pick([s("2026-08-18", 50), s("2026-09-01", 100)], null);
     const outside = pick([s("2026-08-17", 50), s("2026-09-01", 100)], null);
     assert.equal(inside.freshCount, 2);
-    assert.equal(inside.price, 75);
+    assert.equal(inside.price, 75); // two sales: the median is their midpoint
     assert.equal(outside.freshCount, 1);
     assert.equal(outside.price, 100);
   });
@@ -76,7 +84,7 @@ describe("a card that has not sold in 30 days", () => {
 describe("outliers and manipulation", () => {
   it("throws out a wash trade before averaging", () => {
     const p = pick([s("2026-09-10", 1), s("2026-09-08", 200), s("2026-09-01", 210)], null);
-    assert.equal(p.price, 205);
+    assert.equal(p.price, 205); // the $1 is dropped, leaving 200 and 210
   });
 
   it("survives a wash trade that would otherwise halve the average", () => {
@@ -87,6 +95,16 @@ describe("outliers and manipulation", () => {
   it("does not mistake an ordinary cheap sale for a wash trade", () => {
     const p = pick([s("2026-09-10", 70), s("2026-09-08", 100)], null);
     assert.equal(p.price, 85);
+  });
+
+  it("is not dragged into the gap by a split set", () => {
+    // Two clusters and nothing between them: the answer has to be one of the
+    // clusters, not the empty middle.
+    const p = pick([
+      s("2026-09-10", 60), s("2026-09-09", 62),
+      s("2026-09-08", 200), s("2026-09-07", 205), s("2026-09-06", 210),
+    ], null);
+    assert.equal(p.price, 200);
   });
 
   it("uses the listings when every recent sale has been pushed down", () => {
