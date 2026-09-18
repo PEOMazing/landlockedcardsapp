@@ -103,11 +103,19 @@ export default function LabelsClient() {
            print time for the same reason - 24px of leftover screen padding on
            <main> is enough to push a 0.75in label past a 0.75in page and turn
            one label per page into one long strip. */
-        .page { display: block; width: 2in; height: 0.75in; overflow: hidden; break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; }
+        /* The content hugs the top of the page rather than centring in it.
+           A thermal driver hands the browser a page that is the label plus the
+           gap between labels, so a box told to centre itself centres in the
+           taller page and lands low on the sticker, with the spare height
+           printing above it instead of in the gap where it belongs. Sitting at
+           the top means any extra height the driver reports falls off the
+           bottom, into the gap, and the print starts at the label's edge
+           whatever page height it was handed. */
+        .page { display: block; width: 2in; max-height: 0.75in; overflow: hidden; break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; }
         .page:last-child { break-after: auto; page-break-after: auto; }
         .sheet { display: block; }
         .lbl {
-          width: 2in; height: 0.75in; padding: 0.03in 0.05in; box-sizing: border-box;
+          width: 2in; padding: 0.02in 0.05in; box-sizing: border-box;
           display: flex; gap: 0.05in; align-items: center; overflow: hidden;
         }
         /* 0.6in at 203dpi is ~122 dots, still 3+ dots per QR module, which scans */
@@ -122,10 +130,13 @@ export default function LabelsClient() {
           .no-print { display: none !important; }
           .lbl { color: #000; }
         }
+        /* The preview is the sticker at its real size with the content sitting
+           where the printer will put it, so what is on screen is what comes
+           off the roll. */
         @media screen {
           .sheet { display: flex; flex-wrap: wrap; gap: 0.12in; justify-content: center; }
-          .page { width: auto; height: auto; overflow: visible; }
-          .lbl { background: #fff; color: #000; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+          .page { height: 0.75in; background: #fff; color: #000; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+          .lbl { color: #000; }
         }
       ` : `
         /* Zero page margin on purpose. A browser draws the URL and the page
