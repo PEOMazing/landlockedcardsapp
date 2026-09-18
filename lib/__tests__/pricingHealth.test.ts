@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import { basisOf } from "../pricingHealth";
-import { fallbackCompSource, listingCompSource, soldsCompSource } from "../comp";
+import { fallbackCompSource, lastSaleCompSource, listingCompSource, risingSaleCompSource, soldsCompSource } from "../comp";
 
 const rec = (fields: Record<string, any>) => ({ id: "rec1", fields } as any);
 
@@ -80,6 +80,8 @@ describe("basisOf covers every source string comp.ts can produce", () => {
       listingCompSource("NM", "Reverse Holofoil", 2),
       listingCompSource("NM", "Reverse Holofoil", 2, "no sale since 2026-07-17"),
       fallbackCompSource("Holofoil", 0.9, "LP"),
+      lastSaleCompSource("NM", "2026-08-16"),
+      risingSaleCompSource("NM", "2026-09-13", 120, 3),
     ];
     for (const s of all) {
       assert.notEqual(basisOf(rec({ Comp: 1, "Comp Source": s })), "manual", s);
