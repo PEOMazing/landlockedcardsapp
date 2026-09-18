@@ -21,9 +21,15 @@ const MODE_KEY = "llc-label-mode";
 // throwaway strip die-cut below it, and the SP310 starts printing lower than
 // the page origin, far enough that the bottom of the QR was landing on the
 // strip and peeling away with it. The offset is a property of the printer, so
-// it is a dial rather than a constant: nudge the content up until it clears
-// the die-cut line, and size the QR to whatever is left.
-type Cal = { nudge: number; qr: number };
+// it is a dial rather than a constant: lift the content until it sits where
+// you want on the sticker, and size the QR to whatever is left.
+//
+// `lift` is how far UP the print moves, in inches, because that is the way a
+// person thinks about it standing at a printer. The first version of this
+// carried the raw CSS offset instead, which meant a control labelled "Nudge
+// up" that you pressed minus to raise. Nobody should have to hold that in
+// their head while holding a sticker.
+type Cal = { lift: number; qr: number };
 const CAL_KEY = "llc-label-cal";
 
 // The printable label is 0.75in tall and the throwaway strip is die-cut
@@ -36,12 +42,17 @@ const SIDE_PAD_IN = 0.05;
 const TOP_PAD_IN = 0.02;
 const MAX_QR_IN = BAND_IN - TOP_PAD_IN * 2; // 0.6in, the tallest the band holds
 
-const DEFAULT_CAL: Cal = { nudge: 0, qr: 0.55 };
-const CAL_LIMITS = { nudge: [-0.45, 0.2], qr: [0.35, MAX_QR_IN] } as const;
+// Measured off a real SP310 print: about 0.19in of dead paper above the QR
+// that the page never asked for. Lifting is the safe direction - it moves the
+// whole box away from the die-cut line, so the bottom clearance only grows.
+// The risk is all at the top, which is why the default is short of what was
+// measured and the dial goes further if you want it.
+const DEFAULT_CAL: Cal = { lift: 0.12, qr: 0.55 };
+const CAL_LIMITS = { lift: [-0.1, 0.45], qr: [0.35, MAX_QR_IN] } as const;
 const clamp = (n: number, lo: number, hi: number) =>
   Math.round(Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : 0)) * 100) / 100;
 const clampCal = (c: Cal): Cal => ({
-  nudge: clamp(c.nudge, CAL_LIMITS.nudge[0], CAL_LIMITS.nudge[1]),
+  lift: clamp(c.lift, CAL_LIMITS.lift[0], CAL_LIMITS.lift[1]),
   qr: clamp(c.qr, CAL_LIMITS.qr[0], CAL_LIMITS.qr[1]),
 });
 
@@ -65,7 +76,12 @@ export default function LabelsClient() {
       const saved = localStorage.getItem(MODE_KEY);
       if (saved === "roll" || saved === "sheet") setMode(saved);
       const c = JSON.parse(localStorage.getItem(CAL_KEY) || "null");
-      if (c && typeof c.nudge === "number" && typeof c.qr === "number") setCal(clampCal(c));
+      // `nudge` is the old raw-offset spelling, negative for up. Read it so a
+      // browser that was already calibrated does not silently lose the setting.
+      if (c && typeof c.qr === "number") {
+        if (typeof c.lift === "number") setCal(clampCal(c));
+        else if (typeof c.nudge === "number") setCal(clampCal({ lift: -c.nudge, qr: c.qr }));
+      }
     } catch {}
   }, []);
   function pickMode(m: Mode) {
@@ -171,10 +187,10 @@ export default function LabelsClient() {
           html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; width: 2in; }
           .printroot { margin: 0 !important; padding: 0 !important; }
           .no-print { display: none !important; }
-          /* The nudge is a correction for where this printer starts laying ink
+          /* The lift is a correction for where this printer starts laying ink
              down, so it only exists on paper. Applying it to the preview would
              show content climbing off the top of a label that prints fine. */
-          .lbl { color: #000; margin-top: ${cal.nudge}in; }
+          .lbl { color: #000; margin-top: ${-cal.lift}in; }
         }
         /* The preview is the sticker at its real size with the content sitting
            where the printer will put it, so what is on screen is what comes
@@ -230,7 +246,7 @@ export default function LabelsClient() {
             </div>
             <div className="text-dim text-xs mt-1">
               {roll
-                ? `For the iDPRT SP310. One label per page. Set paper size to 2 x 0.75 inch, margins Default or None, scale 100%. The page asks for no margins so the browser has nowhere to print the URL and page number - if they still appear, untick Headers and footers under More settings. The bottom ${BOTTOM_CLEAR_IN}in is kept clear of the die-cut line (the dashed line on each preview below); if your printer still crosses it, nudge up until it does not.`
+                ? `For the iDPRT SP310. One label per page. Set paper size to 2 x 0.75 inch, margins Default or None, scale 100%. The page asks for no margins so the browser has nowhere to print the URL and page number - if they still appear, untick Headers and footers under More settings. The bottom ${BOTTOM_CLEAR_IN}in is kept clear of the die-cut line (the dashed line on each preview below). Lift moves the print up the sticker in hundredths of an inch - raising it only widens the gap above that line, so it is the safe direction to dial.`
                 : "Load 1in x 2 5/8in label sheets and print at 100% scale on a laser printer. If the URL or page number shows up, untick Headers and footers under More settings."}
             </div>
           </div>
@@ -262,11 +278,11 @@ export default function LabelsClient() {
             {roll && (
               <div className="flex items-center gap-3 text-xs text-dim">
                 <Dial
-                  label="Nudge up"
-                  value={cal.nudge}
-                  min={CAL_LIMITS.nudge[0]}
-                  max={CAL_LIMITS.nudge[1]}
-                  onChange={(v) => setCalibration({ nudge: v })}
+                  label="Lift"
+                  value={cal.lift}
+                  min={CAL_LIMITS.lift[0]}
+                  max={CAL_LIMITS.lift[1]}
+                  onChange={(v) => setCalibration({ lift: v })}
                 />
                 <Dial
                   label="QR size"
