@@ -42,12 +42,15 @@ const SIDE_PAD_IN = 0.05;
 const TOP_PAD_IN = 0.02;
 const MAX_QR_IN = BAND_IN - TOP_PAD_IN * 2; // 0.6in, the tallest the band holds
 
-// Measured off a real SP310 print: about 0.19in of dead paper above the QR
-// that the page never asked for. Lifting is the safe direction - it moves the
-// whole box away from the die-cut line, so the bottom clearance only grows.
-// The risk is all at the top, which is why the default is short of what was
-// measured and the dial goes further if you want it.
-const DEFAULT_CAL: Cal = { lift: 0.12, qr: 0.55 };
+// Dialled in on a real SP310 against real stock: 0.03in. Not guessed off a
+// photograph, which is how an earlier version of this line arrived at 0.12in
+// and would have pushed the card number off the top of the sticker. A
+// perspective read of a print held in a hand is not a measurement.
+//
+// Lifting is still the safe direction to explore - it moves the whole box away
+// from the die-cut line, so the bottom clearance only grows and all the risk
+// sits at the top edge.
+const DEFAULT_CAL: Cal = { lift: 0.03, qr: 0.55 };
 const CAL_LIMITS = { lift: [-0.1, 0.45], qr: [0.35, MAX_QR_IN] } as const;
 const clamp = (n: number, lo: number, hi: number) =>
   Math.round(Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : 0)) * 100) / 100;
