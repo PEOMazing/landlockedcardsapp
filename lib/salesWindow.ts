@@ -38,6 +38,19 @@ export function medianOf(xs: number[]): number {
 
 export const round2 = (n: number) => Math.round(n * 100) / 100;
 
+// What a card is listed at, as a whole dollar.
+//
+// A comp is a number somebody says out loud across a table, and the cents on
+// it are noise that nobody collects: $94.24 is $95. Always up, never down, so
+// the asking price is never below what the evidence actually supports, and
+// rounding to cents first so a float landing on $95.0000001 does not walk up
+// to $96.
+export const roundUpDollar = (n: number): number => {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return v;
+  return Math.ceil(round2(v));
+};
+
 export const windowCutoff = (now: Date = new Date()): string =>
   new Date(now.getTime() - FRESH_DAYS * 86400000).toISOString().slice(0, 10);
 

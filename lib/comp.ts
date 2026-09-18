@@ -9,7 +9,7 @@ import {
 } from "./tcgcsvCards";
 import { getCard } from "./pokemon";
 import { Floor, conditionFloor } from "./tcgListings";
-import { FRESH_DAYS, dropWashSales, medianOf, round2, windowCutoff } from "./salesWindow";
+import { FRESH_DAYS, dropWashSales, medianOf, round2, roundUpDollar, windowCutoff } from "./salesWindow";
 
 export { dropWashSales } from "./salesWindow";
 
@@ -334,6 +334,13 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
   } else {
     return { ok: false, reason: "no price available for this card right now" };
   }
+
+  // Every branch above lands here, which is the point: the comp is rounded up
+  // to a whole dollar in exactly one place, so a future way of arriving at a
+  // price cannot quietly skip it and put $94.24 on a sticker. The reference
+  // numbers are deliberately left alone - Market and the sales list are
+  // evidence, and evidence with the cents filed off is harder to check.
+  fields["Comp"] = roundUpDollar(fields["Comp"]);
 
   // Only if there were no live listings at all does the condition-blind mirror
   // number get stored, and then it says so, because an unlabelled price that
