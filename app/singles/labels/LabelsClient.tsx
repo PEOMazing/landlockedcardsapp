@@ -16,6 +16,35 @@ type L = { id: string; cardNo: string; bucket: string; name: string; setName: st
 type Mode = "sheet" | "roll";
 const MODE_KEY = "llc-label-mode";
 
+// Where a thermal printer actually lays ink down is not something a web page
+// can know. This roll stock is a 0.75in x 2in printable label with a 0.35in
+// throwaway strip die-cut below it, and the SP310 starts printing lower than
+// the page origin, far enough that the bottom of the QR was landing on the
+// strip and peeling away with it. The offset is a property of the printer, so
+// it is a dial rather than a constant: nudge the content up until it clears
+// the die-cut line, and size the QR to whatever is left.
+type Cal = { nudge: number; qr: number };
+const CAL_KEY = "llc-label-cal";
+
+// The printable label is 0.75in tall and the throwaway strip is die-cut
+// directly below it. Nothing gets to print in the last 0.11in: the QR was
+// crossing that line and losing its bottom rows when the strip peeled away.
+const LABEL_IN = 0.75;
+const BOTTOM_CLEAR_IN = 0.11;
+const BAND_IN = LABEL_IN - BOTTOM_CLEAR_IN; // 0.64in of usable height
+const SIDE_PAD_IN = 0.05;
+const TOP_PAD_IN = 0.02;
+const MAX_QR_IN = BAND_IN - TOP_PAD_IN * 2; // 0.6in, the tallest the band holds
+
+const DEFAULT_CAL: Cal = { nudge: 0, qr: 0.55 };
+const CAL_LIMITS = { nudge: [-0.45, 0.2], qr: [0.35, MAX_QR_IN] } as const;
+const clamp = (n: number, lo: number, hi: number) =>
+  Math.round(Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : 0)) * 100) / 100;
+const clampCal = (c: Cal): Cal => ({
+  nudge: clamp(c.nudge, CAL_LIMITS.nudge[0], CAL_LIMITS.nudge[1]),
+  qr: clamp(c.qr, CAL_LIMITS.qr[0], CAL_LIMITS.qr[1]),
+});
+
 const clean = (n: string) => n.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, "");
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -25,6 +54,7 @@ export default function LabelsClient() {
   // The roll is the printer that actually gets used at a show, so it is what
   // you get unless you have said otherwise on this browser before.
   const [mode, setMode] = useState<Mode>("roll");
+  const [cal, setCal] = useState<Cal>(DEFAULT_CAL);
   const [err, setErr] = useState("");
 
   // Remember which printer you last used, so you are not re-picking every time.
@@ -34,11 +64,18 @@ export default function LabelsClient() {
     try {
       const saved = localStorage.getItem(MODE_KEY);
       if (saved === "roll" || saved === "sheet") setMode(saved);
+      const c = JSON.parse(localStorage.getItem(CAL_KEY) || "null");
+      if (c && typeof c.nudge === "number" && typeof c.qr === "number") setCal(clampCal(c));
     } catch {}
   }, []);
   function pickMode(m: Mode) {
     setMode(m);
     try { localStorage.setItem(MODE_KEY, m); } catch {}
+  }
+  function setCalibration(next: Partial<Cal>) {
+    const c = clampCal({ ...cal, ...next });
+    setCal(c);
+    try { localStorage.setItem(CAL_KEY, JSON.stringify(c)); } catch {}
   }
 
   useEffect(() => {
@@ -111,15 +148,21 @@ export default function LabelsClient() {
            the top means any extra height the driver reports falls off the
            bottom, into the gap, and the print starts at the label's edge
            whatever page height it was handed. */
-        .page { display: block; width: 2in; max-height: 0.75in; overflow: hidden; break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; }
+        .page { display: block; width: 2in; height: ${LABEL_IN}in; overflow: hidden; break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; }
         .page:last-child { break-after: auto; page-break-after: auto; }
         .sheet { display: block; }
+        /* The label is capped at the usable band, not the full label, so the
+           last ${BOTTOM_CLEAR_IN}in stays empty and the die-cut line has nothing
+           printed across it. overflow:hidden makes that a hard stop rather than
+           a suggestion: a long card name can never push the box taller. */
         .lbl {
-          width: 2in; padding: 0.02in 0.05in; box-sizing: border-box;
+          width: 2in; height: ${BAND_IN}in; padding: ${TOP_PAD_IN}in ${SIDE_PAD_IN}in; box-sizing: border-box;
           display: flex; gap: 0.05in; align-items: center; overflow: hidden;
         }
-        /* 0.6in at 203dpi is ~122 dots, still 3+ dots per QR module, which scans */
-        .lbl img { width: 0.6in; height: 0.6in; flex-shrink: 0; }
+        /* At 203dpi a 0.5in QR is ~101 dots, and a link this short needs about
+           33 modules, so even the small end of the dial keeps 3 dots a module
+           and scans. Below that it starts to matter. */
+        .lbl img { width: ${cal.qr}in; height: ${cal.qr}in; flex-shrink: 0; }
         .cardno { font-weight: 800; font-size: 10.5pt; letter-spacing: 0.3px; font-variant-numeric: tabular-nums; }
         .bucketcond { font-weight: 700; font-size: 7pt; letter-spacing: 0.2px; }
         .cardname { font-weight: 700; font-size: 6.5pt; }
@@ -128,14 +171,20 @@ export default function LabelsClient() {
           html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; width: 2in; }
           .printroot { margin: 0 !important; padding: 0 !important; }
           .no-print { display: none !important; }
-          .lbl { color: #000; }
+          /* The nudge is a correction for where this printer starts laying ink
+             down, so it only exists on paper. Applying it to the preview would
+             show content climbing off the top of a label that prints fine. */
+          .lbl { color: #000; margin-top: ${cal.nudge}in; }
         }
         /* The preview is the sticker at its real size with the content sitting
            where the printer will put it, so what is on screen is what comes
            off the roll. */
         @media screen {
           .sheet { display: flex; flex-wrap: wrap; gap: 0.12in; justify-content: center; }
-          .page { height: 0.75in; background: #fff; color: #000; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+          .page { position: relative; background: #fff; color: #000; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+          /* Where the strip is die-cut off. Nothing may cross it, so it is
+             drawn on the preview rather than left to be discovered on paper. */
+          .page::after { content: ''; position: absolute; left: 0; right: 0; top: ${BAND_IN}in; border-top: 1px dashed #c8c8c8; }
           .lbl { color: #000; }
         }
       ` : `
@@ -181,7 +230,7 @@ export default function LabelsClient() {
             </div>
             <div className="text-dim text-xs mt-1">
               {roll
-                ? "For the iDPRT SP310. One label per page. Set paper size to 2 x 0.75 inch, margins Default or None, scale 100%. The page asks for no margins so the browser has nowhere to print the URL and page number - if they still appear, untick Headers and footers under More settings."
+                ? `For the iDPRT SP310. One label per page. Set paper size to 2 x 0.75 inch, margins Default or None, scale 100%. The page asks for no margins so the browser has nowhere to print the URL and page number - if they still appear, untick Headers and footers under More settings. The bottom ${BOTTOM_CLEAR_IN}in is kept clear of the die-cut line (the dashed line on each preview below); if your printer still crosses it, nudge up until it does not.`
                 : "Load 1in x 2 5/8in label sheets and print at 100% scale on a laser printer. If the URL or page number shows up, untick Headers and footers under More settings."}
             </div>
           </div>
@@ -205,6 +254,36 @@ export default function LabelsClient() {
               <input type="checkbox" checked={includePrice} onChange={(e) => setIncludePrice(e.target.checked)} />
               include price (comps drift - the QR always shows the live comp)
             </label>
+            {/* Printer calibration. Only the roll needs it: the Avery sheet
+                lands where the page says it lands, but a thermal printer has
+                its own idea of where the label starts, and the only way to
+                find it is to print one and look. Both settings stick to this
+                browser, so it is a one-time exercise per printer. */}
+            {roll && (
+              <div className="flex items-center gap-3 text-xs text-dim">
+                <Dial
+                  label="Nudge up"
+                  value={cal.nudge}
+                  min={CAL_LIMITS.nudge[0]}
+                  max={CAL_LIMITS.nudge[1]}
+                  onChange={(v) => setCalibration({ nudge: v })}
+                />
+                <Dial
+                  label="QR size"
+                  value={cal.qr}
+                  min={CAL_LIMITS.qr[0]}
+                  max={CAL_LIMITS.qr[1]}
+                  onChange={(v) => setCalibration({ qr: v })}
+                />
+                <button
+                  type="button"
+                  className="underline decoration-dotted underline-offset-2 hover:text-body"
+                  onClick={() => setCalibration(DEFAULT_CAL)}
+                >
+                  reset
+                </button>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <a href="/singles" className="btn-ghost">Back</a>
               {/* The button says what is about to come out of the printer. The
@@ -252,6 +331,25 @@ export default function LabelsClient() {
         </div>
       </main>
     </>
+  );
+}
+
+// One calibration setting, in hundredths of an inch, with the value showing so
+// a good result can be written on the printer and typed back in later.
+function Dial({ label, value, min, max, onChange }: {
+  label: string; value: number; min: number; max: number; onChange: (v: number) => void;
+}) {
+  const step = 0.01;
+  const bump = (d: number) => onChange(Math.round((value + d) * 100) / 100);
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <span>{label}</span>
+      <button type="button" className="px-1.5 rounded border border-edge hover:text-body disabled:opacity-30"
+        disabled={value <= min} onClick={() => bump(-step)} aria-label={`${label} down`}>-</button>
+      <span className="num tabular-nums w-10 text-center text-body">{value.toFixed(2)}&quot;</span>
+      <button type="button" className="px-1.5 rounded border border-edge hover:text-body disabled:opacity-30"
+        disabled={value >= max} onClick={() => bump(step)} aria-label={`${label} up`}>+</button>
+    </span>
   );
 }
 
