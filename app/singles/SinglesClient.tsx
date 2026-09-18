@@ -603,14 +603,14 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   function exportCsv() {
     const header = [
-      "Card No", "Bucket", "Printed Bucket", "Location",
+      "Card No", "Bucket", "Printed Bucket", "Label Printed", "Location",
       "Card", "Set", "Number", "Condition", "Printing", "Rarity", "Qty", "Status",
       "Comp", "Comp Source", "Comp Date",
       ...(isAdmin ? ["Buy Price"] : []),
       "Sale Price", "Sold Date", "Date Added", "Added By", "Notes",
     ];
     const rows = shown.map((s) => [
-      formatCardNo(s.cardNo), bucketFor(s.comp), s.printedBucket ?? "", s.location ?? "",
+      formatCardNo(s.cardNo), bucketFor(s.comp), s.printedBucket ?? "", (s.labelPrinted || "").slice(0, 10), s.location ?? "",
       s.name.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, ""), s.setName, s.number, s.condition, s.printing, s.rarity, s.qty, s.status,
       s.comp ?? "", s.compSource, s.compDate,
       ...(isAdmin ? [s.buy ?? ""] : []),
