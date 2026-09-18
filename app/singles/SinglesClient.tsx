@@ -18,7 +18,7 @@ const CONDITION_LABELS: Record<string, string> = {
 };
 
 type SingleT = {
-  id: string; cardNo?: number | null; printedBucket?: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
+  id: string; cardNo?: number | null; printedBucket?: string; labelPrinted?: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
   rarity: string; variant: string; condition: string;
   comp: number | null; market?: number | null; marketBasis?: string; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
@@ -208,6 +208,8 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   const [setupMsg, setSetupMsg] = useState("");
   const [statusFilter, setStatusFilter] = useState("In Stock");
   const [needsResticker, setNeedsResticker] = useState(false);
+  // cards that have never had a sticker printed - the batch you just entered
+  const [neverPrinted, setNeverPrinted] = useState(false);
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
   const [qrFor, setQrFor] = useState<SingleT | null>(null);
@@ -499,7 +501,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   // a changed view means a changed list - drop the selection so nothing gets
   // deleted that the user can no longer see
-  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker]);
+  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker, neverPrinted]);
   // re-sorting keeps the selection but retires the shift-click anchor, since
   // the row that index pointed at just moved
   useEffect(() => { lastClicked.current = null; }, [sortKey, sortDir]);
@@ -514,6 +516,9 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     // cards whose comp crossed a band since their sticker printed: they are
     // physically in the wrong box until someone moves and reprints them
     if (needsResticker) list = list.filter((s) => bucketDrifted(s.comp, s.printedBucket || ""));
+    // Never stickered. Reads Label Printed rather than Printed Bucket, which
+    // is blank for unpriced cards however many times they have been printed.
+    if (neverPrinted) list = list.filter((s) => !s.labelPrinted);
     list = mode === "graded" ? list.filter((s) => GRADED.includes(s.condition)) : list.filter((s) => !GRADED.includes(s.condition));
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
     // token search: every word must match somewhere, so "umbreon prismatic"
@@ -553,10 +558,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     }
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker]);
+  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker, neverPrinted]);
 
   const restickerCount = useMemo(
     () => singles.filter((s) => bucketDrifted(s.comp, s.printedBucket || "")).length,
+    [singles]
+  );
+
+  // Only In Stock: a card already on a stream or sold does not need a sticker,
+  // and counting them would make the chip look permanently unfinished.
+  const neverPrintedCount = useMemo(
+    () => singles.filter((s) => !s.labelPrinted && s.status === "In Stock").length,
     [singles]
   );
 
@@ -860,6 +872,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             </select>
             {isManager && (
               <button className="btn-ghost !py-1.5 text-xs" onClick={assignLocations} title="Number every card currently shown, in the order shown">Assign locations</button>
+            )}
+            {neverPrintedCount > 0 && (
+              <button
+                type="button"
+                aria-pressed={neverPrinted}
+                onClick={() => setNeverPrinted((v) => !v)}
+                title="Cards that have never had a sticker printed. Turn this on, then Print labels, and they drop off the list once the paper comes out."
+                className={`px-3 py-1.5 text-xs whitespace-nowrap rounded-lg border transition-colors ${
+                  neverPrinted ? "border-foil/60 bg-foil/15 text-foil font-semibold" : "border-edge text-dim hover:text-body"
+                }`}
+              >
+                Never printed <span className="num ml-1 opacity-70">{neverPrintedCount}</span>
+              </button>
             )}
             {restickerCount > 0 && (
               <button
