@@ -25,14 +25,25 @@ export async function POST(req: Request) {
   const rows = await atList(T.singles);
   const byId = new Map(rows.map((r) => [r.id, r]));
 
+  // Two different questions, so two different fields.
+  //
+  // Printed Bucket answers "has the price drifted out of the box this card is
+  // physically sitting in", and it is deliberately only written for cards that
+  // have a bucket at all. That makes it useless for the other question - an
+  // unpriced card that has been stickered twice still has a blank bucket - so
+  // Label Printed is stamped for everything that went to the printer, priced
+  // or not, and is the one thing the Never printed filter can trust.
+  const now = new Date().toISOString();
   let stamped = 0;
   for (const id of ids) {
     const rec = byId.get(id);
     if (!rec) continue;
+    const fields: Record<string, any> = { "Label Printed": now };
     const bucket = bucketFor(rec.fields["Comp"]);
-    if (!bucket) continue; // unpriced cards print without a bucket, so nothing to record
-    if (String(rec.fields["Printed Bucket"] || "") === bucket) continue;
-    await atUpdate(T.singles, id, { "Printed Bucket": bucket });
+    if (bucket && String(rec.fields["Printed Bucket"] || "") !== bucket) {
+      fields["Printed Bucket"] = bucket;
+    }
+    await atUpdate(T.singles, id, fields);
     stamped++;
   }
   return NextResponse.json({ stamped, of: ids.length });
