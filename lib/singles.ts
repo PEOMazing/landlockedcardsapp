@@ -11,6 +11,9 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     // the price bucket that was on the label last time it printed; compared
     // against the live bucket to spot cards sitting in the wrong box
     printedBucket: f["Printed Bucket"] || "",
+    // when a sticker was last sent to the printer, for anything, priced or not.
+    // Blank is the whole point: it means this card has never been stickered.
+    labelPrinted: f["Label Printed"] || "",
     name: f["Card Name"] || "",
     setName: f["Set Name"] || "",
     number: f["Card Number"] || "",
