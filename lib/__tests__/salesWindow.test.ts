@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { judgeSales } from "../salesWindow";
+import { judgeSales, roundUpDollar } from "../salesWindow";
 
 const NOW = new Date("2026-09-17T00:00:00Z");
 const s = (date: string, price: number) => ({ date, price });
@@ -53,5 +53,39 @@ describe("judgeSales", () => {
     assert.deepEqual(judgeSales([], NOW), []);
     assert.deepEqual(judgeSales(null as any, NOW), []);
     assert.equal(judgeSales([s("2026-09-10", 0)], NOW).length, 0);
+  });
+});
+
+// Whole dollars on the sticker. A comp is a number said out loud across a
+// table and the cents on it are noise nobody collects.
+describe("roundUpDollar", () => {
+  it("takes $94.24 to $95", () => {
+    assert.equal(roundUpDollar(94.24), 95);
+  });
+
+  it("rounds up even when it is barely over", () => {
+    assert.equal(roundUpDollar(94.01), 95);
+    assert.equal(roundUpDollar(0.5), 1);
+  });
+
+  it("leaves a whole dollar where it is", () => {
+    assert.equal(roundUpDollar(95), 95);
+    assert.equal(roundUpDollar(250), 250);
+  });
+
+  it("does not let float dust walk a whole dollar up", () => {
+    assert.equal(roundUpDollar(95.0000001), 95);
+    assert.equal(roundUpDollar(0.1 + 0.2 + 94.7), 95);
+  });
+
+  it("never rounds down, which would ask less than the evidence supports", () => {
+    for (const n of [1.01, 12.5, 94.99, 187.84, 245.5]) {
+      assert.ok(roundUpDollar(n) >= n, `${n} must not round down`);
+    }
+  });
+
+  it("leaves nothing and nonsense alone rather than inventing a dollar", () => {
+    assert.equal(roundUpDollar(0), 0);
+    assert.equal(roundUpDollar(NaN as any), NaN);
   });
 });
