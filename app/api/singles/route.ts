@@ -4,6 +4,7 @@ import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
 import { conditionSoldComp, getTcgcsvCard, tcgProductIdFromCardId } from "@/lib/tcgcsvCards";
 import { toSingle } from "@/lib/singles";
+import { roundUpDollar } from "@/lib/salesWindow";
 
 export const dynamic = "force-dynamic";
 
@@ -77,12 +78,15 @@ export async function POST(req: Request) {
       const pid = tcgProductIdFromCardId(String(b.cardId));
       const sold = pid ? await conditionSoldComp(pid, cond) : null;
       if (sold) {
-        fields["Comp"] = sold.price;
+        // whole dollars on every comp the tool works out, same as the rolling
+        // reprice - a card entered at $94.24 and stickered before the next
+        // pass would otherwise carry cents the rest of the collection lost
+        fields["Comp"] = roundUpDollar(sold.price);
         fields["Comp Source"] = `TCGplayer solds (${cond}, median of ${sold.sales})`;
         fields["Comp Date"] = new Date().toISOString().slice(0, 10);
         fields["Comp Detail"] = JSON.stringify(sold.detail);
       } else if (card.market !== null) {
-        fields["Comp"] = Math.round(card.market * mult * 100) / 100;
+        fields["Comp"] = roundUpDollar(card.market * mult);
         fields["Comp Source"] = `TCGplayer market (${card.variant})` + (mult < 1 ? ` x ${cond} ${Math.round(mult * 100)}% est.` : "");
         fields["Comp Date"] = new Date().toISOString().slice(0, 10);
       }
