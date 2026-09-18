@@ -65,6 +65,13 @@ export function lastSaleCompSource(cond: string, date: string): string {
   return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date}, none in 30d)`;
 }
 
+// The newest sale beat the median and set the price. Says both numbers,
+// because a comp above every other sale in the window is the one a person is
+// most likely to want to check.
+export function risingSaleCompSource(cond: string, date: string, median: number, count: number): string {
+  return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date} above the ${money(median)} median of ${count} in last 30d)`;
+}
+
 export function listingCompSource(cond: string, printing: string, count: number, note = ""): string {
   return `TCGplayer ${LISTING_MARKER} ${cond} listing (${printing}, ${count} live${note ? `, ${note}` : ""})`;
 }
@@ -114,6 +121,35 @@ const IMPLAUSIBLE_FRACTION = 0.15;
 // is measuring something else, and that is worth a human glance.
 const FLOOR_REVIEW = 2;
 
+// How fresh the newest sale has to be before it is allowed to beat the median,
+// and how far above the median it may carry the price.
+//
+// Arceus LV.X DP53 is the case. Three NM sales in the window: $115 twenty days
+// back, $120 twenty days after that, then $169.99 five days ago. The median is
+// $120 and the two holding it there are about to age out. The newest sale is
+// the only one describing the market the card is in now.
+//
+// Machamp (Prime) is why this cannot simply be "use the last sale". Its newest
+// sale was $74.99 against a median of $115 - the low straggler in a scatter,
+// not a market. So the rule takes the HIGHER of the two and never the lower:
+// the median holds the floor up, the last sale lifts the ceiling, and neither
+// can pull a card down on its own.
+//
+// Measured across all 98 singles, the asymmetric rule moved 17 cards and left
+// Machamp, Gengar Lv.X and Lugia Legend exactly where they were.
+const LAST_SALE_FRESH_DAYS = 10;
+
+// Without a gate, a lift comes off any sale in the window, and at 15 to 20
+// days old that is the top of a thin scatter rather than a move: Palkia LP
+// would jump $41 to $74 on a 20-day-old sale. Ten days keeps the lifts to
+// sales that are actually describing today.
+//
+// The cap is insurance rather than a live constraint - no card in the
+// collection reaches it today. It matters because dropWashSales only discards
+// sales that are too LOW, so nothing else in the pipeline stops one inflated
+// sale from setting a card's price for as long as it stays in the window.
+const LAST_SALE_MAX_LIFT = 2;
+
 export type SoldPick = {
   price: number;
   /** no sale inside the window, so the listing floor answered instead */
@@ -127,6 +163,8 @@ export type SoldPick = {
   /** what the sales alone produced, 0 when there were none */
   priceFromSales: number;
   latestDate: string;
+  /** the newest sale beat the median and set the price */
+  usedLastSale?: boolean;
 };
 
 // Which number a set of sold sales should actually produce. Pure, because this
@@ -205,6 +243,20 @@ export function pickSoldPrice(
         price: round2(Math.max(lastPrice, askPrice)),
         usedFloor: askPrice >= lastPrice,
       };
+    }
+  }
+
+  // A rising card should not be held down by sales that are about to age out.
+  // Taken only when it is higher, so this can lift a comp and never lower one:
+  // the median already answers for the scatter case, and letting the newest
+  // sale win outright would price Machamp off its $74.99 straggler.
+  if (fresh > 0 && latest) {
+    const age = Math.floor((now.getTime() - new Date(`${latest.date}T00:00:00Z`).getTime()) / 86400000);
+    if (age <= LAST_SALE_FRESH_DAYS) {
+      const capped = Math.min(latest.price, fresh * LAST_SALE_MAX_LIFT);
+      if (capped > base.price) {
+        return { ...base, price: round2(capped), usedLastSale: true };
+      }
     }
   }
   return base;
@@ -307,6 +359,8 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
       floorLift = pick.priceFromSales > 0 ? pick.price / pick.priceFromSales : 0;
     } else if (pick.staleSales) {
       fields["Comp Source"] = lastSaleCompSource(cond, pick.latestDate);
+    } else if (pick.usedLastSale) {
+      fields["Comp Source"] = risingSaleCompSource(cond, pick.latestDate, pick.priceFromSales, pick.freshCount);
     } else {
       fields["Comp Source"] = soldsCompSource(cond, pick.freshCount, pick.freshRange);
     }
