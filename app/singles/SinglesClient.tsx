@@ -221,6 +221,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   const [qrFor, setQrFor] = useState<SingleT | null>(null);
   const [qrData, setQrData] = useState("");
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  // Where to draw the row menu, in viewport coordinates.
+  //
+  // The table sits in a horizontally scrolling wrapper, and CSS will not let a
+  // box scroll on one axis and overflow visibly on the other - asking for
+  // overflow-x auto silently makes overflow-y auto too. So an absolutely
+  // positioned menu gets clipped by that wrapper, and the shorter the table
+  // the worse it is: search down to one row and the wrapper is 171px tall
+  // while the menu is 269px, so two thirds of it is unreachable.
+  //
+  // Fixed positioning takes the menu out of that box entirely. No ancestor
+  // sets transform, filter or containment, so fixed resolves against the
+  // viewport here rather than some intermediate element.
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number; up: boolean } | null>(null);
   const [err, setErr] = useState("");
 
   // multi-select for bulk actions
@@ -455,6 +468,52 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     if (r.ok) { setSingles((prev) => prev.map((s) => (s.id === id ? d.single : s))); toast("Saved"); }
     else { setErr(d.error || "Update failed"); toast(d.error || "Update failed", "bad"); }
   }
+
+  // Open the menu against the button that was clicked, flipping it above when
+  // there is more room up than down. The estimate is deliberately generous:
+  // being wrong costs a menu that opens upward unnecessarily, while being
+  // short costs a menu with its bottom off the screen, which is the bug.
+  const MENU_W = 176;
+  const MENU_H = 300;
+  function openMenu(id: string, el: HTMLElement) {
+    if (menuFor === id) { setMenuFor(null); setMenuPos(null); return; }
+    const r = el.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom;
+    const up = below < MENU_H && r.top > below;
+    setMenuPos({
+      // right-aligned to the button, but never off the left edge
+      left: Math.max(8, Math.min(r.right - MENU_W, window.innerWidth - MENU_W - 8)),
+      top: up ? r.top - 4 : r.bottom + 4,
+      up,
+    });
+    setMenuFor(id);
+  }
+
+  // A fixed menu does not travel with the row it belongs to, so anything that
+  // moves the page underneath it has to dismiss it rather than leave it
+  // hovering over unrelated cards. Clicking away closes it too - that never
+  // worked before, because the menu was only ever dismissed by picking an item
+  // or hitting the same dots again.
+  useEffect(() => {
+    if (!menuFor) return;
+    const close = () => { setMenuFor(null); setMenuPos(null); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('[data-row-menu], [aria-label="Row actions"]')) return;
+      close();
+    };
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [menuFor]);
 
   async function remove(id: string) {
     if (!confirm("Delete this card from the singles inventory?")) return;
@@ -1412,13 +1471,21 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   <td className="text-right whitespace-nowrap relative">
                     <button
                       className="text-dim hover:text-body px-2 py-1 rounded hover:bg-edge/60"
-                      onClick={() => setMenuFor(menuFor === s.id ? null : s.id)}
+                      onClick={(e) => openMenu(s.id, e.currentTarget)}
                       aria-label="Row actions"
                     >
                       {"\u22EF"}
                     </button>
                     {menuFor === s.id && (
-                      <div className="absolute right-2 top-9 z-20 w-44 rounded-lg border border-edge bg-panel shadow-2xl py-1 text-left">
+                      <div
+                        data-row-menu
+                        className="fixed z-50 w-44 rounded-lg border border-edge bg-panel shadow-2xl py-1 text-left max-h-[80vh] overflow-y-auto"
+                        style={{
+                          left: menuPos ? menuPos.left : undefined,
+                          top: menuPos ? menuPos.top : undefined,
+                          transform: menuPos?.up ? "translateY(-100%)" : undefined,
+                        }}
+                      >
                         {["Raw", "NM", "LP", "MP", "HP", "DM"].includes(s.condition) && s.cardId && (
                           <button
                             className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50 disabled:opacity-40"
