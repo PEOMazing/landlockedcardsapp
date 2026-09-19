@@ -287,6 +287,10 @@ const SET_ALIASES: Record<string, string[]> = {
   "sun and moon promo": ["sm promo"],
   // the Japanese Team Rocket set goes by its Japanese name
   "team rocket": ["rocket gang"],
+  // Awakening Legends is the Japanese Neo Revelation. Listing it as an alias is
+  // safe rather than clever: an English Neo Revelation card matches in the
+  // English catalog first and never reaches this spelling.
+  "neo revelation": ["awakening legends"],
 };
 
 export type TcgResolution = { cardId: string; productId: number; groupId: number; subType: string; market: number | null; productName: string; image: string };
