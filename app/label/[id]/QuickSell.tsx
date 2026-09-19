@@ -157,8 +157,13 @@ export default function QuickSell({ id, isManager, card }: {
                 />
               </div>
             )}
+            {/* Closed by default, but still here. The spread is the only thing
+                that catches a graded slab listed against the raw card, so it
+                stays one tap away rather than being taken out - and it opens
+                itself when the cheapest ask looks wrong, which is the moment
+                it actually earns the space. */}
             {isManager && asks.length > 1 && (
-              <details className="mt-3 text-left" open>
+              <details className="mt-3 text-left" open={oddLow}>
                 <summary className="label !text-[10px] cursor-pointer select-none hover:text-body">
                   Live {card.condition} Asks:
                   {oddLow && <span className="ml-1.5 text-givvy normal-case">check the cheapest one</span>}
@@ -214,6 +219,25 @@ export default function QuickSell({ id, isManager, card }: {
           </div>
         ) : (
           <div className="text-dim text-sm">Available now - ask at the table to purchase</div>
+        )}
+        {/* The card on TCGplayer, for anyone who scans.
+            Deep-linked to this exact printing and condition, so it lands on
+            the same thing the sticker is describing rather than the product's
+            front page. Public on purpose: someone holding the card wants to
+            check the number for themselves, and a price that only holds while
+            nobody looks is not a price worth quoting. */}
+        {tcgUrl && (
+          <a
+            href={tcgUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-lg border border-edge px-3 py-2.5 text-sm hover:border-foil/60 hover:text-foil transition-colors"
+          >
+            View on TCGplayer
+            <span className="block text-dim text-[10px] mt-0.5 normal-case">
+              {card.printing || "this printing"} · {card.condition}
+            </span>
+          </a>
         )}
       </div>
     </main>
