@@ -291,6 +291,7 @@ const SET_ALIASES: Record<string, string[]> = {
   // safe rather than clever: an English Neo Revelation card matches in the
   // English catalog first and never reaches this spelling.
   "neo revelation": ["awakening legends"],
+  "explosive flame walker": ["explosive walker"],
 };
 
 export type TcgResolution = { cardId: string; productId: number; groupId: number; subType: string; market: number | null; productName: string; image: string };
