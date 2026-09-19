@@ -32,6 +32,9 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     marketBasis: f["Market Basis"] || "",
     compSource: f["Comp Source"] || "",
     compDate: f["Comp Date"] || "",
+    // how many real sales the comp rests on. null means this card has not been
+    // repriced since the count started being recorded - unknown, not thin.
+    compSales: typeof f["Comp Sales"] === "number" ? f["Comp Sales"] : null,
     compDetail: (() => {
       try { return f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null; } catch { return null; }
     })(),

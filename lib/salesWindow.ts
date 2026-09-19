@@ -20,6 +20,29 @@ export const FRESH_DAYS = 30;
 // same card in the same condition sold for days earlier.
 export const WASH_FRACTION = 0.2;
 
+// How many real sales a comp needs behind it before the number is worth
+// trusting on its own.
+//
+// Three is not a statistical claim, it is the point where a single odd sale
+// stops deciding the price. Gengar Lv.X made the case: one NM sale at $350
+// inside the window set the comp, while the cheapest of eight live asks was
+// $429 and lightly played copies were selling for more than the near mint one
+// supposedly went for. The formula was right and the evidence was one data
+// point.
+//
+// Widening the window to find more sales was tried and rejected - measured
+// across the 25 affected cards it moved the total by 1.5%, fixed four and
+// made four worse. Thin data cannot be computed around, only disclosed, so
+// this threshold drives a warning and never a price.
+export const MIN_CONFIDENT_SALES = 3;
+
+// Does this comp rest on enough sales to stand up by itself? Sales of null or
+// undefined means the card has not been repriced since this was introduced,
+// which is unknown rather than thin, and says so by returning false.
+export function isThinComp(compSales: number | null | undefined): boolean {
+  return typeof compSales === "number" && compSales < MIN_CONFIDENT_SALES;
+}
+
 export function dropWashSales<T extends { price: number }>(sales: T[]): T[] {
   const real = (sales || []).filter((s) => Number(s?.price) > 0);
   if (real.length < 2) return real;

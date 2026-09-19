@@ -361,6 +361,16 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
   if (sold) {
     const pick = pickSoldPrice(sold.price, sold.detail, floor);
     fields["Comp"] = pick.price;
+    // How much real evidence is under this number.
+    //
+    // Recorded rather than inferred later, because only this code knows which
+    // sales actually counted: the window, the wash filter and the branch taken
+    // all move it, and a screen re-deriving the count from the stored sales
+    // list would get a different answer as soon as a day passed.
+    //
+    // Zero when the price came from asks instead of sales, which is the honest
+    // reading - a listing is what somebody hopes for, not what anybody paid.
+    fields["Comp Sales"] = pick.usedFloor ? 0 : pick.freshCount;
     if (pick.usedFloor) {
       fields["Comp Source"] = listingCompSource(
         cond, printing, floor!.count,
@@ -384,6 +394,7 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
     fields["Comp"] = floor.low;
     fields["Comp Source"] = listingCompSource(cond, printing, floor.count);
     fields["Comp Detail"] = "";
+    fields["Comp Sales"] = 0;
   } else if (card && card.market !== null) {
     // The word "est." is load-bearing: the singles table keys its amber
     // "unverified comp" warning off it. A fallback comp that did not say so
@@ -397,6 +408,7 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
     fields["Comp Source"] = fallbackCompSource(card.variant || "", mult, cond);
     // No sales means the old sales list is stale and would be read as current.
     fields["Comp Detail"] = "";
+    fields["Comp Sales"] = 0;
   } else {
     return { ok: false, reason: "no price available for this card right now" };
   }
