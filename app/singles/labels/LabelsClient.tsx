@@ -134,10 +134,11 @@ export default function LabelsClient() {
   async function printAndRecord() {
     window.print();
     if (!labels) return;
-    // Every label that went to the printer, priced or not. Filtering to cards
-    // with a bucket is what left 200 stickered cards showing 98 stamps: an
-    // unpriced card has no bucket, so it printed and then still read as never
-    // printed. The route decides on its own whether a bucket is worth writing.
+    // Every label that went to the printer, priced or not. This used to filter
+    // to cards with a bucket, which meant an unpriced card could be stickered
+    // and still read as never printed - the one thing Label Printed exists to
+    // answer. The route already decides on its own whether a bucket is worth
+    // writing, so there is nothing for this side to screen out.
     const ids = labels.map((l) => l.id);
     if (ids.length === 0) return;
     try {
