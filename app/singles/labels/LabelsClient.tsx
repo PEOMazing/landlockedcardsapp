@@ -64,6 +64,9 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 
 export default function LabelsClient() {
   const [labels, setLabels] = useState<L[] | null>(null);
+  // Cards in this run whose record holds more than one of them, so the print
+  // will come up short of the stack in your hand.
+  const [short, setShort] = useState<{ name: string; cardNo: string; qty: number }[]>([]);
   const [includePrice, setIncludePrice] = useState(false);
   // The roll is the printer that actually gets used at a show, so it is what
   // you get unless you have said otherwise on this browser before.
@@ -122,6 +125,17 @@ export default function LabelsClient() {
           out.push({ id, cardNo: formatCardNo(s.cardNo), bucket: bucketFor(s.comp), name: clean(s.name), setName: s.setName, number: s.number, condition: s.condition, printing: s.printing, comp: s.comp, qr, location: s.location || "" });
         }
         setLabels(out);
+        // One label per record, always, because a label is a card number and a
+        // card number belongs to one record. A record holding several cards
+        // therefore prints short, and used to do it silently - you find out at
+        // the table with a stack of unstickered cards. Say it here instead,
+        // and name the fix.
+        setShort(
+          out
+            .map((l) => ({ l, q: Math.floor(Number((byId.get(l.id) as any)?.qty) || 1) }))
+            .filter((x) => x.q > 1)
+            .map((x) => ({ name: x.l.name, cardNo: x.l.cardNo, qty: x.q }))
+        );
       } catch {
         setErr("Could not build labels");
       }
@@ -250,6 +264,29 @@ export default function LabelsClient() {
             <div className="font-bold">
               {labels.length} labels - {roll ? "2in x 3/4in roll (thermal)" : "Avery 5160 (30 per sheet)"}
             </div>
+            {short.length > 0 && (
+              <div className="mt-2 rounded-lg border border-givvy/50 bg-givvy/10 px-3 py-2 text-[11px] leading-snug">
+                <b className="text-givvy">
+                  {short.length} card{short.length === 1 ? "" : "s"} here will print short
+                  {" "}({short.reduce((a, s) => a + s.qty - 1, 0)} sticker
+                  {short.reduce((a, s) => a + s.qty - 1, 0) === 1 ? "" : "s"} missing)
+                </b>
+                <div className="text-dim mt-1">
+                  A card number belongs to one record, so a record holding several
+                  cards still gets one sticker. Split them on the singles page
+                  (row menu, "Split into N cards") and every card gets its own
+                  number, then print again.
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                  {short.slice(0, 12).map((s) => (
+                    <span key={s.cardNo} className="whitespace-nowrap">
+                      <b className="num text-body">{s.cardNo}</b> {s.name} <span className="text-dim">x{s.qty}</span>
+                    </span>
+                  ))}
+                  {short.length > 12 && <span className="text-dim">+{short.length - 12} more</span>}
+                </div>
+              </div>
+            )}
             <div className="text-dim text-[11px] mt-1">
               {["A", "B", "C", "D", "E", "F", "G", "H"].map((b) => (
                 <span key={b} className="mr-2.5 whitespace-nowrap">
