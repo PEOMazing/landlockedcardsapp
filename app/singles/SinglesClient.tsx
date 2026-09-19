@@ -1,6 +1,7 @@
 "use client";
 import QRCode from "qrcode";
 import { formatCardNo, parseCardNo, bucketFor, bucketRange, bucketDrifted } from "@/lib/cardNo";
+import { isThinComp } from "@/lib/salesWindow";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
@@ -23,7 +24,7 @@ const CONDITION_LABELS: Record<string, string> = {
 
 type SingleT = {
   id: string; cardNo?: number | null; printedBucket?: string; labelPrinted?: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
-  rarity: string; variant: string; condition: string;
+  rarity: string; variant: string; condition: string; compSales?: number | null;
   comp: number | null; market?: number | null; marketBasis?: string; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
   lastSale?: { date: string; price: number } | null;
@@ -214,6 +215,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   const [needsResticker, setNeedsResticker] = useState(false);
   // cards that have never had a sticker printed - the batch you just entered
   const [neverPrinted, setNeverPrinted] = useState(false);
+  const [thinData, setThinData] = useState(false);
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
   const [qrFor, setQrFor] = useState<SingleT | null>(null);
@@ -613,7 +615,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   // a changed view means a changed list - drop the selection so nothing gets
   // deleted that the user can no longer see
-  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker, neverPrinted]);
+  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker, neverPrinted, thinData]);
   // re-sorting keeps the selection but retires the shift-click anchor, since
   // the row that index pointed at just moved
   useEffect(() => { lastClicked.current = null; }, [sortKey, sortDir]);
@@ -631,6 +633,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     // Never stickered. Reads Label Printed rather than Printed Bucket, which
     // is blank for unpriced cards however many times they have been printed.
     if (neverPrinted) list = list.filter((s) => !s.labelPrinted);
+    if (thinData) list = list.filter((s) => s.comp !== null && isThinComp(s.compSales));
     list = mode === "graded" ? list.filter((s) => GRADED.includes(s.condition)) : list.filter((s) => !GRADED.includes(s.condition));
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
     // token search: every word must match somewhere, so "umbreon prismatic"
@@ -670,7 +673,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     }
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker, neverPrinted]);
+  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker, neverPrinted, thinData]);
 
   const restickerCount = useMemo(
     () => singles.filter((s) => bucketDrifted(s.comp, s.printedBucket || "")).length,
@@ -681,6 +684,13 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   // and counting them would make the chip look permanently unfinished.
   const neverPrintedCount = useMemo(
     () => singles.filter((s) => !s.labelPrinted && s.status === "In Stock").length,
+    [singles]
+  );
+
+  // In Stock only, same reasoning as never-printed: a sold card's comp is
+  // history and re-examining it changes nothing.
+  const thinCount = useMemo(
+    () => singles.filter((s) => s.status === "In Stock" && s.comp !== null && isThinComp(s.compSales)).length,
     [singles]
   );
 
@@ -1002,6 +1012,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 }`}
               >
                 Never printed <span className="num ml-1 opacity-70">{neverPrintedCount}</span>
+              </button>
+            )}
+            {thinCount > 0 && (
+              <button
+                type="button"
+                aria-pressed={thinData}
+                onClick={() => setThinData((v) => !v)}
+                title="Cards priced on fewer than three recent sales, or on asking prices with no sales at all. The number is not necessarily wrong, there is just not much holding it up - worth a look before a stream."
+                className={`px-3 py-1.5 text-xs whitespace-nowrap rounded-lg border transition-colors ${
+                  thinData ? "border-givvy/60 bg-givvy/15 text-givvy font-semibold" : "border-edge text-dim hover:text-body"
+                }`}
+              >
+                Thin data <span className="num ml-1 opacity-70">{thinCount}</span>
               </button>
             )}
             {restickerCount > 0 && (
@@ -1329,6 +1352,21 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                           title={`${s.compSource} - no recent sales in this condition, comp is a discount off NM market. Verify before pricing.`}
                         >
                           est.
+                        </span>
+                      )}
+                      {/* Not a second opinion on the price, a statement about
+                          how much is holding it up. Sits next to the number
+                          because that is where it changes what you do. */}
+                      {isThinComp(s.compSales) && s.comp !== null && !s.compSource.includes("est.") && (
+                        <span
+                          className="text-givvy text-xs cursor-help whitespace-nowrap underline decoration-dotted"
+                          title={
+                            s.compSales === 0
+                              ? `No sales behind this price - it came from live asking prices, which is what sellers hope for rather than what anyone paid. ${s.compSource}`
+                              : `Only ${s.compSales} sale${s.compSales === 1 ? "" : "s"} in the last 30 days is behind this price, so one odd sale decides it. Check it before quoting. ${s.compSource}`
+                          }
+                        >
+                          {s.compSales === 0 ? "asks only" : `${s.compSales} sale${s.compSales === 1 ? "" : "s"}`}
                         </span>
                       )}
                     </div>
