@@ -290,6 +290,8 @@ async function ensureCardId(rec: AtRecord): Promise<{ cardId: string; linked: bo
     name: String(rec.fields["Card Name"] || ""),
     variant: String(rec.fields["Variant"] || ""),
     rarity: String(rec.fields["Rarity"] || ""),
+    // decides which catalog to look in first, English or Japanese
+    language: String(rec.fields["Language"] || ""),
   });
   return found ? { cardId: found.cardId, linked: true } : null;
 }
