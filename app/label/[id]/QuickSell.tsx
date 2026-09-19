@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { toast } from "@/components/Toaster";
-import { JudgedSale, judgeSales } from "@/lib/salesWindow";
+import { JudgedSale, isThinComp, judgeSales } from "@/lib/salesWindow";
 import { oddLowAsk } from "@/lib/tcgListings";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -9,12 +9,12 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 export default function QuickSell({ id, isManager, card }: {
   id: string;
   isManager: boolean;
-  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; sales?: { date: string; price: number; qty?: number }[]; listings?: number[]; compSource?: string; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
+  card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; sales?: { date: string; price: number; qty?: number }[]; listings?: number[]; compSource?: string; compSales?: number | null; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
 }) {
   const [price, setPrice] = useState(card.comp !== null ? String(card.comp) : "");
   const [busy, setBusy] = useState(false);
   const [sold, setSold] = useState(card.status === "Sold");
-  const [live, setLive] = useState<{ comp: number | null; market: number | null; marketBasis: string; sales: { date: string; price: number }[] } | null>(null);
+  const [live, setLive] = useState<{ comp: number | null; market: number | null; marketBasis: string; sales: { date: string; price: number }[]; compSales: number | null } | null>(null);
   const [pricing, setPricing] = useState(false);
 
   // Scanning a sticker is the moment the price gets acted on, so it gets a
@@ -36,7 +36,7 @@ export default function QuickSell({ id, isManager, card }: {
         const d = await r.json();
         const s = d.single;
         if (!s || cancelled) return;
-        setLive({ comp: s.comp ?? null, market: s.market ?? null, marketBasis: s.marketBasis || "", sales: Array.isArray(s.compDetail) ? s.compDetail : [] });
+        setLive({ comp: s.comp ?? null, market: s.market ?? null, marketBasis: s.marketBasis || "", sales: Array.isArray(s.compDetail) ? s.compDetail : [], compSales: typeof s.compSales === "number" ? s.compSales : null });
         // Only move the input if it is still showing the price we put there.
         // Overwriting a number somebody has started typing would be maddening.
         setPrice((cur) => (cur === (card.comp !== null ? String(card.comp) : "") && s.comp !== null ? String(s.comp) : cur));
@@ -62,6 +62,9 @@ export default function QuickSell({ id, isManager, card }: {
     market: live ? live.market : (card.market ?? null),
     marketBasis: live ? live.marketBasis : (card.marketBasis || ""),
     sales: live ? live.sales : (card.sales || []),
+    // the live pull can change how many sales are behind the price, so the
+    // confidence note has to follow the number it describes
+    compSales: live ? live.compSales : (card.compSales ?? null),
   };
 
   // Same module the pricing uses, so the working shown here cannot disagree
@@ -134,6 +137,18 @@ export default function QuickSell({ id, isManager, card }: {
               {live && !pricing && <span className="ml-1.5 text-win normal-case">live</span>}
             </div>
             <div className="num text-3xl font-bold holo-text inline-block">{$(shown.comp)}</div>
+            {/* Said where the price is said. This is the screen someone reads
+                a number off out loud at a table, so if the number is standing
+                on one sale that is the moment to know, not later in a
+                spreadsheet. Managers only: it is a note about our own
+                confidence, not something a customer needs. */}
+            {isManager && isThinComp(shown.compSales) && (
+              <div className="text-givvy text-[11px] mt-1 leading-snug">
+                {shown.compSales === 0
+                  ? "No sales behind this - priced off live asks"
+                  : `Only ${shown.compSales} sale${shown.compSales === 1 ? "" : "s"} in 30 days behind this`}
+              </div>
+            )}
             {/* The two reference numbers, side by side and big enough to read
                 at arm's length. This is a phone screen being glanced at across
                 a table mid-break, so the previous single line of 10px grey was

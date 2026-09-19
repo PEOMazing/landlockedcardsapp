@@ -46,6 +46,9 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
           } catch { return []; }
         })(),
         compSource: f["Comp Source"] || "",
+        // how many sales the price rests on, so the scan page can say when
+        // there is barely anything behind it
+        compSales: typeof f["Comp Sales"] === "number" ? f["Comp Sales"] : null,
         // the cheapest live asks, so a mislabeled graded card sitting in the
         // raw bucket is visible - nothing in the feed marks it as graded
         listings: (() => {
