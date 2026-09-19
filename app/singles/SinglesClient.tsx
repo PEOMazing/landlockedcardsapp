@@ -499,19 +499,30 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     const close = () => { setMenuFor(null); setMenuPos(null); };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     const onDown = (e: MouseEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && t.closest('[data-row-menu], [aria-label="Row actions"]')) return;
+      // Not every mousedown target is an Element - document itself has no
+      // closest() - and an exception here would kill the handler and leave the
+      // menu stuck open, which is worse than the clipping this replaced.
+      const t = e.target as Element | null;
+      if (t && typeof t.closest === "function" && t.closest('[data-row-menu], [aria-label="Row actions"]')) return;
       close();
     };
+    // wheel and touchmove alongside scroll on purpose. A scroll listener is the
+    // obvious choice and on this page it never fires - the document scrolls
+    // without emitting one that reaches window or document in capture - so on
+    // its own it would look correct and do nothing. These two fire.
+    window.addEventListener("wheel", close, { capture: true, passive: true });
+    window.addEventListener("touchmove", close, { capture: true, passive: true });
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
     window.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("mousedown", onDown, true);
     return () => {
+      window.removeEventListener("wheel", close, { capture: true } as any);
+      window.removeEventListener("touchmove", close, { capture: true } as any);
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
       window.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("mousedown", onDown, true);
     };
   }, [menuFor]);
 
