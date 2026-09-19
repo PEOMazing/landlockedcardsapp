@@ -101,7 +101,23 @@ export default function QuickSell({ id, isManager, card }: {
         LandLocked <span className="holo-text">Cards</span>
       </div>
       <div className="card p-6 w-full max-w-sm text-center space-y-4">
-        {card.image && <img src={card.image} alt="" className="h-48 mx-auto rounded-lg" style={{ boxShadow: "0 12px 40px rgba(122,162,255,.25)" }} />}
+        {card.image ? (
+          <img src={card.image} alt="" className="h-48 mx-auto rounded-lg" style={{ boxShadow: "0 12px 40px rgba(122,162,255,.25)" }} />
+        ) : (
+          // Some cards have no art on TCGplayer to find - mostly old Japanese
+          // vending sets. Rendering nothing left a gap that reads as a broken
+          // page to whoever just scanned the sticker, so the card shape stays
+          // and says what it is holding instead of pretending there is nothing.
+          <div
+            className="h-48 mx-auto rounded-lg flex flex-col items-center justify-center text-center px-3 gap-1"
+            style={{ width: "8.6rem", border: "1px dashed rgba(122,162,255,.35)", background: "rgba(122,162,255,.06)" }}
+          >
+            <div className="text-[11px] font-bold leading-tight">{card.name}</div>
+            <div className="text-dim text-[9px] leading-tight">{card.setName}</div>
+            {card.number && <div className="text-dim text-[9px] num">#{card.number}</div>}
+            <div className="text-dim text-[8px] mt-1 opacity-70">no art on file</div>
+          </div>
+        )}
         <div>
           <div className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{card.name}</div>
           <div className="text-dim text-sm">
