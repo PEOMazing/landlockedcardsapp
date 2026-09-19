@@ -321,6 +321,16 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
   const parsed = parseCardId(cardId);
   const card = parsed ? await getTcgcsvCard(cardId) : await getCard(cardId);
 
+  // Backfill the picture while we have the card in hand.
+  //
+  // A CSV-imported single arrives with no card id and no image, and the match
+  // above is the moment an image first becomes reachable - but nothing here
+  // ever wrote one, so the id got filled in and the picture stayed empty
+  // forever. Scanning the sticker then showed a card page with no card on it.
+  // Only written when the record has none, so a hand-picked image survives.
+  const img = card ? String(card.imageLarge || card.image || "") : "";
+  if (img && !String(rec.fields["Image URL"] || "").trim()) fields["Image URL"] = img;
+
   // The printing we hold, which decides which listings are even relevant.
   const printing = subTypeForVariant(
     String(rec.fields["Variant"] || ""),
