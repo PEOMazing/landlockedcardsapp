@@ -108,10 +108,17 @@ export default function LabelsClient() {
         for (const id of ids) {
           const s: any = byId.get(id);
           if (!s) continue;
-          // Rendered large and scaled down by CSS: at 203dpi a 0.6in QR is
-          // ~122 dots, which still leaves 3+ dots per module for a link this
-          // short, so it scans off a phone
-          const qr = await QRCode.toDataURL(`${window.location.origin}/label/${id}`, { margin: 0, width: 220 });
+          // SVG, not a PNG data URL, for two reasons.
+          //
+          // A 200-label run used to hand the print pipeline 200 separate base64
+          // images to decode, and past roughly a hundred pages Chrome starts
+          // dropping them: the text prints and the QR square comes out blank,
+          // with nothing on screen or in the console to show for it. Inline
+          // vector markup is part of the page, so there is no decode to fail.
+          //
+          // It is also sharper. A raster QR scaled to 0.6in on a 203dpi head
+          // lands module edges between dots; a path snaps to them.
+          const qr = await QRCode.toString(`${window.location.origin}/label/${id}`, { type: "svg", margin: 0 });
           out.push({ id, cardNo: formatCardNo(s.cardNo), bucket: bucketFor(s.comp), name: clean(s.name), setName: s.setName, number: s.number, condition: s.condition, printing: s.printing, comp: s.comp, qr, location: s.location || "" });
         }
         setLabels(out);
@@ -127,7 +134,11 @@ export default function LabelsClient() {
   async function printAndRecord() {
     window.print();
     if (!labels) return;
-    const ids = labels.filter((l) => l.bucket).map((l) => l.id);
+    // Every label that went to the printer, priced or not. Filtering to cards
+    // with a bucket is what left 200 stickered cards showing 98 stamps: an
+    // unpriced card has no bucket, so it printed and then still read as never
+    // printed. The route decides on its own whether a bucket is worth writing.
+    const ids = labels.map((l) => l.id);
     if (ids.length === 0) return;
     try {
       await fetch("/api/singles/labels-printed", {
@@ -181,7 +192,8 @@ export default function LabelsClient() {
         /* At 203dpi a 0.5in QR is ~101 dots, and a link this short needs about
            33 modules, so even the small end of the dial keeps 3 dots a module
            and scans. Below that it starts to matter. */
-        .lbl img { width: ${cal.qr}in; height: ${cal.qr}in; flex-shrink: 0; }
+        .qr { width: ${cal.qr}in; height: ${cal.qr}in; flex-shrink: 0; display: block; }
+        .qr svg { width: 100%; height: 100%; display: block; }
         .cardno { font-weight: 800; font-size: 10.5pt; letter-spacing: 0.3px; font-variant-numeric: tabular-nums; }
         .bucketcond { font-weight: 700; font-size: 7pt; letter-spacing: 0.2px; }
         .cardname { font-weight: 700; font-size: 6.5pt; }
@@ -214,7 +226,8 @@ export default function LabelsClient() {
         @page { size: letter; margin: 0; }
         .sheet { display: grid; grid-template-columns: repeat(3, 2.625in); column-gap: 0.125in; padding: 0.5in 0.19in; box-sizing: border-box; }
         .lbl { width: 2.625in; height: 1in; padding: 0.07in 0.1in; box-sizing: border-box; display: flex; gap: 0.08in; align-items: center; overflow: hidden; break-inside: avoid; }
-        .lbl img { width: 0.7in; height: 0.7in; flex-shrink: 0; }
+        .qr { width: 0.7in; height: 0.7in; flex-shrink: 0; display: block; }
+        .qr svg { width: 100%; height: 100%; display: block; }
         .idcol { flex-shrink: 0; text-align: center; line-height: 1.05; }
         .cardno { font-weight: 800; font-size: 14pt; letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
         .bucketcond { font-weight: 700; font-size: 9pt; letter-spacing: 0.3px; }
@@ -318,7 +331,10 @@ export default function LabelsClient() {
           {labels.map((l) => (
             <Page key={l.id} on={roll}>
             <div className="lbl">
-              <img src={l.qr} alt="" />
+              {/* the markup is qrcode's own output for a URL we built, not
+                  anything a card record can reach, so there is nothing here
+                  for a card name to inject into */}
+              <span className="qr" dangerouslySetInnerHTML={{ __html: l.qr }} />
               {!roll && (
                 <div className="idcol">
                   {l.cardNo && <div className="cardno">{l.cardNo}</div>}
