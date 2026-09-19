@@ -49,15 +49,21 @@ export async function findCardImage(rec: AtRecord): Promise<CardImage> {
     // same
   }
 
-  // Loosest path: the strict resolver refused, usually because a number
-  // matched two products or matched none. For a picture that is survivable, so
-  // take the card's own name within its set and accept the first product whose
-  // name matches, number or not.
-  try {
-    const byName = await resolveSingleToTcg({ setName, number: "", name, variant, rarity, language });
-    if (byName?.image) return { url: byName.image.replace("_200w", "_400w"), source: "by-name" };
-  } catch {
-    // nothing left to try
+  // Loosest path: the strict resolver refused, and the usual reason is that a
+  // number or a name landed on several printings of one card - "Dondozo - 012"
+  // and "Dondozo - 012 (Cosmos Holofoil)". Those are different products at
+  // different prices and the same picture, so for art the tie does not need
+  // breaking. Dropping the number as well casts the net wider still, for the
+  // promo and unnumbered sets where the number was never usable.
+  for (const number2 of [number, ""]) {
+    try {
+      const loose = await resolveSingleToTcg({
+        setName, number: number2, name, variant, rarity, language, allowAmbiguous: true,
+      });
+      if (loose?.image) return { url: loose.image.replace("_200w", "_400w"), source: "by-name" };
+    } catch {
+      // try the next widening, then give up
+    }
   }
 
   return null;

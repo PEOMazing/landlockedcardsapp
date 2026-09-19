@@ -282,18 +282,36 @@ const SET_ALIASES: Record<string, string[]> = {
   "unnumbered promo 2000": ["unnumbered promotional cards"],
   // "151" is a set name in both catalogs under two unrelated spellings
   "151": ["scarlet and violet 151", "card 151"],
+  // English SM promos are "SM Promos"; the Japanese ones keep the long name,
+  // so both spellings are listed and the catalog order picks the right one
+  "sun and moon promo": ["sm promo"],
+  // the Japanese Team Rocket set goes by its Japanese name
+  "team rocket": ["rocket gang"],
 };
 
 export type TcgResolution = { cardId: string; productId: number; groupId: number; subType: string; market: number | null; productName: string; image: string };
 
-// The card's own name as each source decorates it. tcgcsv suffixes the number
-// onto Japanese product names ("Paras - 001/172") and our imports suffix a
-// language tag ("Marnie (JP)"). Neither is part of the card's name, and both
-// would otherwise break the tiebreak that exists to tell two cards apart.
+// The card's own name, with each source's decoration taken off.
+//
+// tcgcsv hangs the card number off the product name ("Pikachu - 027",
+// "Paras - 001/172") and our imports hang a language tag off theirs
+// ("Marnie (JP)"). Neither is part of the card's name. What IS part of it is
+// the parenthetical printing qualifier - "(Cosmos Holo)", "(Pokemon Center
+// Exclusive)" - which is the only thing telling two products with the same
+// number apart, so the brackets come off but the words stay.
+//
+// The number has to be removed from the middle as well as the end, because
+// the qualifier sits behind it: "Pawmi - 040 (Cosmos Holo)" has to reduce to
+// the same thing as our "Pawmi Cosmos Holo".
 const cardNameKey = (s: string) =>
   norm(s)
     .replace(/\s*\((?:jp|jpn|japanese)\)\s*$/, "")
-    .replace(/\s*-\s*[a-z0-9]+\/[a-z0-9]+\s*$/, "")
+    .replace(/\s+-\s+[0-9a-z]+(?:\/[0-9a-z]+)?(?=\s*\(|$)/, "")
+    .replace(/[()]/g, "")
+    // the same printing, spelled differently on either side
+    .replace(/\bholofoil\b/g, "holo")
+    .replace(/\bcosmo holo\b/g, "cosmos holo")
+    .replace(/\s+/g, " ")
     .trim();
 
 export async function resolveSingleToTcg(input: {
@@ -303,6 +321,11 @@ export async function resolveSingleToTcg(input: {
    *  card out, because the imported tag is not reliable enough for that: some
    *  plainly Japanese sets arrive tagged English. */
   language?: string;
+  /** Take the first of several equally good matches instead of refusing.
+   *  Only ever set by the image lookup, where the candidates are the same card
+   *  in different printings and so share the same art. Pricing must never set
+   *  this: there the difference between those printings is the whole point. */
+  allowAmbiguous?: boolean;
 }): Promise<TcgResolution | null> {
   const base = setKey(input.setName);
   if (!base) return null;
@@ -340,12 +363,19 @@ export async function resolveSingleToTcg(input: {
     const byName = hits.filter((p) => cardNameKey(p.name) === n);
     if (byName.length > 0) hits = byName;
   }
-  if (hits.length === 0) {
+  // Name search over the whole set whenever the number did not land on exactly
+  // one product. The number is not always usable: the junk-drawer groups store
+  // it as "19/147", so everything numbered 19 in any set collides, and promo
+  // and unnumbered sets often have no usable number at all. In those the name
+  // with its printing qualifier is the more specific key of the two.
+  if (hits.length !== 1) {
     const n = cardNameKey(input.name);
-    hits = cards.filter((p) => cardNameKey(p.name) === n);
+    const byName = cards.filter((p) => cardNameKey(p.name) === n);
+    if (byName.length > 0) hits = byName;
   }
   // Two products still matching the same number and name is genuinely
   // ambiguous - guessing would write a wrong price with full confidence.
+  if (hits.length > 1 && input.allowAmbiguous) hits = [hits[0]];
   if (hits.length !== 1) return null;
 
   const p = hits[0];
