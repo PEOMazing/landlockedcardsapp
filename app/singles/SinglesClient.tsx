@@ -12,6 +12,10 @@ import CollectrImport from "@/components/CollectrImport";
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
 const GRADED = ["PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
+// The ungraded ladder, and the only conditions the row menu offers. A graded
+// card's comp is manual by design, so flipping one to PSA 10 from a dropdown
+// would silently strip its price with nothing to replace it.
+const RAW_CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "Raw"];
 const CONDITION_LABELS: Record<string, string> = {
   NM: "NM - Near Mint", LP: "LP - Lightly Played", MP: "MP - Moderately Played",
   HP: "HP - Heavily Played", DM: "DM - Damaged",
@@ -312,6 +316,114 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     setBusy("");
   }
 
+  // Change the condition, then immediately reprice on it.
+  //
+  // The comp is condition-specific - it is the median of sales in that exact
+  // condition - so the moment the condition changes the stored price is for a
+  // card we no longer say we have. Leaving that to the rolling job means the
+  // card can be stickered, scanned and sold at the old grade's price in the
+  // meantime, which is the one outcome worth a second API call to avoid.
+  async function setCondition(s: SingleT, next: string) {
+    if (s.condition === next) return;
+    setBusy(s.id); setErr("");
+    try {
+      const r = await fetch(`/api/singles/${s.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ condition: next }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setErr(d.error || "Could not change condition"); toast(d.error || "Could not change condition", "bad"); return; }
+      setSingles((prev) => prev.map((x) => (x.id === s.id ? d.single : x)));
+
+      const before = s.comp;
+      const c = await fetch(`/api/singles/${s.id}/comp`, { method: "POST" });
+      const cd = await c.json();
+      if (c.ok && cd.single) {
+        setSingles((prev) => prev.map((x) => (x.id === s.id ? cd.single : x)));
+        const after = cd.single.comp;
+        // Say what the price did, because that is the consequence the person
+        // actually cares about and they are usually about to print a sticker.
+        toast(
+          after != null && before != null && after !== before
+            ? `${next} - comp ${$(before)} to ${$(after)}`
+            : `${next} - comp ${after != null ? $(after) : "not available"}`
+        );
+      } else {
+        toast(`${next} - comp not updated: ${cd.reason || cd.error || "no price available"}`, "bad");
+      }
+    } finally {
+      setBusy("");
+    }
+  }
+
+  // One record holding several cards becomes one record per card, so each gets
+  // its own sticker number and can be sold on its own.
+  async function splitCard(s: SingleT) {
+    const n = s.qty || 1;
+    if (n <= 1) return;
+    if (!window.confirm(
+      `Split ${s.name} into ${n} separate cards?\n\n` +
+      `Each gets its own card number and its own sticker, and can be sold on its own. ` +
+      `Total value does not change. This cannot be undone in one click.`
+    )) return;
+    setBusy(s.id); setErr("");
+    try {
+      const r = await fetch(`/api/singles/${s.id}/split`, { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) { setErr(d.error || "Split failed"); toast(d.error || "Split failed", "bad"); return; }
+      toast(d.complete ? `Split into ${n} cards` : `Only ${d.created} of ${d.of} copies were made - the rest are still on the original`, d.complete ? undefined : "bad");
+      await load();
+    } finally {
+      setBusy("");
+    }
+  }
+
+  // Split every selected record that holds more than one card. Sequential on
+  // purpose: each split writes several rows, and firing 50 of those at Airtable
+  // at once is how you get rate-limited into a half-finished collection.
+  async function splitSelected() {
+    // shown, not singles: the button's count comes from selStats, which is
+    // built from the visible rows. Splitting a selected card that a filter is
+    // currently hiding would do more than the button said it would.
+    const rows = shown.filter((s) => selSet.has(s.id) && (s.qty || 1) > 1 && s.status === "In Stock");
+    if (rows.length === 0) { toast("Nothing in the selection to split", "bad"); return; }
+    const extra = rows.reduce((a, s) => a + (s.qty || 1) - 1, 0);
+    if (!window.confirm(
+      `Split ${rows.length} record${rows.length === 1 ? "" : "s"} into ${rows.length + extra} cards?\n\n` +
+      `This creates ${extra} new record${extra === 1 ? "" : "s"}, each with its own card number so it can be stickered ` +
+      `and sold on its own. Total value does not change. This cannot be undone in one click.`
+    )) return;
+    setBulkBusy(true); setErr("");
+    let done = 0, made = 0;
+    const failed: string[] = [];
+    try {
+      for (const s of rows) {
+        toast(`Splitting... ${done}/${rows.length}`);
+        try {
+          const r = await fetch(`/api/singles/${s.id}/split`, { method: "POST" });
+          const d = await r.json();
+          if (r.ok) made += d.created || 0;
+          else failed.push(`${s.name}: ${d.error || r.status}`);
+        } catch {
+          failed.push(`${s.name}: request failed`);
+        }
+        done++;
+      }
+      toast(
+        failed.length === 0
+          ? `${made} new card record${made === 1 ? "" : "s"} created`
+          : `${made} created, ${failed.length} failed`,
+        failed.length === 0 ? undefined : "bad"
+      );
+      if (failed.length > 0) setErr(failed.slice(0, 5).join("; "));
+      setSelected([]);
+      await load();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function assignLocations() {
     if (shown.length === 0) { toast("Nothing shown to number", "bad"); return; }
     const prefix = (window.prompt("Location prefix - our recommended scheme: B1 for binder 1, C1 for case 1, BOX1 for a box", "B1") || "").trim().toUpperCase();
@@ -597,6 +709,12 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
       cards: rows.reduce((a, s) => a + (s.qty || 1), 0),
       market: rows.reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0),
       locked: rows.filter((s) => s.status === "In Stream").length,
+      // extra cards that could get their own record. In Stock only: a sold or
+      // streaming record cannot be split, because its sale price and stream
+      // line belong to the whole stack.
+      splittable: rows
+        .filter((s) => s.status === "In Stock")
+        .reduce((a, s) => a + Math.max(0, (s.qty || 1) - 1), 0),
     };
   }, [shown, selSet]);
   const allShownSelected = shown.length > 0 && shown.every((s) => selSet.has(s.id));
@@ -966,6 +1084,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               >
                 {bulkBusy ? "Refreshing..." : `Refresh ${selStats.rows} prices`}
               </button>
+              {/* Only offered when the selection actually has cards that can
+                  get their own record, so the count on the button is exactly
+                  what the action will do. */}
+              {selStats.splittable > 0 && (
+                <button
+                  className="rounded-lg border border-givvy/60 text-givvy hover:bg-givvy/10 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                  disabled={bulkBusy}
+                  onClick={splitSelected}
+                  title="Give every physical card its own record, number and sticker"
+                >
+                  {bulkBusy ? "Splitting..." : `Split ${selStats.splittable} extra card${selStats.splittable === 1 ? "" : "s"} out`}
+                </button>
+              )}
               <button
                 className="btn-foil !py-1.5 text-xs"
                 onClick={() => printLabels(Array.from(selSet))}
@@ -1257,6 +1388,43 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                             onClick={() => { setMenuFor(null); refreshComp(s.id); }}
                           >
                             {busy === s.id ? "Refreshing..." : "Refresh comp"}
+                          </button>
+                        )}
+                        {/* Condition, changeable in place.
+                            Grading a card by eye is the one judgement the feed
+                            cannot make, and getting it wrong moves the price by
+                            more than anything else here: NM to MP is a third of
+                            the value gone. It sits behind the row menu rather
+                            than on the cell so it cannot be nudged by a stray
+                            click while scrolling a 250-row table. */}
+                        <div className="px-3 pt-1.5 pb-1">
+                          <div className="label !text-[10px] mb-1">Condition</div>
+                          <div className="flex flex-wrap gap-1">
+                            {RAW_CONDITIONS.map((c) => (
+                              <button
+                                key={c}
+                                disabled={busy === s.id}
+                                className={`num text-[11px] rounded px-1.5 py-0.5 border disabled:opacity-40 ${
+                                  s.condition === c
+                                    ? "border-foil text-foil bg-foil/10"
+                                    : "border-edge text-dim hover:text-body hover:border-foil/50"
+                                }`}
+                                onClick={() => { setMenuFor(null); setCondition(s, c); }}
+                              >
+                                {c}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="border-t border-edge/60 my-1" />
+                        {(s.qty || 1) > 1 && s.status === "In Stock" && (
+                          <button
+                            className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50 disabled:opacity-40"
+                            disabled={busy === s.id}
+                            onClick={() => { setMenuFor(null); splitCard(s); }}
+                          >
+                            Split into {s.qty} cards
+                            <span className="block text-dim text-[10px]">one sticker each</span>
                           </button>
                         )}
                         <button
