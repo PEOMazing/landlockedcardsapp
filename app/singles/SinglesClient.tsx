@@ -299,6 +299,18 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     };
     if (picked) {
       body.cardId = picked.id;
+      // Send what the search already gave us. The server prefers its own fresh
+      // lookup and only falls back to this when the catalog is down, which is
+      // the difference between adding the card and being told it does not
+      // exist while its picture is on screen.
+      body.card = {
+        name: picked.name,
+        setName: picked.setName,
+        number: picked.number,
+        rarity: picked.rarity,
+        image: picked.image || "",
+        market: picked.market,
+      };
       // graded cards need a manual comp even when API-linked
       if (GRADED.includes(draft.condition) && draft.comp) body.comp = parseFloat(draft.comp);
     } else {
