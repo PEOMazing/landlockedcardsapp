@@ -56,8 +56,45 @@ export async function POST(req: Request) {
 
   if (b.cardId) {
     const cid = String(b.cardId);
-    const card = cid.startsWith("tcg:") ? await getTcgcsvCard(cid) : await getCard(cid);
-    if (!card) return NextResponse.json({ error: "card not found" }, { status: 404 });
+    let card: any = null;
+    let outage = "";
+    try {
+      card = cid.startsWith("tcg:") ? await getTcgcsvCard(cid) : await getCard(cid);
+    } catch (e: any) {
+      outage = String(e?.message || "lookup failed");
+    }
+    // The browser already has everything the search box showed - name, set,
+    // number, rarity, art, price - so when the catalog is down we use that
+    // instead of refusing the card. Re-fetching data we were already holding
+    // is what turned an upstream hiccup into "you cannot add this card", and
+    // the person on the other end is usually holding it in their hand.
+    let fromClient = false;
+    if (!card && b.card && String(b.card.name || "").trim()) {
+      const c = b.card;
+      const mk = parseFloat(c.market);
+      card = {
+        id: cid,
+        name: String(c.name).trim(),
+        setName: String(c.setName || ""),
+        number: String(c.number || ""),
+        rarity: String(c.rarity || ""),
+        image: String(c.image || ""),
+        imageLarge: String(c.image || ""),
+        market: Number.isFinite(mk) && mk > 0 ? mk : null,
+        variant: String(c.variant || ""),
+      };
+      fromClient = true;
+    }
+    if (!card) {
+      // An outage and a missing card get different words and different codes,
+      // so the screen can tell someone whether retrying is worth their time.
+      return outage
+        ? NextResponse.json(
+            { error: "the card price source is not responding - try again in a moment, or use Add manually", detail: outage, retryable: true },
+            { status: 502 },
+          )
+        : NextResponse.json({ error: "card not found" }, { status: 404 });
+    }
     fields = {
       ...fields,
       "Card Name": card.name,
@@ -87,7 +124,13 @@ export async function POST(req: Request) {
         fields["Comp Detail"] = JSON.stringify(sold.detail);
       } else if (card.market !== null) {
         fields["Comp"] = roundUpDollar(card.market * mult);
-        fields["Comp Source"] = `TCGplayer market (${card.variant})` + (mult < 1 ? ` x ${cond} ${Math.round(mult * 100)}% est.` : "");
+        // fromClient means the catalog was down and this price is the one the
+        // search box was showing a moment earlier. Say so, so the number is not
+        // mistaken later for a fresh reading.
+        fields["Comp Source"] =
+          `TCGplayer market (${card.variant})` +
+          (mult < 1 ? ` x ${cond} ${Math.round(mult * 100)}% est.` : "") +
+          (fromClient ? ", from search at entry" : "");
         fields["Comp Date"] = new Date().toISOString().slice(0, 10);
       }
     }
