@@ -161,11 +161,37 @@ export async function searchCards(q: string): Promise<PokeCard[]> {
   return (d.data || []).map(toCard);
 }
 
-export async function getCard(id: string): Promise<PokeCard | null> {
-  try {
-    const d = await pget(`/cards/${encodeURIComponent(id)}`, { select: "id,name,number,rarity,images,tcgplayer,set" });
-    return d.data ? toCard(d.data) : null;
-  } catch {
-    return null;
+// Thrown when the lookup itself failed rather than the card being absent.
+//
+// These are not the same thing and the difference is the whole point: a 500
+// means ask again, a 404 means stop asking. The old getCard caught everything
+// and returned null, so an outage at pokemontcg.io arrived at the add-a-card
+// form as "card not found" - said about a card sitting on screen with its art
+// and its price loaded. Nobody can act on that sentence.
+export class UpstreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UpstreamError";
   }
+}
+
+export async function getCard(id: string): Promise<PokeCard | null> {
+  const select = "id,name,number,rarity,images,tcgplayer,set";
+  let last = "";
+  // Two attempts, briefly spaced. The 500s come in bursts rather than steadily,
+  // so a single retry recovers most of them; more than that just makes a real
+  // outage take longer to admit to.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const d = await pget(`/cards/${encodeURIComponent(id)}`, { select });
+      return d.data ? toCard(d.data) : null;
+    } catch (e: any) {
+      last = String(e?.message || "");
+      // A 404 is an answer, not a failure: this id is not in their catalog and
+      // asking a second time will not change that.
+      if (/\b404\b/.test(last)) return null;
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  throw new UpstreamError(last || "pokemontcg.io did not respond");
 }
