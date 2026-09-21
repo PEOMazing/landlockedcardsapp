@@ -103,7 +103,7 @@ export default function StreamsAdminClient({
                   </>
                 ) : (
                   <>
-                    <td>{r.date}</td>
+                    <td className="whitespace-nowrap">{r.date}</td>
                     <td className="!font-medium">
                       {displayTitle(r)}
                       <button
