@@ -87,7 +87,9 @@ export default async function AllStreamsPage() {
   return (
     <>
       <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || "Admin"} />
-      <main className="max-w-6xl mx-auto p-6 space-y-6">
+      {/* Full width: this table has thirteen columns, and a capped page width
+          cut off Net profit and the Open links on a wide monitor. */}
+      <main className="w-full p-6 space-y-6">
         <div className="flex items-baseline justify-between flex-wrap gap-3">
           <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
             All streams
