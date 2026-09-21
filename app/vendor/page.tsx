@@ -10,6 +10,7 @@ import { buildWeekPay, buildManagerPay, StreamRow, toLine, weekStartOf } from "@
 import { toSingle } from "@/lib/singles";
 import { getSnapshots } from "@/lib/priceRefresh";
 import { HeroCard, TopMovers, TrendChart, ValueDelta } from "@/components/PortfolioPulse";
+import { clampStock } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export default async function VendorDashboard() {
   let sealedUnits = 0, sealedMarket = 0, sealedCost = 0, sealedNeedBuy = 0, sealedUnpriced = 0;
   const byCategory = new Map<string, { units: number; market: number }>();
   for (const r of inventoryRows) {
-    const qty = r.fields["Qty On Hand"] ?? 0;
+    const qty = clampStock(r.fields["Qty On Hand"]);
     const market = r.fields["Market Price"] ?? 0;
     const buy = r.fields["Buy Price"] ?? 0;
     sealedUnits += qty;
