@@ -3,7 +3,7 @@ import { stockAlert } from "@/lib/alerts";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { releaseSingleFromLine } from "@/lib/streamSingles";
-import { clampStock } from "@/lib/stock";
+import { clampStock, shortMessage } from "@/lib/stock";
 
 async function guard(lineId: string) {
   const me = await getMe();
@@ -59,11 +59,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const oldQty = g.line.fields["Qty"] || 0;
     const hits = g.line.fields["Qty Hit"] || 0;
     if (newQty < hits) return NextResponse.json({ error: `quantity cannot go below the ${hits} already hit` }, { status: 400 });
+    const productId = g.line.fields["Product"]?.[0];
+    const product = productId ? await atGet(T.inventory, productId) : null;
+    // raising a line pulls more from the shelf, and the shelf cannot go below zero
+    if (product && newQty > oldQty && (product.fields["Qty On Hand"] ?? 0) < newQty - oldQty) {
+      return NextResponse.json({ error: shortMessage(product.fields["Product Name"], product.fields["Qty On Hand"], newQty - oldQty) }, { status: 400 });
+    }
     fields["Qty"] = newQty;
     fields["Line"] = `${newQty}x ${(g.line.fields["Line"] || "").replace(/^\d+x\s+/, "")}`;
-    const productId = g.line.fields["Product"]?.[0];
-    if (productId) {
-      const product = await atGet(T.inventory, productId);
+    if (productId && product) {
       await atUpdate(T.inventory, productId, {
         "Qty On Hand": clampStock((product.fields["Qty On Hand"] ?? 0) + oldQty - newQty),
       });
