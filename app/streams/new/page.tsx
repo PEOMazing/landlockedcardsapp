@@ -12,6 +12,10 @@ export default function NewStream() {
   const [streamers, setStreamers] = useState<{ id: string; name: string }[]>([]);
   const [streamerId, setStreamerId] = useState("");
   const [streamType, setStreamType] = useState("Surprise Set");
+  // After a stream is created we hold on the page long enough to remind the
+  // streamer that the name has to match Whatnot, or the export check can't
+  // pair the two up.
+  const [created, setCreated] = useState<{ id: string; title: string } | null>(null);
 
   const TYPE_HELP: Record<string, string> = {
     "Surprise Set": "Wheel show: spins land on hit items or floor level packs.",
@@ -38,7 +42,8 @@ export default function NewStream() {
     });
     const data = await res.json();
     if (!res.ok) { setErr(data.error || "Could not create stream"); setBusy(false); return; }
-    router.push(`/streams/${data.id}`);
+    setCreated({ id: data.id, title: title.trim() });
+    setBusy(false);
   }
 
   return (
@@ -84,14 +89,42 @@ export default function NewStream() {
           <p className="text-dim text-xs mt-1">{TYPE_HELP[streamType]}</p>
         </div>
         <div>
-          <label className="label">Title (optional)</label>
-          <input className="input mt-1" placeholder="Friday Night Rips" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <label className="label">Whatnot show title</label>
+          <input className="input mt-1" placeholder="Paste the show title from Whatnot" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <p className="text-dim text-xs mt-1">Copy it straight from Whatnot so the two match exactly.</p>
         </div>
         {err && <div className="text-bad text-sm">{err}</div>}
         <button className="btn-foil w-full justify-center disabled:opacity-40" disabled={busy} onClick={create}>
           {busy ? "Creating..." : "Create and build show set"}
         </button>
       </div>
+
+      {created && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/70" />
+          <div className="relative card p-6 max-w-sm w-full space-y-4 border-amber-400/60">
+            <div className="text-lg font-bold text-amber-400">Heads up: match the Whatnot name</div>
+            <p className="text-sm">
+              Your stream was created. The stream name in the app must match the Whatnot show name
+              exactly, or the Whatnot export check will not line up with this stream.
+            </p>
+            {created.title ? (
+              <p className="text-sm">
+                App name: <span className="font-semibold">{created.title}</span>
+                <br />
+                <span className="text-dim text-xs">Double check it against the title on Whatnot. Same words, same spelling.</span>
+              </p>
+            ) : (
+              <p className="text-sm text-bad">
+                You left the title blank, so this stream only has your name on it. Rename it to the Whatnot show title.
+              </p>
+            )}
+            <button className="btn-foil w-full justify-center" onClick={() => router.push(`/streams/${created.id}`)}>
+              Got it, build the show set
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
