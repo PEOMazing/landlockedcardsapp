@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { stockAlert } from "@/lib/alerts";
 import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { settleStreamSingles } from "@/lib/streamSingles";
 
 // Return all unsold/unhit items on this stream's show set to inventory:
 // per line, Qty On Hand += (Qty - Qty Hit). One-shot: gated by the
@@ -35,16 +36,18 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       detail.push(`${back}x ${product.fields["Product Name"]}`);
     }
   }
-  // singles attached to this stream are considered sold once the show wraps
+  // Singles on a wheel only leave if a spin hit them; on an auction show they
+  // all sell. settleStreamSingles knows the difference, and is the same code
+  // the approve path runs, so the two ways of closing a show cannot disagree.
   let singlesSold = 0;
+  let singlesReturned = 0;
   try {
-    const singles = await atList(T.singles, { filterByFormula: `AND({Stream Rec Id} = '${params.id}', {Status} = 'In Stream')` });
-    for (const s of singles) {
-      await atUpdate(T.singles, s.id, { "Status": "Sold", "Sold Date": new Date().toISOString().slice(0, 10) });
-      singlesSold++;
-    }
+    const s = await settleStreamSingles(params.id, String(stream.fields["Stream Type"] || "Surprise Set"));
+    singlesSold = s.sold + s.legacy;
+    singlesReturned = s.returned;
+    if (s.returned) detail.push(`${s.returned} single${s.returned === 1 ? "" : "s"} back in stock`);
   } catch {} // singles table may not exist yet; nothing to do
   await atUpdate(T.streams, params.id, { "Items Returned": true });
   await stockAlert(stockChanges, "items returned - relist on Whatnot").catch(() => {});
-  return NextResponse.json({ itemsReturned, detail, singlesSold });
+  return NextResponse.json({ itemsReturned, detail, singlesSold, singlesReturned });
 }
