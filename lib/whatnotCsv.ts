@@ -369,17 +369,20 @@ export type StoreRow = {
  *  order whose title is not a wheel spot. Wheel spots are always listed as
  *  "SHOW TITLE - item"; store listings are just the item, or start with a
  *  pack count like "5x". */
+export function isStoreSale(s: WhatnotSale, hasFormat: boolean): boolean {
+  if (s.giveaway || s.price <= 0 || isShippingLine(s.title)) return false;
+  // "5x Obsidian Flames Packs - Ripped Live" has a dash but is still a
+  // store listing: a pack count up front is never a wheel spot
+  return hasFormat
+    ? /buy.?it.?now/i.test(s.format || "")
+    : packMultiplier(s.title) > 1 || !/\s-\s/.test(s.title);
+}
+
 export function storeRows(sales: WhatnotSale[]): { rows: StoreRow[]; guessed: boolean } {
   const hasFormat = sales.some((s) => s.format);
   const rows: StoreRow[] = [];
   for (const s of sales) {
-    if (s.giveaway || s.price <= 0 || isShippingLine(s.title)) continue;
-    // "5x Obsidian Flames Packs - Ripped Live" has a dash but is still a
-    // store listing: a pack count up front is never a wheel spot
-    const store = hasFormat
-      ? /buy.?it.?now/i.test(s.format || "")
-      : packMultiplier(s.title) > 1 || !/\s-\s/.test(s.title);
-    if (!store) continue;
+    if (!isStoreSale(s, hasFormat)) continue;
     rows.push({
       key: s.orderId || `row${s.row}`,
       orderId: s.orderId || "",
@@ -402,4 +405,89 @@ export function pickShow(shows: WhatnotShow[], stream: { title: string; date: st
   const names = String(stream.title || "").replace(/^\d{4}-\d{2}-\d{2}\s*-\s*/, "").split(" / ").map(n);
   const exact = shows.find((s) => s.title && names.includes(n(s.title)));
   return exact ? exact.id : suggestShow(shows, stream);
+}
+
+// ---------------------------------------------------------------------------
+// Filling in the show set from a Whatnot show report
+//
+// Every paid order in a wheel show is one spin, and each spin landed on one
+// item from the set. Wheel listings are titled "SHOW TITLE - item", so the
+// part after the dash says what was hit. Counting those per set line gives
+// the hits; the free orders give the giveaway counts; the number of spins is
+// spots sold. Store sales (Buy It Now) are left out here - they have their
+// own section.
+
+export type SetLine = { id: string; name: string; qty: number; qtyHit: number; isStore?: boolean; isGiveaway?: boolean };
+
+export type SetPlan = {
+  spins: number; // paid wheel orders = spots sold
+  gross: number; // what those spins brought in, before Whatnot fees
+  freePacks: number;
+  freeSingles: number;
+  lines: { lineId: string; name: string; qty: number; was: number; now: number }[];
+  over: { name: string; sold: number; onSet: number }[]; // more hit than was on the set
+  notOnSet: { title: string; sold: number; revenue: number }[]; // spins that match nothing on the set
+};
+
+/** "BANGERS ALL NIGHT!! - 🔥ZARUDE 2-PACK BLISTER🔥" -> "🔥ZARUDE 2-PACK BLISTER🔥" */
+export const spinItem = (title: string) => {
+  const t = String(title || "");
+  const i = t.indexOf(" - ");
+  return (i >= 0 ? t.slice(i + 3) : t).trim();
+};
+
+const lineKey = (name: string) => String(name || "").replace(/\s*\(store\)\s*$/i, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[]): SetPlan {
+  const hasFormat = sales.some((s) => s.format);
+  const g = splitGiveaways(sales);
+  const spins = g.paid.filter((s) => !isShippingLine(s.title) && !isStoreSale(s, hasFormat));
+
+  // lines that can be hit, grouped by name: a product added twice is one pool
+  const pool = setLines.filter((l) => !l.isStore && !l.isGiveaway);
+  const groups = new Map<string, SetLine[]>();
+  for (const l of pool) {
+    const k = lineKey(l.name);
+    groups.set(k, [...(groups.get(k) || []), l]);
+  }
+  const catalog: Product[] = [...groups.keys()].map((k) => ({ id: k, name: groups.get(k)![0].name }));
+
+  const sold = new Map<string, number>();
+  const missing = new Map<string, { title: string; sold: number; revenue: number }>();
+  let count = 0;
+  let gross = 0;
+  for (const s of spins) {
+    count += s.qty;
+    gross += s.price;
+    const item = spinItem(s.title);
+    const m = matchProduct({ title: item, description: "" }, catalog);
+    if (m) { sold.set(m.id, (sold.get(m.id) || 0) + s.qty); continue; }
+    const k = item.toLowerCase();
+    const cur = missing.get(k) || { title: item, sold: 0, revenue: 0 };
+    cur.sold += s.qty;
+    cur.revenue += s.price;
+    missing.set(k, cur);
+  }
+
+  const lines: SetPlan["lines"] = [];
+  const over: SetPlan["over"] = [];
+  for (const [k, ls] of groups) {
+    let left = sold.get(k) || 0;
+    const onSet = ls.reduce((a, l) => a + l.qty, 0);
+    if (left > onSet) over.push({ name: ls[0].name, sold: left, onSet });
+    for (const l of ls) {
+      const now = Math.min(l.qty, left);
+      left -= now;
+      lines.push({ lineId: l.id, name: l.name, qty: l.qty, was: l.qtyHit, now });
+    }
+  }
+  return {
+    spins: count,
+    gross: Math.round(gross * 100) / 100,
+    freePacks: g.freePacks,
+    freeSingles: g.freeSingles,
+    lines,
+    over,
+    notOnSet: [...missing.values()].sort((a, b) => b.sold - a.sold),
+  };
 }
