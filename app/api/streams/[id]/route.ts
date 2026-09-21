@@ -246,7 +246,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         filterByFormula: `{Stream Rec Id} = '${params.id}'`,
       });
       const unhit = lines.reduce(
-        (n, l: any) => n + Math.max(0, (Number(l.fields["Qty"]) || 0) - (Number(l.fields["Qty Hit"]) || 0)),
+        // store sales never go back to the shelf, so they do not count as unhit
+        (n, l: any) => (l.fields["Is Store Purchase"] ? n : n + Math.max(0, (Number(l.fields["Qty"]) || 0) - (Number(l.fields["Qty Hit"]) || 0))),
         0
       );
       if (unhit === 0) {
