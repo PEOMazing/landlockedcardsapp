@@ -21,11 +21,18 @@ const headers = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application
 
 export type AtRecord = { id: string; fields: Record<string, any> };
 
-export async function atList(table: string, params: Record<string, string> = {}): Promise<AtRecord[]> {
+// A param given as an array is sent once per value, which is how Airtable takes
+// fields[]: asking for only the columns a page needs keeps the response small.
+export async function atList(table: string, params: Record<string, string | string[]> = {}): Promise<AtRecord[]> {
   const out: AtRecord[] = [];
   let offset: string | undefined;
   do {
-    const q = new URLSearchParams({ ...params, ...(offset ? { offset } : {}) });
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (Array.isArray(v)) v.forEach((x) => q.append(k, x));
+      else q.append(k, v);
+    }
+    if (offset) q.append("offset", offset);
     const res = await fetch(`${API}/${encodeURIComponent(table)}?${q}`, { headers, cache: "no-store" });
     if (!res.ok) throw new Error(`Airtable list ${table}: ${res.status} ${await res.text()}`);
     const data = await res.json();
