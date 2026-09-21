@@ -28,6 +28,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const baselineRef = useRef("");
   const [loadErr, setLoadErr] = useState("");
   const [showPaste, setShowPaste] = useState(false);
+  // A Surprise Set's wheel can carry sealed product and single cards side by
+  // side. This picks which inventory the add box searches; both kinds land on
+  // the same show set.
+  const [addFrom, setAddFrom] = useState<"sealed" | "singles">("sealed");
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaTitle, setMetaTitle] = useState("");
   const [metaDate, setMetaDate] = useState("");
@@ -213,6 +217,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   }
   if (!data) return <main className="max-w-6xl mx-auto p-6 text-dim">Loading stream...</main>;
   const { stream, canManage, timeEntries } = data;
+  // Surprise Sets can mix sealed and singles on one wheel. Single Streams are
+  // singles only; Character Breaks stay sealed only.
+  const mixedSet = (stream.streamType || "Surprise Set") === "Surprise Set";
+  const pickingSingles = stream.streamType === "Single Stream" || (mixedSet && addFrom === "singles");
 
   async function addLine(item: PickerItem, qty: number) {
     setBusy(true);
@@ -931,14 +939,30 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               ))}
             </div>
           </div>
-          {stream.streamType !== "Single Stream" && (
+          {!pickingSingles && (
             <button className="text-foil text-xs hover:underline" onClick={() => setShowPaste(!showPaste)}>
               {showPaste ? "Hide paste" : "Paste a list"}
             </button>
           )}
         </div>
-        {stream.streamType !== "Single Stream" && <ProductPicker onAdd={addLine} busy={busy} />}
-        {stream.streamType === "Single Stream" && (
+        {mixedSet && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-dim">Add from</span>
+            <div className="inline-flex rounded-lg border border-edge overflow-hidden">
+              {([["sealed", "Sealed"], ["singles", "Singles"]] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => { setAddFrom(k); if (k === "singles") setShowPaste(false); }}
+                  className={`px-3 py-1 ${addFrom === k ? "bg-foil/15 text-foil" : "text-dim hover:text-paper"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {!pickingSingles && <ProductPicker onAdd={addLine} busy={busy} />}
+        {pickingSingles && (
           <SinglesPicker streamId={id} onAdded={load} busy={busy} />
         )}
         {showPaste && (
@@ -1133,7 +1157,9 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                 <tr><td colSpan={8} className="text-dim">
                   {stream.streamType === "Single Stream"
                     ? "Search the singles inventory above to add auction cards - each starts at $1 on Whatnot"
-                    : "Search the inventory above to build this stream's show set"}
+                    : mixedSet
+                      ? "Search sealed or singles above to build the wheel - unhit singles go back to stock when the show closes"
+                      : "Search the inventory above to build this stream's show set"}
                 </td></tr>
               )}
             </tbody>
