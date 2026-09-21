@@ -7,12 +7,14 @@ const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits
 
 type SingleT = {
   id: string; name: string; setName: string; number: string; condition: string;
-  comp: number | null; image: string; qty: number;
+  comp: number | null; image: string; qty: number; cardNo: number | null;
 };
 
-// For Single Streams: search the singles card inventory and drop cards onto
-// the show set. Every add snapshots the comp as the line's market price so
-// spot math and pay work exactly like a sealed show.
+const pad4 = (n: number | null) => (n === null || n === undefined ? "" : String(n).padStart(4, "0"));
+
+// Search the singles card inventory and drop cards onto a show set - a Single
+// Stream's auction list or a Surprise Set's wheel. Every add snapshots the comp
+// as the line's market price so spot math and pay work exactly like sealed.
 export default function SinglesPicker({
   streamId,
   onAdded,
@@ -37,6 +39,13 @@ export default function SinglesPicker({
   const filtered = useMemo(() => {
     const n = q.trim().toLowerCase();
     if (!n) return items.slice(0, 8);
+    // The sticker number is how a card in hand gets found: typing 68 or 0068
+    // goes straight to that card rather than wading through every Umbreon.
+    const asNo = /^#?\d{1,5}$/.test(n) ? parseInt(n.replace("#", ""), 10) : null;
+    if (asNo !== null) {
+      const exact = items.filter((s) => s.cardNo === asNo);
+      if (exact.length) return exact;
+    }
     return items
       .filter((s) =>
         s.name.toLowerCase().includes(n) ||
@@ -71,7 +80,7 @@ export default function SinglesPicker({
       </div>
       <input
         className="input"
-        placeholder='Search your singles - try "Charizard" or "PSA 10"'
+        placeholder='Search your singles - a sticker number like 0068, or "Charizard"'
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
@@ -81,7 +90,10 @@ export default function SinglesPicker({
           <div key={s.id} className="flex items-center gap-3 rounded-lg border border-edge px-3 py-2">
             {s.image && <Thumb src={s.image} size={28} className="shrink-0" />}
             <div className="min-w-0">
-              <div className="text-sm font-medium truncate">{s.name}</div>
+              <div className="text-sm font-medium truncate">
+                {s.cardNo !== null && s.cardNo !== undefined && <span className="num text-dim mr-1.5">{pad4(s.cardNo)}</span>}
+                {s.name}
+              </div>
               <div className="text-dim text-xs truncate">
                 {s.setName}{s.number ? ` #${s.number}` : ""} - {s.condition}
               </div>
