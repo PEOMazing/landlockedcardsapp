@@ -59,6 +59,8 @@ const COLS = {
   format: ["buy format"],
   showId: ["livestream id"],
   showTitle: ["livestream title"],
+  // the numeric id is the one both the show export and the earnings report carry
+  orderId: ["order numeric id", "order id"],
 };
 
 export type WhatnotSale = {
@@ -73,6 +75,8 @@ export type WhatnotSale = {
   giveaway: boolean;
   showId: string;
   showTitle: string;
+  orderId?: string; // Whatnot's order id, so a file uploaded twice books nothing twice
+  format?: string; // AUCTION, BUY_IT_NOW or GIVEAWAY on the earnings report; blank elsewhere
 };
 
 export function findColumns(header: string[]): Record<keyof typeof COLS, number> {
@@ -128,6 +132,8 @@ export function readWhatnotCsv(text: string): { sales: WhatnotSale[]; skipped: n
       giveaway: /giveaway/i.test(get("format")),
       showId: get("showId"),
       showTitle: get("showTitle"),
+      orderId: get("orderId"),
+      format: get("format"),
     });
   }
   return { sales, skipped, error: null };
@@ -328,4 +334,72 @@ export function suggestShow(shows: WhatnotShow[], stream: { date: string; stream
   const first = (stream.streamer || "").split(/\s+/)[0].toLowerCase();
   const named = first ? sameDay.filter((s) => s.title.toLowerCase().includes(first)) : [];
   return (named[0] || sameDay[0])?.id ?? "";
+}
+
+// ---------------------------------------------------------------------------
+// Store sales
+//
+// A store sale is anything bought straight off the shelf during a show (Buy It
+// Now on Whatnot) rather than won on the wheel. They live in their own section
+// of the stream, not on the show set, so they never touch spin stats.
+
+/** "5x Darkness Ablaze Booster Packs" is 5 packs. The number up front is how
+ *  many units one order takes off the shelf. */
+export function packMultiplier(title: string): number {
+  const m = String(title || "").match(/^\s*(\d{1,2})\s*x\s/i);
+  const n = m ? parseInt(m[1]) : 1;
+  return n >= 2 && n <= 50 ? n : 1;
+}
+
+/** Shipping upgrades are money, not product. */
+export const isShippingLine = (title: string) => /shipping/i.test(String(title || ""));
+
+export type StoreRow = {
+  key: string; // order id, or file row when there is none
+  orderId: string;
+  title: string;
+  units: number; // what comes off the shelf: order qty x the "5x" multiplier
+  price: number; // what the buyer paid for the whole order
+  date: string;
+  showId: string;
+};
+
+/** The store sales in a file. The earnings report says outright which orders
+ *  were Buy It Now. The per-show export does not, so there the rule is: a paid
+ *  order whose title is not a wheel spot. Wheel spots are always listed as
+ *  "SHOW TITLE - item"; store listings are just the item, or start with a
+ *  pack count like "5x". */
+export function storeRows(sales: WhatnotSale[]): { rows: StoreRow[]; guessed: boolean } {
+  const hasFormat = sales.some((s) => s.format);
+  const rows: StoreRow[] = [];
+  for (const s of sales) {
+    if (s.giveaway || s.price <= 0 || isShippingLine(s.title)) continue;
+    // "5x Obsidian Flames Packs - Ripped Live" has a dash but is still a
+    // store listing: a pack count up front is never a wheel spot
+    const store = hasFormat
+      ? /buy.?it.?now/i.test(s.format || "")
+      : packMultiplier(s.title) > 1 || !/\s-\s/.test(s.title);
+    if (!store) continue;
+    rows.push({
+      key: s.orderId || `row${s.row}`,
+      orderId: s.orderId || "",
+      title: s.title,
+      units: s.qty * packMultiplier(s.title),
+      price: s.price,
+      date: s.date,
+      showId: s.showId,
+    });
+  }
+  return { rows, guessed: !hasFormat };
+}
+
+/** Which show in a weekly file belongs to this stream. The app's stream name
+ *  is supposed to be the Whatnot show title, so an exact match wins; failing
+ *  that, same day and streamer. */
+export function pickShow(shows: WhatnotShow[], stream: { title: string; date: string; streamer: string }): string {
+  const n = (t: string) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  // one app stream can cover two Whatnot shows, written "Show A / Show B"
+  const names = String(stream.title || "").replace(/^\d{4}-\d{2}-\d{2}\s*-\s*/, "").split(" / ").map(n);
+  const exact = shows.find((s) => s.title && names.includes(n(s.title)));
+  return exact ? exact.id : suggestShow(shows, stream);
 }
