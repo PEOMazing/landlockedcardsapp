@@ -12,6 +12,7 @@ const I = {
   singles: <path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM9 8h6M9 12h6" />,
   inventory: <path d="M4 7l8-4 8 4v10l-8 4-8-4V7zM4 7l8 4 8-4M12 11v10" />,
   sets: <path d="M4 6h16M4 12h16M4 18h10" />,
+  audit: <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5M8 11l2 2 4-4" />,
   show: <path d="M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v5H3zM14 15h7v5h-7z" />,
   pay: <path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />,
   analytics: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
@@ -53,6 +54,7 @@ const GROUPS: Group[] = [
     title: "Stock",
     items: [
       { href: "/admin/inventory", label: "Inventory", icon: I.inventory, manager: true },
+      { href: "/admin/audit", label: "Audit", icon: I.audit, manager: true },
       { href: "/sets", label: "Set Lists", icon: I.sets },
     ],
   },
