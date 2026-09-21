@@ -224,11 +224,12 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
 
   async function addLine(item: PickerItem, qty: number) {
     setBusy(true);
-    await fetch("/api/lines", {
+    const res = await fetch("/api/lines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ streamId: id, productId: item.id, qty }),
     });
+    if (!res.ok) toast((await res.json().catch(() => ({}))).error || "Could not add that product", "bad");
     await load();
     setBusy(false);
   }
@@ -270,7 +271,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       keepalive: true,
     }).finally(() => window.removeEventListener("beforeunload", guard));
     const d = await res.json();
-    if (!res.ok) setPasteMsg(d.error || "Bulk add failed");
+    if (!res.ok) { setPasteMsg(d.error || "Bulk add failed"); toast(d.error || "Bulk add failed", "bad"); }
     else {
       let msg = `Added ${d.added.length} items`;
       if (d.created.length) msg += ` - created ${d.created.length} new products (set their prices!)`;
@@ -887,6 +888,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                 });
                 setBusy(false);
                 if (r.ok) { setStoreProduct(""); setStorePrice(""); await load(); }
+                else toast((await r.json().catch(() => ({}))).error || "Could not record that sale", "bad");
               }}
             >
               Sold
@@ -1029,7 +1031,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                           onClick={async () => {
                             setBusy(true);
                             const r = await fetch(`/api/lines/${l.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty: l.qty + 1 }) });
-                            if (!r.ok) toast((await r.json().catch(() => ({}))).error || "Could not adjust");
+                            if (!r.ok) toast((await r.json().catch(() => ({}))).error || "Could not adjust", "bad");
                             await load(); setBusy(false);
                           }}
                         >
