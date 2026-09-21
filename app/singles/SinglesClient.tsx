@@ -2,6 +2,7 @@
 import QRCode from "qrcode";
 import { formatCardNo, parseCardNo, bucketFor, bucketRange, bucketDrifted } from "@/lib/cardNo";
 import { isThinComp } from "@/lib/salesWindow";
+import { priceBound, inPriceRange, rangeBackwards } from "@/lib/priceRange";
 import { useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
@@ -681,6 +682,14 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   }
 
   const [setFilter, setSetFilter] = useState("All");
+  // Price range on the comp. Either end can stand alone: a max on its own is
+  // "everything cheap enough for the $5 wheel", a min on its own is "pull the
+  // good stuff". Kept as text so the box can be empty and half-typed.
+  const [minP, setMinP] = useState("");
+  const [maxP, setMaxP] = useState("");
+  const lo = useMemo(() => priceBound(minP), [minP]);
+  const hi = useMemo(() => priceBound(maxP), [maxP]);
+  const priceOn = lo !== null || hi !== null;
   const [sortKey, setSortKey] = useState<SortKey>("newest");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -697,7 +706,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   // a changed view means a changed list - drop the selection so nothing gets
   // deleted that the user can no longer see
-  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker, neverPrinted, thinData]);
+  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker, neverPrinted, thinData, lo, hi]);
   // re-sorting keeps the selection but retires the shift-click anchor, since
   // the row that index pointed at just moved
   useEffect(() => { lastClicked.current = null; }, [sortKey, sortDir]);
@@ -716,6 +725,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     // is blank for unpriced cards however many times they have been printed.
     if (neverPrinted) list = list.filter((s) => !s.labelPrinted);
     if (thinData) list = list.filter((s) => s.comp !== null && isThinComp(s.compSales));
+    if (lo !== null || hi !== null) list = list.filter((s) => inPriceRange(s.comp, lo, hi));
     list = mode === "graded" ? list.filter((s) => GRADED.includes(s.condition)) : list.filter((s) => !GRADED.includes(s.condition));
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
     // token search: every word must match somewhere, so "umbreon prismatic"
@@ -755,7 +765,15 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     }
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker, neverPrinted, thinData]);
+  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker, neverPrinted, thinData, lo, hi]);
+
+  // How many cards the range is holding back purely for want of a comp, so an
+  // empty-looking table is explained rather than mysterious.
+  const noCompHidden = useMemo(() => {
+    if (!priceOn) return 0;
+    const base = statusFilter === "All" ? singles : singles.filter((s) => s.status === statusFilter);
+    return base.filter((s) => s.comp === null && (mode === "graded" ? GRADED.includes(s.condition) : !GRADED.includes(s.condition))).length;
+  }, [singles, statusFilter, mode, priceOn]);
 
   const restickerCount = useMemo(
     () => singles.filter((s) => bucketDrifted(s.comp, s.printedBucket || "")).length,
@@ -1057,6 +1075,37 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               <option value="All">All sets</option>
               {setNames.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
+            <div
+              className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs ${priceOn ? "border-foil/60 bg-foil/10" : "border-edge"}`}
+              title="Comp price range. Either box works on its own, and both ends count as in range."
+            >
+              <span className={priceOn ? "text-foil" : "text-dim"}>$</span>
+              <input
+                className="input !w-16 !px-1.5 !py-1 num"
+                inputMode="decimal"
+                placeholder="min"
+                value={minP}
+                onChange={(e) => setMinP(e.target.value)}
+              />
+              <span className="text-dim">to</span>
+              <input
+                className="input !w-16 !px-1.5 !py-1 num"
+                inputMode="decimal"
+                placeholder="max"
+                value={maxP}
+                onChange={(e) => setMaxP(e.target.value)}
+              />
+              {(minP || maxP) && (
+                <button
+                  type="button"
+                  className="text-dim hover:text-body px-1"
+                  onClick={() => { setMinP(""); setMaxP(""); }}
+                  title="Clear the price range"
+                >
+                  x
+                </button>
+              )}
+            </div>
             <select
               className="input !w-44"
               value={`${sortKey}:${sortDir}`}
@@ -1150,6 +1199,11 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
           <div className="rounded-lg border border-edge p-3">
             <div className="label">Cards shown</div>
             <div className="num text-lg font-bold">{totals.cards}</div>
+            {rangeBackwards(lo, hi) ? (
+              <div className="text-bad text-[11px] mt-0.5">Min is above max, so nothing can match</div>
+            ) : priceOn && noCompHidden > 0 ? (
+              <div className="text-dim text-[11px] mt-0.5">{noCompHidden} with no comp not counted</div>
+            ) : null}
           </div>
           {isAdmin && (
             <div className="rounded-lg border border-edge p-3">
