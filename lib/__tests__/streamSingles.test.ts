@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { closeActionFor, releaseActionFor, hitsDecideSingles, soldAtClose } from "../streamSingles";
+import { closeActionFor, releaseActionFor, hitsDecideSingles, soldAtClose, wheelPriceUpdate } from "../streamSingles";
 
 // These rules decide whether a card is Sold or back on the shelf when a show
 // closes. Getting one wrong silently corrupts inventory - which is exactly the
@@ -82,5 +82,28 @@ describe("taking a card's line off a show", () => {
   });
   it("never pulls a card off a different show it has since moved to", () => {
     assert.equal(releaseActionFor(line(), card({ "Stream Rec Id": OTHER }), S, "Surprise Set", false), "skip");
+  });
+});
+
+describe("wheelPriceUpdate", () => {
+  const line = (snap: any, sid: any = "recAAAAAAAAAAAAAA") => ({ fields: { "Single Rec Id": sid, "Market Price Snapshot": snap } });
+  const card = (comp: any) => ({ fields: { Comp: comp } });
+  it("follows the card's comp on a wheel", () => {
+    assert.equal(wheelPriceUpdate(line(130), card(125), "Surprise Set"), 125);
+    assert.equal(wheelPriceUpdate(line(120), card(125), "Surprise Set"), 125);
+  });
+  it("leaves a line alone when it already matches", () => {
+    assert.equal(wheelPriceUpdate(line(125), card(125), "Surprise Set"), null);
+  });
+  it("fills in a line that had no price", () => {
+    assert.equal(wheelPriceUpdate(line(undefined), card(40), "Surprise Set"), 40);
+  });
+  it("never touches an auction", () => {
+    assert.equal(wheelPriceUpdate(line(1), card(125), "Single Stream"), null);
+  });
+  it("ignores sealed lines and cards with no comp", () => {
+    assert.equal(wheelPriceUpdate(line(10, ""), card(125), "Surprise Set"), null);
+    assert.equal(wheelPriceUpdate(line(10), card(null), "Surprise Set"), null);
+    assert.equal(wheelPriceUpdate(line(10), null, "Surprise Set"), null);
   });
 });
