@@ -102,8 +102,15 @@ export async function settleStreamSingles(
     try {
       if (act === "sold") {
         // the stream stays on a sold card: it records where it went, and it is
-        // what lets a later line removal find and undo the sale
-        await atUpdate(T.singles, sid, { "Status": "Sold", "Sold Date": today() });
+        // what lets a later line removal find and undo the sale.
+        //
+        // A card hit on a wheel sells at the price it went on the wheel at - the
+        // line's snapshot - so the sale is on the record the moment the show
+        // closes. An auction's price is whatever the bidding reached, which the
+        // line does not know, so that one is left for a person to fill in.
+        const linePrice = Number(l.fields["Market Price Snapshot"]);
+        const salePrice = hitsDecideSingles(streamType) && Number.isFinite(linePrice) && linePrice >= 0 ? { "Sale Price": linePrice } : {};
+        await atUpdate(T.singles, sid, { "Status": "Sold", "Sold Date": today(), ...salePrice });
         out.sold++;
       } else if (act === "return") {
         await atUpdate(T.singles, sid, { "Status": "In Stock", "Stream Rec Id": "" });
@@ -145,7 +152,8 @@ export async function releaseSingleFromLine(
   try {
     if (act === "copy-restore") { await bumpQty(sid, 1); return true; }
     if (act === "restore") {
-      await atUpdate(T.singles, sid, { "Status": "In Stock", "Stream Rec Id": "", "Sold Date": null as any });
+      // undoing a sale takes its price back off too
+      await atUpdate(T.singles, sid, { "Status": "In Stock", "Stream Rec Id": "", "Sold Date": null as any, "Sale Price": null as any });
       return true;
     }
   } catch {}
