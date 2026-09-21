@@ -136,10 +136,14 @@ describe("store sales", () => {
       S({ title: "5x Silver Tempest Booster Pack", price: 109 }),
       S({ title: "5x Obsidian Flames Packs - Ripped Live", price: 79 }),
       S({ title: "BANGERS ALL NIGHT!! - Gem Pack", price: 12 }),
+      S({ title: "BANGERS ALL NIGHT!! - Zarude blister", price: 14 }),
+      S({ title: "BANGERS ALL NIGHT!! - Gem Pack", price: 11 }),
+      S({ title: "Pokemon Keychain - KailieKreations + Goodie Bag!", price: 12 }),
       S({ title: "MUST BOOKMARK ALL STREAMS - FREE PACK", price: 0 }),
     ]);
     assert.equal(guessed, true);
-    assert.deepEqual(rows.map((r) => r.units), [5, 5]);
+    // the keychain has a dash too, but its prefix is not the show's wheel prefix
+    assert.deepEqual(rows.map((r) => r.units), [5, 5, 1]);
   });
   it("picks the show whose title matches the stream name", () => {
     const shows = [
