@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { takeStock } from "@/lib/stock";
 
 // Add a product line to a stream. Snapshots current prices, decrements inventory.
 export async function POST(req: Request) {
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
   });
   const onHand = product.fields["Qty On Hand"] ?? 0;
   if (!(rebuildWindow && stream.fields["Items Returned"])) {
-    await atUpdate(T.inventory, b.productId, { "Qty On Hand": onHand - qty });
+    await atUpdate(T.inventory, b.productId, { "Qty On Hand": takeStock(onHand, qty) });
   }
   return NextResponse.json({ id: rec.id });
 }
