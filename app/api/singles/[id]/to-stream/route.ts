@@ -61,6 +61,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     "Is Giveaway": false,
     "Stream": [b.streamId],
     "Stream Rec Id": b.streamId,
+    // the link back to the card, so closing the show can tell a hit card from
+    // an unhit one and removing the line can put the card back on the shelf
+    "Single Rec Id": params.id,
+    // a copy off a multi-copy record goes back as Qty + 1, not a Status flip
+    "Single Copy": (single.fields["Qty"] ?? 1) > 1,
   });
 
   // one copy moves onto the stream; extra copies stay in stock
