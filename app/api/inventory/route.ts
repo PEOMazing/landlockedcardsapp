@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { atList, atCreate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
+import { clampStock } from "@/lib/stock";
 
 export async function GET() {
   const me = await getMe();
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
     "Price Checked": new Date().toISOString().slice(0, 10),
     "Date Added": new Date().toISOString().slice(0, 10),
     ...((b.marketPrice ?? 0) > 0 ? { "Entry Market": b.marketPrice } : {}),
-    "Qty On Hand": b.qtyOnHand ?? 0,
+    "Qty On Hand": clampStock(b.qtyOnHand),
     "TCGplayer URL": b.tcgUrl || "",
     "Active": true,
   });
