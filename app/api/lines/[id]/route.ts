@@ -3,6 +3,7 @@ import { stockAlert } from "@/lib/alerts";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { releaseSingleFromLine } from "@/lib/streamSingles";
+import { clampStock } from "@/lib/stock";
 
 async function guard(lineId: string) {
   const me = await getMe();
@@ -64,7 +65,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (productId) {
       const product = await atGet(T.inventory, productId);
       await atUpdate(T.inventory, productId, {
-        "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) + oldQty - newQty,
+        "Qty On Hand": clampStock((product.fields["Qty On Hand"] ?? 0) + oldQty - newQty),
       });
     }
   }
