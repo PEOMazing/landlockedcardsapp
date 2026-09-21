@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { formatCardNo, bucketFor, bucketRange } from "@/lib/cardNo";
+import { alphaOrder } from "@/lib/labelOrder";
 
 // Printable card labels in two shapes, because the two ways of printing them
 // want completely different pages:
@@ -15,6 +16,13 @@ type L = { id: string; cardNo: string; bucket: string; name: string; setName: st
 
 type Mode = "sheet" | "roll";
 const MODE_KEY = "llc-label-mode";
+
+// A to Z is the default because cards get filed by name, and a batch imported
+// in one go shares a Date Added, so the table order it used to inherit scattered
+// copies of the same card all over the run. "As listed" keeps the Singles page
+// order for the times that is the point, like printing one price box at a time.
+type Order = "az" | "table";
+const ORDER_KEY = "llc-label-order";
 
 // Where a thermal printer actually lays ink down is not something a web page
 // can know. This roll stock is a 0.75in x 2in printable label with a 0.35in
@@ -71,6 +79,7 @@ export default function LabelsClient() {
   // The roll is the printer that actually gets used at a show, so it is what
   // you get unless you have said otherwise on this browser before.
   const [mode, setMode] = useState<Mode>("roll");
+  const [order, setOrder] = useState<Order>("az");
   const [cal, setCal] = useState<Cal>(DEFAULT_CAL);
   const [err, setErr] = useState("");
 
@@ -81,6 +90,8 @@ export default function LabelsClient() {
     try {
       const saved = localStorage.getItem(MODE_KEY);
       if (saved === "roll" || saved === "sheet") setMode(saved);
+      const o = localStorage.getItem(ORDER_KEY);
+      if (o === "az" || o === "table") setOrder(o);
       const c = JSON.parse(localStorage.getItem(CAL_KEY) || "null");
       // `nudge` is the old raw-offset spelling, negative for up. Read it so a
       // browser that was already calibrated does not silently lose the setting.
@@ -93,6 +104,10 @@ export default function LabelsClient() {
   function pickMode(m: Mode) {
     setMode(m);
     try { localStorage.setItem(MODE_KEY, m); } catch {}
+  }
+  function pickOrder(o: Order) {
+    setOrder(o);
+    try { localStorage.setItem(ORDER_KEY, o); } catch {}
   }
   function setCalibration(next: Partial<Cal>) {
     const c = clampCal({ ...cal, ...next });
@@ -170,6 +185,7 @@ export default function LabelsClient() {
   if (!labels) return <main className="p-8 text-dim">Building labels...</main>;
 
   const roll = mode === "roll";
+  const printed = order === "az" ? alphaOrder(labels) : labels;
 
   return (
     <>
@@ -306,6 +322,22 @@ export default function LabelsClient() {
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
             <div className="inline-flex rounded-lg border border-edge overflow-hidden">
+              {([["az", "A to Z"], ["table", "As listed"]] as [Order, string][]).map(([o, label]) => (
+                <button
+                  key={o}
+                  type="button"
+                  aria-pressed={order === o}
+                  onClick={() => pickOrder(o)}
+                  title={o === "az" ? "By card name, with copies of the same card together in sticker number order" : "The order the cards were in on the Singles page"}
+                  className={`px-3 py-1.5 text-xs whitespace-nowrap transition-colors ${
+                    order === o ? "bg-foil/15 text-foil font-semibold" : "text-dim hover:text-body"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex rounded-lg border border-edge overflow-hidden">
               {([["sheet", "Avery sheet"], ["roll", "2 x 3/4 roll"]] as [Mode, string][]).map(([m, label]) => (
                 <button
                   key={m}
@@ -366,7 +398,7 @@ export default function LabelsClient() {
           </div>
         </div>
         <div className="sheet">
-          {labels.map((l) => (
+          {printed.map((l) => (
             <Page key={l.id} on={roll}>
             <div className="lbl">
               {/* the markup is qrcode's own output for a URL we built, not
