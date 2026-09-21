@@ -12,6 +12,7 @@ const I = {
   singles: <path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM9 8h6M9 12h6" />,
   inventory: <path d="M4 7l8-4 8 4v10l-8 4-8-4V7zM4 7l8 4 8-4M12 11v10" />,
   sets: <path d="M4 6h16M4 12h16M4 18h10" />,
+  show: <path d="M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v5H3zM14 15h7v5h-7z" />,
   pay: <path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />,
   analytics: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   insights: <path d="M12 2a7 7 0 0 1 4 12.7V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.3A7 7 0 0 1 12 2zM9 21h6" />,
@@ -43,6 +44,7 @@ const GROUPS: Group[] = [
     items: [
       { href: "/singles", label: "Singles", icon: I.singles },
       { href: "/graded", label: "Graded", icon: I.singles },
+      { href: "/show", label: "Card Show", icon: I.show },
       { href: "/quote", label: "Quote", icon: I.pay, manager: true },
       { href: "/admin/streams", label: "All Streams", icon: I.streams, manager: true },
     ],
