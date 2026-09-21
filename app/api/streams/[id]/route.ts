@@ -117,6 +117,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       market: l.market, isGiveaway: l.isGiveaway, isHit: isHitLine(l, settings),
       isStore: !!lineRows[i].fields["Is Store Purchase"],
       soldPrice: lineRows[i].fields["Sold Price"] || 0,
+      orderId: lineRows[i].fields["Whatnot Order Id"] || "",
+      productId: lineRows[i].fields["Product"]?.[0] || "",
       isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
       tcgUrl: tcgByProduct[lineRows[i].fields["Product"]?.[0]] || "",
       image: imageByProduct[lineRows[i].fields["Product"]?.[0]] || "",
