@@ -3,7 +3,7 @@ import { stockAlert } from "@/lib/alerts";
 import { atCreate, atGet, atList, atUpdate, isRecId, T, AtRecord } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { indexByName, productAliases } from "@/lib/productNames";
-import { takeStock } from "@/lib/stock";
+import { takeStock, clampStock, shortBy, NEGATIVE_STOCK_MSG } from "@/lib/stock";
 
 // Bulk-add pasted items to a show set.
 // Body: { streamId, items: [{ name, qty }] }
@@ -43,6 +43,30 @@ export async function POST(req: Request) {
       })
     );
     return contains.length === 1 ? contains[0] : null;
+  }
+
+  // Check the whole paste against stock before touching anything, so a set is
+  // either added in full or not at all. Stock can never go negative: a product
+  // with too few on hand, or one not in inventory yet, stops the paste and says
+  // which ones need counting first.
+  if (!rebuildWindow) {
+    const need = new Map<string, { name: string; onHand: number; qty: number }>();
+    const missing: string[] = [];
+    for (const item of items) {
+      const product = match(item.name);
+      if (!product) { missing.push(item.name); continue; }
+      const cur = need.get(product.id) || { name: product.fields["Product Name"], onHand: product.fields["Qty On Hand"] ?? 0, qty: 0 };
+      cur.qty += item.qty;
+      need.set(product.id, cur);
+    }
+    const short = [...need.values()].filter((x) => shortBy(x.onHand, x.qty) > 0);
+    if (short.length || missing.length) {
+      const parts = [
+        ...short.map((x) => `${x.name} (${clampStock(x.onHand)} on hand, ${x.qty} needed)`),
+        ...missing.map((m) => `${m} (not in inventory)`),
+      ];
+      return NextResponse.json({ error: `${NEGATIVE_STOCK_MSG} Short: ${parts.join(", ")}.` }, { status: 400 });
+    }
   }
 
   const added: string[] = [];
