@@ -247,7 +247,7 @@ function WhatnotCheck({ stream, streamLines, products }: { stream: Stream; strea
   const setByProduct = useMemo(() => {
     const m: Record<string, { onSet: number; hit: number }> = {};
     for (const l of streamLines) {
-      if (!l.productId || l.store) continue;
+      if (!l.productId) continue; // store sales count: they left the shelf on this show too
       const cur = m[l.productId] || { onSet: 0, hit: 0 };
       cur.onSet += l.qty || 0;
       cur.hit += l.hit || 0;

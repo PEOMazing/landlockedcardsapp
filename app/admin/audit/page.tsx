@@ -25,7 +25,7 @@ export default async function AuditPage({ searchParams }: { searchParams: { stre
     atList(T.lines, {
       "fields[]": ["Line", "Qty", "Qty Hit", "Stream Rec Id", "Market Price Snapshot", "Buy Price Snapshot", "Is Giveaway", "Is Store Purchase", "Sold Price", "Single Rec Id", "Product"],
     }),
-    atList(T.inventory, { "fields[]": ["Product Name", "Former Names", "Qty On Hand", "Active", "Category"] }),
+    atList(T.inventory, { "fields[]": ["Product Name", "Former Names", "Whatnot Names", "Qty On Hand", "Active", "Category"] }),
     atList(T.singles, { "fields[]": ["Card No", "Set Name"] }),
   ]);
 
@@ -66,7 +66,7 @@ export default async function AuditPage({ searchParams }: { searchParams: { stre
     .map((r) => ({
       id: r.id,
       name: String(r.fields["Product Name"] || "").trim(),
-      aliases: String(r.fields["Former Names"] || "").split("\n").map((s) => s.trim()).filter(Boolean),
+      aliases: [...String(r.fields["Former Names"] || "").split("\n"), ...String(r.fields["Whatnot Names"] || "").split("\n")].map((s) => s.trim()).filter(Boolean),
       onHand: r.fields["Qty On Hand"] ?? 0,
       active: !!r.fields["Active"],
     }))
