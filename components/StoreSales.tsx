@@ -37,7 +37,7 @@ const cleanTitle = (t: string) =>
     .trim();
 
 export default function StoreSales({
-  streamId, streamTitle, streamDate, streamerName, closed, canManage, lines, onChange,
+  streamId, streamTitle, streamDate, streamerName, closed, canManage, lines, onChange, sharedFile,
 }: {
   streamId: string;
   streamTitle: string;
@@ -47,6 +47,8 @@ export default function StoreSales({
   canManage: boolean;
   lines: StoreLine[];
   onChange: () => Promise<void>;
+  // a report uploaded in the Whatnot show report section, so one upload does both
+  sharedFile?: { name: string; text: string; nonce: number } | null;
 }) {
   const [inv, setInv] = useState<Inv[]>([]);
   const [busy, setBusy] = useState(false);
@@ -63,6 +65,13 @@ export default function StoreSales({
   const [newItem, setNewItem] = useState({ name: "", category: "Other", market: "", qty: "" });
 
   const editable = !closed || canManage;
+
+  useEffect(() => {
+    if (!sharedFile) return;
+    setFileName(sharedFile.name);
+    setPicks({});
+    setText(sharedFile.text);
+  }, [sharedFile?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadInv = async () => {
     try {
