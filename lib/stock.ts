@@ -21,3 +21,20 @@ export function clampStock(n: unknown): number {
 export function takeStock(onHand: unknown, qty: unknown): number {
   return clampStock((Number(onHand) || 0) - (Number(qty) || 0));
 }
+
+// Shown whenever something would pull more sealed product than is on hand.
+// Stock is counted before a set is built, not after, so the fix is always the
+// same: go update the count in inventory, then build the set.
+export const NEGATIVE_STOCK_MSG =
+  "You cannot have negative inventory, update inventory before creating your surprise set.";
+
+/** How many units short a pull of `qty` would leave you, 0 when there is enough. */
+export function shortBy(onHand: unknown, qty: unknown): number {
+  const need = Math.max(0, Math.floor(Number(qty) || 0));
+  return Math.max(0, need - clampStock(onHand));
+}
+
+/** The full message for one product that does not have enough on hand. */
+export function shortMessage(name: string, onHand: unknown, qty: unknown): string {
+  return `${NEGATIVE_STOCK_MSG} ${name || "This product"} has ${clampStock(onHand)} on hand, ${Math.floor(Number(qty) || 0)} needed.`;
+}
