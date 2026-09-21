@@ -67,6 +67,7 @@ export default async function VendorDashboard() {
   const sold = singles.filter((s: any) => s.status === "Sold");
   const singlesMarket = inStock.reduce((a: number, s: any) => a + (s.comp || 0) * (s.qty || 1), 0);
   const singlesCost = inStock.reduce((a: number, s: any) => a + (s.buy || 0) * (s.qty || 1), 0);
+  const singlesUnits = inStock.reduce((a: number, s: any) => a + (s.qty || 1), 0);
   const soldRevenue = sold.reduce((a: number, s: any) => a + (s.salePrice || 0), 0);
   const soldProfit = sold.reduce((a: number, s: any) => a + ((s.salePrice || 0) - (s.buy || 0)) * (s.qty || 1), 0);
   const thinComps = inStock.filter(
@@ -172,11 +173,25 @@ export default async function VendorDashboard() {
           <Tile label="Singles sold to date" value={$0(soldRevenue)} sub={`${sold.length} sales - ${$0(soldProfit)} profit`} tone="text-win" />
         </div>
 
+        {/* the two halves of the inventory, each on its own */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Tile
+            label="Sealed inventory market value"
+            value={$0(sealedMarket)}
+            sub={`${sealedUnits.toLocaleString("en-US")} units - paid ${$0(sealedCost)} - est. profit ${$0(sealedMarket - sealedCost)}${totalMarket ? ` - ${Math.round((sealedMarket / totalMarket) * 100)}% of total` : ""}`}
+          />
+          <Tile
+            label="Singles inventory market value"
+            value={$0(singlesMarket)}
+            sub={`${singlesUnits.toLocaleString("en-US")} cards - paid ${$0(singlesCost)} - est. profit ${$0(singlesMarket - singlesCost)}${totalMarket ? ` - ${Math.round((singlesMarket / totalMarket) * 100)}% of total` : ""}`}
+          />
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Tile label="Streams - 30 day revenue" value={$0(streamRevenue)} sub={`${recent.length} completed streams`} />
           <Tile label="Streams - 30 day profit" value={$0(streamProfit30)} tone={streamProfit30 >= 0 ? "text-win" : "text-bad"} sub="sales minus hits delivered, giveaways, packing, tips, promo" />
           <Tile label="Labor owed this week" value={$0(laborThisWeek)} sub="streamer + manager pay, live" />
-          <Tile label="Sealed on hand" value={String(sealedUnits)} sub={`${inStock.reduce((a: number, s: any) => a + (s.qty || 1), 0)} singles in stock`} />
+          <Tile label="Sealed on hand" value={String(sealedUnits)} sub={`${singlesUnits} singles in stock`} />
         </div>
 
         {alerts.length > 0 && (
