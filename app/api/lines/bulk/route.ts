@@ -3,6 +3,7 @@ import { stockAlert } from "@/lib/alerts";
 import { atCreate, atGet, atList, atUpdate, isRecId, T, AtRecord } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { indexByName, productAliases } from "@/lib/productNames";
+import { takeStock } from "@/lib/stock";
 
 // Bulk-add pasted items to a show set.
 // Body: { streamId, items: [{ name, qty }] }
@@ -81,9 +82,9 @@ export async function POST(req: Request) {
       "Stream Rec Id": b.streamId,
       "Product": [product.id],
     });
-    if (!rebuildWindow) stockChanges.push({ name, qtyNow: (product.fields["Qty On Hand"] ?? 0) - item.qty, delta: -item.qty });
+    if (!rebuildWindow) stockChanges.push({ name, qtyNow: takeStock(product.fields["Qty On Hand"], item.qty), delta: -item.qty });
     if (!rebuildWindow) await atUpdate(T.inventory, product.id, {
-      "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) - item.qty,
+      "Qty On Hand": takeStock(product.fields["Qty On Hand"], item.qty),
     });
     added.push(`${item.qty}x ${name}`);
   }
