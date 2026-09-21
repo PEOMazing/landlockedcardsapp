@@ -53,6 +53,7 @@ export default async function InsightsPage() {
     giveaways: r.fields["Giveaways Run"] || 0,
     singlesGiveaways: r.fields["Singles Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
+    shipAdj: r.fields["Shipping Adjustments"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
