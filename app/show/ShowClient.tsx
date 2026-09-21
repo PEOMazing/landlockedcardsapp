@@ -186,7 +186,7 @@ export default function ShowClient({ cards, failed }: { cards: ShowCard[]; faile
                         <div className="absolute inset-0 flex items-center justify-center text-dim text-xs">No image</div>
                       )}
                       {g.count > 1 && (
-                        <span className="absolute top-1.5 right-1.5 rounded-md bg-black/75 px-1.5 py-0.5 text-[11px] font-bold num">x{g.count}</span>
+                        <span className="absolute top-1.5 right-1.5 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-bold num">{g.count} available</span>
                       )}
                       {(isGraded(g.first.cond) || g.first.lang) && (
                         <span className="absolute top-1.5 left-1.5 flex gap-1">
