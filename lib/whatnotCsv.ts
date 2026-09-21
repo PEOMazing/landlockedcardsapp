@@ -46,13 +46,19 @@ const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 // First header that matches wins, so the most specific names come first.
 const COLS = {
-  name: ["product name", "item name", "listing title", "listing name", "title", "product title", "product", "item", "name"],
-  desc: ["product description", "description", "item description", "listing description"],
+  name: ["product name", "listing title", "item name", "listing name", "title", "product title", "product", "item", "name"],
+  desc: ["product description", "listing description", "description", "item description"],
   qty: ["product quantity", "quantity sold", "quantity", "qty", "units"],
   price: ["sold price", "sale price", "original item price", "item price", "price", "subtotal"],
-  date: ["processed date", "order date", "sold date", "date", "created at", "placed at"],
-  buyer: ["buyer username", "buyer", "username", "customer"],
+  date: ["processed date", "order date", "order placed at utc", "sold date", "date", "created at", "placed at"],
+  buyer: ["buyer username", "buyer name", "buyer", "username", "customer"],
   status: ["order status", "cancelled or failed", "status"],
+  // the weekly earnings report mixes tips, shipping charges and orders, and
+  // covers every show that week, so it also says which show each order was in
+  type: ["transaction type"],
+  format: ["buy format"],
+  showId: ["livestream id"],
+  showTitle: ["livestream title"],
 };
 
 export type WhatnotSale = {
@@ -64,6 +70,9 @@ export type WhatnotSale = {
   date: string;
   buyer: string;
   status: string;
+  giveaway: boolean;
+  showId: string;
+  showTitle: string;
 };
 
 export function findColumns(header: string[]): Record<keyof typeof COLS, number> {
@@ -103,6 +112,9 @@ export function readWhatnotCsv(text: string): { sales: WhatnotSale[]; skipped: n
     if (!title) { skipped++; continue; }
     const status = get("status");
     if (status && DEAD.test(status)) { skipped++; continue; }
+    const type = get("type");
+    // tips and shipping charges are money, not product
+    if (type && !/order/i.test(type)) { skipped++; continue; }
     const qty = c.qty >= 0 ? Math.max(1, parseInt(get("qty")) || 1) : 1;
     sales.push({
       row: i + 1,
@@ -113,6 +125,9 @@ export function readWhatnotCsv(text: string): { sales: WhatnotSale[]; skipped: n
       date: get("date"),
       buyer: get("buyer"),
       status,
+      giveaway: /giveaway/i.test(get("format")),
+      showId: get("showId"),
+      showTitle: get("showTitle"),
     });
   }
   return { sales, skipped, error: null };
@@ -131,8 +146,27 @@ export function tokens(s: string): string[] {
     .replace(/&/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .split(" ")
+    .flatMap((w) => ABBR[w] || [w])
+    .map(singular)
     .filter((w) => w && !FILLER.has(w));
 }
+
+// Shorthand used in listing titles, spelled out so they match product names.
+const ABBR: Record<string, string[]> = {
+  etb: ["elite", "trainer", "box"],
+  bb: ["booster", "bundle"],
+  spc: ["super", "premium", "collection"],
+  upc: ["ultra", "premium", "collection"],
+  pc: ["pokemon", "center"],
+  pkc: ["pokemon", "center"],
+  vol: ["volume"],
+  cn: ["chinese"],
+  jp: ["japanese"],
+  bp: ["booster", "pack"],
+};
+
+// "packs" and "pack" are the same thing to a buyer
+const singular = (w: string) => (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
 
 export type Product = { id: string; name: string };
 
@@ -154,6 +188,8 @@ export function matchProduct(
   const hay = new Set(tokens(`${sale.title} ${sale.description}`));
   let best: Product | null = null;
   let bestScore = 0;
+  let bestOnSet: Product | null = null;
+  let bestOnSetScore = 0;
   for (const p of products) {
     const full = [...new Set(tokens(p.name))];
     if (full.length === 0) continue;
@@ -164,6 +200,13 @@ export function matchProduct(
     else {
       const core = [...new Set(tokens(p.name.replace(/\[[^\]]*\]|\([^)]*\)/g, " ")))];
       if (core.length >= 2 && core.length < full.length && core.every((w) => hay.has(w))) score = core.length + 0.5;
+      // "CN BRILLIANT FANTASY" is still the Brilliant Fantasy pack
+      const named = full.filter((w) => !GENERIC.has(w));
+      if (!score && named.length >= 2 && named.length < full.length && named.every((w) => hay.has(w))) score = named.length - 0.5;
+    }
+    if (prefer.has(p.id) && score >= 1.5 && score > bestOnSetScore) {
+      bestOnSet = p;
+      bestOnSetScore = score;
     }
     // On a tie between two products (two blisters that differ only by the
     // Pokemon in brackets), the one that was actually on this show wins.
@@ -172,8 +215,15 @@ export function matchProduct(
       bestScore = score;
     }
   }
-  return best;
+  // When the same product exists twice in inventory ("Perfect Order" and
+  // "Perfect Order Booster Bundle"), the copy that was on this show's set is
+  // the one that sold. Without this, a duplicate record reads as "not on the
+  // set" and buries the real misses.
+  return bestOnSet || best;
 }
+
+// Words that describe the format rather than the product.
+const GENERIC = new Set(["pack", "booster"]);
 
 export type CheckRow = {
   key: string; // product id, or the listing title when nothing matched
@@ -231,7 +281,7 @@ export function splitGiveaways(sales: WhatnotSale[]): {
   const paid: WhatnotSale[] = [];
   let freePacks = 0, freeSingles = 0, freeOther = 0, gross = 0;
   for (const s of sales) {
-    const free = s.price <= 0;
+    const free = s.giveaway || s.price <= 0;
     if (!free) {
       paid.push(s);
       gross += s.price;
@@ -243,4 +293,39 @@ export function splitGiveaways(sales: WhatnotSale[]): {
     else freeOther += s.qty;
   }
   return { paid, freePacks, freeSingles, freeOther, gross };
+}
+
+export type WhatnotShow = { id: string; title: string; start: string; orders: number };
+
+/** The shows in a file. A single-show export has no show column, so it comes
+ *  back as one show with a blank id. */
+export function showsIn(sales: WhatnotSale[]): WhatnotShow[] {
+  const by = new Map<string, WhatnotShow>();
+  for (const s of sales) {
+    const cur = by.get(s.showId) || { id: s.showId, title: s.showTitle, start: s.date, orders: 0 };
+    cur.orders += s.qty;
+    if (s.date && (!cur.start || s.date < cur.start)) cur.start = s.date;
+    by.set(s.showId, cur);
+  }
+  return [...by.values()].sort((a, b) => a.start.localeCompare(b.start));
+}
+
+/** Local calendar date of a Whatnot timestamp. Whatnot writes UTC, and an
+ *  evening show in Colorado runs past midnight UTC. */
+export function localDate(ts: string, timeZone = "America/Denver"): string {
+  if (!ts) return "";
+  const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts.replace(" ", "T") + "Z";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return ts.slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+}
+
+/** Best guess at which show in a weekly file belongs to an app stream: same
+ *  local day, and the streamer's first name in the show title when there is
+ *  more than one show that day. */
+export function suggestShow(shows: WhatnotShow[], stream: { date: string; streamer: string }): string {
+  const sameDay = shows.filter((s) => localDate(s.start) === stream.date);
+  const first = (stream.streamer || "").split(/\s+/)[0].toLowerCase();
+  const named = first ? sameDay.filter((s) => s.title.toLowerCase().includes(first)) : [];
+  return (named[0] || sameDay[0])?.id ?? "";
 }
