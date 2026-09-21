@@ -54,7 +54,7 @@ export default async function AllStreamsPage() {
     const tips = r.fields["Tips"] || 0;
     const payroll = hourlyEst + packing + tips;
     const profitMarket = afterFees === null ? null :
-      afterFees - (r.fields["Promotion"] || 0) - (r.fields["Giveaways Run"] || 0) * settings.giveaway_cost -
+      afterFees - (r.fields["Promotion"] || 0) - (r.fields["Shipping Adjustments"] || 0) - (r.fields["Giveaways Run"] || 0) * settings.giveaway_cost -
       (r.fields["Singles Giveaways Run"] || 0) * settings.singles_giveaway_cost -
       (hitMarketByStream[r.id] || 0);
     return {
