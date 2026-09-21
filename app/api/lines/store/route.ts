@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { stockAlert } from "@/lib/alerts";
+import { takeStock, shortMessage } from "@/lib/stock";
 
 // A store purchase: a customer bought an in-stock item off the shelf during
 // the stream. Creates a line flagged Is Store Purchase with the actual sold
@@ -26,6 +27,9 @@ export async function POST(req: Request) {
   if (!product) return NextResponse.json({ error: "unknown product" }, { status: 400 });
 
   const name = product.fields["Product Name"];
+  if ((product.fields["Qty On Hand"] ?? 0) < 1) {
+    return NextResponse.json({ error: shortMessage(name, product.fields["Qty On Hand"], 1) }, { status: 400 });
+  }
   const line = await atCreate(T.lines, {
     "Line": `1x ${name} (store)`,
     "Qty": 1,
@@ -39,8 +43,8 @@ export async function POST(req: Request) {
     "Product": [product.id],
   });
   await atUpdate(T.inventory, product.id, {
-    "Qty On Hand": (product.fields["Qty On Hand"] ?? 0) - 1,
+    "Qty On Hand": takeStock(product.fields["Qty On Hand"], 1),
   });
-  await stockAlert([{ name, qtyNow: (product.fields["Qty On Hand"] ?? 0) - 1, delta: -1 }], "store sale").catch(() => {});
+  await stockAlert([{ name, qtyNow: takeStock(product.fields["Qty On Hand"], 1), delta: -1 }], "store sale").catch(() => {});
   return NextResponse.json({ ok: true, id: line.id, name, soldPrice });
 }
