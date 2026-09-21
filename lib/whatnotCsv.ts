@@ -365,24 +365,44 @@ export type StoreRow = {
 };
 
 /** The store sales in a file. The earnings report says outright which orders
- *  were Buy It Now. The per-show export does not, so there the rule is: a paid
- *  order whose title is not a wheel spot. Wheel spots are always listed as
- *  "SHOW TITLE - item"; store listings are just the item, or start with a
- *  pack count like "5x". */
-export function isStoreSale(s: WhatnotSale, hasFormat: boolean): boolean {
+ *  were Buy It Now. The per-show export does not, so there it is worked out
+ *  from the titles: every wheel spot in a show shares the show's prefix
+ *  ("BANGERS ALL NIGHT!! - item"), so a prefix used on several paid orders is
+ *  a wheel. Anything else paid - no prefix, a prefix only used once or twice
+ *  ("Pokemon Keychain - KailieKreations"), or a pack count like "5x" - is a
+ *  store sale. */
+export function isStoreSale(s: WhatnotSale, hasFormat: boolean, wheelPrefixes?: Set<string>): boolean {
   if (s.giveaway || s.price <= 0 || isShippingLine(s.title)) return false;
-  // "5x Obsidian Flames Packs - Ripped Live" has a dash but is still a
-  // store listing: a pack count up front is never a wheel spot
-  return hasFormat
-    ? /buy.?it.?now/i.test(s.format || "")
-    : packMultiplier(s.title) > 1 || !/\s-\s/.test(s.title);
+  if (hasFormat) return /buy.?it.?now/i.test(s.format || "");
+  if (packMultiplier(s.title) > 1) return true;
+  const pre = wheelPrefix(s.title);
+  if (!pre) return true;
+  return wheelPrefixes ? !wheelPrefixes.has(pre) : false;
+}
+
+const wheelPrefix = (title: string) => {
+  const t = String(title || "");
+  const i = t.indexOf(" - ");
+  return i >= 0 ? t.slice(0, i).trim().toLowerCase() : "";
+};
+
+/** Prefixes that belong to wheel spots: used on at least 3 paid orders. */
+export function wheelPrefixesIn(sales: WhatnotSale[]): Set<string> {
+  const n = new Map<string, number>();
+  for (const s of sales) {
+    if (s.giveaway || s.price <= 0) continue;
+    const p = wheelPrefix(s.title);
+    if (p) n.set(p, (n.get(p) || 0) + 1);
+  }
+  return new Set([...n].filter(([, c]) => c >= 3).map(([p]) => p));
 }
 
 export function storeRows(sales: WhatnotSale[]): { rows: StoreRow[]; guessed: boolean } {
   const hasFormat = sales.some((s) => s.format);
+  const wheels = hasFormat ? undefined : wheelPrefixesIn(sales);
   const rows: StoreRow[] = [];
   for (const s of sales) {
-    if (!isStoreSale(s, hasFormat)) continue;
+    if (!isStoreSale(s, hasFormat, wheels)) continue;
     rows.push({
       key: s.orderId || `row${s.row}`,
       orderId: s.orderId || "",
@@ -440,8 +460,9 @@ const lineKey = (name: string) => String(name || "").replace(/\s*\(store\)\s*$/i
 
 export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[]): SetPlan {
   const hasFormat = sales.some((s) => s.format);
+  const wheels = hasFormat ? undefined : wheelPrefixesIn(sales);
   const g = splitGiveaways(sales);
-  const spins = g.paid.filter((s) => !isShippingLine(s.title) && !isStoreSale(s, hasFormat));
+  const spins = g.paid.filter((s) => !isShippingLine(s.title) && !isStoreSale(s, hasFormat, wheels));
 
   // lines that can be hit, grouped by name: a product added twice is one pool
   const pool = setLines.filter((l) => !l.isStore && !l.isGiveaway);
