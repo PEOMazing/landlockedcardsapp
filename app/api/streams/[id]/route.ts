@@ -3,6 +3,7 @@ import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { toLine, isHitLine } from "@/lib/calc";
+import { syncWheelSinglePrices } from "@/lib/streamSingles";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
@@ -27,6 +28,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     categoryByProduct[inv.id] = inv.fields["Category"]?.name || inv.fields["Category"] || "";
     if (inv.fields["TCGplayer URL"]) tcgByProduct[inv.id] = inv.fields["TCGplayer URL"];
     if (inv.fields["Image URL"]) imageByProduct[inv.id] = inv.fields["Image URL"];
+  }
+  // An open wheel shows its singles at today's comp, not the price they had
+  // when the set was built. A closed show keeps the prices it closed at.
+  if (!isComplete && !stream.fields["Items Returned"]) {
+    await syncWheelSinglePrices(lineRows, String(stream.fields["Stream Type"] || "Surprise Set")).catch(() => 0);
   }
   const lines = lineRows.map(toLine);
 
