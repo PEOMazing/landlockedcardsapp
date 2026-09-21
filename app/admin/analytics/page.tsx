@@ -88,6 +88,7 @@ export default async function AnalyticsPage() {
     giveaways: r.fields["Giveaways Run"] || 0,
     singlesGiveaways: r.fields["Singles Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
+    shipAdj: r.fields["Shipping Adjustments"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
@@ -116,7 +117,7 @@ export default async function AnalyticsPage() {
     // same formula as buildWeekPay: tips are outside After Fees and never come out
     // of profit; both givvy types are charged from their counters
     const contribution =
-      r.afterFees - r.promotion
+      r.afterFees - r.promotion - (r.shipAdj || 0)
       - (r.giveaways || 0) * settings.giveaway_cost
       - (r.singlesGiveaways || 0) * settings.singles_giveaway_cost
       - r.productCost - packingCost;
