@@ -17,7 +17,8 @@ export default function Toaster() {
     function onToast(e: Event) {
       const d = (e as CustomEvent).detail as ToastItem;
       setItems((prev) => [...prev.slice(-3), d]);
-      setTimeout(() => setItems((prev) => prev.filter((x) => x.id !== d.id)), 2600);
+      // errors stay up long enough to actually read
+      setTimeout(() => setItems((prev) => prev.filter((x) => x.id !== d.id)), d.kind === "bad" ? 7000 : 2600);
     }
     window.addEventListener("llc-toast", onToast);
     return () => window.removeEventListener("llc-toast", onToast);
@@ -25,7 +26,7 @@ export default function Toaster() {
 
   if (items.length === 0) return null;
   return (
-    <div className="fixed bottom-4 right-4 z-[100] space-y-2">
+    <div className="fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-md z-[100] space-y-2">
       {items.map((t) => (
         <div
           key={t.id}
