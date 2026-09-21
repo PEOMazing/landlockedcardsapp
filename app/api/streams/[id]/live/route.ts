@@ -83,6 +83,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     if (!stream.fields["Items Returned"]) {
       const lines = await atList(T.lines, { filterByFormula: `{Stream Rec Id} = '${params.id}'` });
       for (const l of lines) {
+        // store sales were bought, not left over - nothing of theirs comes back
+        if (l.fields["Is Store Purchase"]) continue;
         const back = Math.max((l.fields["Qty"] || 0) - (l.fields["Qty Hit"] || 0), 0);
         const productId = l.fields["Product"]?.[0];
         if (back > 0 && productId) {
