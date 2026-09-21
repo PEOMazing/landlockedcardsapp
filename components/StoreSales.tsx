@@ -266,9 +266,15 @@ export default function StoreSales({
                   )}
                 </span>
                 <span className="flex items-center gap-3">
-                  <span className="num">{$(l.soldPrice || 0)}</span>
-                  <span className={`text-xs ${(l.soldPrice || 0) - l.qty * l.market >= 0 ? "text-win" : "text-bad"}`}>
-                    {(l.soldPrice || 0) - l.qty * l.market >= 0 ? "+" : ""}{$((l.soldPrice || 0) - l.qty * l.market)} vs market
+                  <span className="text-right">
+                    <span className="num block">Sold {$(l.soldPrice || 0)}</span>
+                    {l.market > 0 ? (
+                      <span className={`text-xs ${(l.soldPrice || 0) - l.qty * l.market >= 0 ? "text-win" : "text-bad"}`}>
+                        {(l.soldPrice || 0) - l.qty * l.market >= 0 ? "+" : ""}{$((l.soldPrice || 0) - l.qty * l.market)} profit over market value ({$(l.qty * l.market)})
+                      </span>
+                    ) : (
+                      <span className="text-xs text-dim">no market value set</span>
+                    )}
                   </span>
                   {pending && (
                     <button className="text-win text-xs disabled:opacity-40" disabled={busy} onClick={() => complete({ lineId: l.id })}>
@@ -291,11 +297,21 @@ export default function StoreSales({
               </div>
             );
           })}
-          <div className="flex justify-between gap-3 border-t border-edge pt-1.5 font-semibold">
-            <span>Store sales {$(soldTotal)} - profit over market</span>
-            <span className={`num ${soldTotal - marketTotal >= 0 ? "text-win" : "text-bad"}`}>
-              {soldTotal - marketTotal >= 0 ? "+" : ""}{$(soldTotal - marketTotal)}
-            </span>
+          <div className="border-t border-edge pt-1.5 space-y-0.5">
+            <div className="flex justify-between gap-3">
+              <span className="text-dim">Total store sales</span>
+              <span className="num">{$(soldTotal)}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-dim">Market value of what sold</span>
+              <span className="num">-{$(marketTotal)}</span>
+            </div>
+            <div className="flex justify-between gap-3 font-semibold">
+              <span>Profit over market value</span>
+              <span className={`num ${soldTotal - marketTotal >= 0 ? "text-win" : "text-bad"}`}>
+                {soldTotal - marketTotal >= 0 ? "+" : ""}{$(soldTotal - marketTotal)}
+              </span>
+            </div>
           </div>
         </div>
       )}
