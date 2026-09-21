@@ -117,6 +117,7 @@ export default async function VendorDashboard() {
     giveaways: r.fields["Giveaways Run"] || 0,
     singlesGiveaways: r.fields["Singles Giveaways Run"] || 0,
     promotion: r.fields["Promotion"] || 0,
+    shipAdj: r.fields["Shipping Adjustments"] || 0,
     tips: r.fields["Tips"] || 0,
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
@@ -138,7 +139,7 @@ export default async function VendorDashboard() {
     const sold = (hitDeliveredByStream[r.id] || 0) + (r.giveaways || 0) * settings.giveaway_cost
       + (r.singlesGiveaways || 0) * settings.singles_giveaway_cost;
     const packing = (r.packingHours + (r.managerPackingHours || 0)) * settings.packing_rate;
-    return a + (r.afterFees - sold - packing - r.promotion);
+    return a + (r.afterFees - sold - packing - r.promotion - (r.shipAdj || 0));
   }, 0);
   const planned = rows.filter((r) => r.status !== "Complete").length;
 
