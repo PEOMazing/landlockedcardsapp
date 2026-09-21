@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Thumb from "@/components/Thumb";
+import { priceBound, inPriceRange, rangeBackwards } from "@/lib/priceRange";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -26,6 +27,10 @@ export default function SinglesPicker({
 }) {
   const [items, setItems] = useState<SingleT[]>([]);
   const [q, setQ] = useState("");
+  // Building a wheel usually starts from a price point, not a card name: show
+  // me everything from $10 to $25 and let me pick. Either end works alone.
+  const [minP, setMinP] = useState("");
+  const [maxP, setMaxP] = useState("");
   const [adding, setAdding] = useState<string>("");
   const [err, setErr] = useState("");
 
@@ -36,17 +41,35 @@ export default function SinglesPicker({
   }
   useEffect(() => { loadStock(); }, []);
 
+  const lo = useMemo(() => priceBound(minP), [minP]);
+  const hi = useMemo(() => priceBound(maxP), [maxP]);
+  const priceOn = lo !== null || hi !== null;
+
+  // Everything the range allows, before the search box narrows it. The count
+  // of this is what tells you whether a $10 to $25 wheel is even buildable.
+  const inBand = useMemo(
+    () => (priceOn ? items.filter((s) => inPriceRange(s.comp, lo, hi)) : items),
+    [items, lo, hi, priceOn]
+  );
+
   const filtered = useMemo(() => {
     const n = q.trim().toLowerCase();
-    if (!n) return items.slice(0, 8);
     // The sticker number is how a card in hand gets found: typing 68 or 0068
-    // goes straight to that card rather than wading through every Umbreon.
+    // goes straight to that card rather than wading through every Umbreon. It
+    // beats the price range too, since asking for one card by number is not a
+    // question about price.
     const asNo = /^#?\d{1,5}$/.test(n) ? parseInt(n.replace("#", ""), 10) : null;
     if (asNo !== null) {
       const exact = items.filter((s) => s.cardNo === asNo);
       if (exact.length) return exact;
     }
-    return items
+    if (!n) {
+      // With a range set, the dearest card in the band is the one worth seeing
+      // first. With no range, keep the newest-added order.
+      const list = priceOn ? [...inBand].sort((a, b) => (b.comp ?? 0) - (a.comp ?? 0)) : inBand;
+      return list.slice(0, priceOn ? 12 : 8);
+    }
+    return inBand
       .filter((s) =>
         s.name.toLowerCase().includes(n) ||
         s.setName.toLowerCase().includes(n) ||
@@ -54,7 +77,7 @@ export default function SinglesPicker({
         s.number === n
       )
       .slice(0, 8);
-  }, [items, q]);
+  }, [items, inBand, q, priceOn]);
 
   async function add(s: SingleT) {
     setAdding(s.id); setErr("");
@@ -84,6 +107,47 @@ export default function SinglesPicker({
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
+      <div className="flex items-center gap-2 text-xs">
+        <div
+          className={`flex items-center gap-1 rounded-lg border px-2 py-0.5 ${priceOn ? "border-foil/60 bg-foil/10" : "border-edge"}`}
+          title="Comp price range. Either box works on its own, and both ends count as in range."
+        >
+          <span className={priceOn ? "text-foil" : "text-dim"}>$</span>
+          <input
+            className="input !w-16 !px-1.5 !py-1 num"
+            inputMode="decimal"
+            placeholder="min"
+            value={minP}
+            onChange={(e) => setMinP(e.target.value)}
+          />
+          <span className="text-dim">to</span>
+          <input
+            className="input !w-16 !px-1.5 !py-1 num"
+            inputMode="decimal"
+            placeholder="max"
+            value={maxP}
+            onChange={(e) => setMaxP(e.target.value)}
+          />
+          {(minP || maxP) && (
+            <button
+              type="button"
+              className="text-dim hover:text-body px-1"
+              onClick={() => { setMinP(""); setMaxP(""); }}
+              title="Clear the price range"
+            >
+              x
+            </button>
+          )}
+        </div>
+        {rangeBackwards(lo, hi) ? (
+          <span className="text-bad">Min is above max</span>
+        ) : priceOn ? (
+          <span className="text-dim">
+            <span className="num">{inBand.length}</span> in stock in this range
+            {inBand.length > filtered.length && !q.trim() ? `, showing ${filtered.length}` : ""}
+          </span>
+        ) : null}
+      </div>
       {err && <div className="text-bad text-xs">{err}</div>}
       <div className="grid gap-1">
         {filtered.map((s) => (
@@ -112,7 +176,9 @@ export default function SinglesPicker({
         ))}
         {filtered.length === 0 && (
           <div className="text-dim text-sm">
-            No in-stock singles match. Add cards on the <Link href="/singles" className="text-foil hover:underline">Singles</Link> page first.
+            {priceOn
+              ? "No in-stock singles in this price range. Widen it or clear it to see the rest."
+              : <>No in-stock singles match. Add cards on the <Link href="/singles" className="text-foil hover:underline">Singles</Link> page first.</>}
           </div>
         )}
       </div>
