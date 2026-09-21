@@ -83,6 +83,52 @@ async function bumpQty(sid: string, by: number): Promise<void> {
 
 const fetchCard = (sid: string) => atGet(T.singles, sid).catch(() => null);
 
+// A single on a wheel is always worth its card's current comp. The line takes
+// a snapshot when the card goes on, but the comp keeps moving with the market
+// after that, and the wheel is meant to follow it: the hit value on the stream
+// page and the price a hit sells at should both be today's comp, not whatever
+// it was the afternoon the set was built.
+//
+// Returns the price the line should now carry, or null when it is already
+// right or has nothing to follow. Auctions are left alone - their line price is
+// a starting point, and what they sell for is decided by the bidding.
+export function wheelPriceUpdate(line: Line, card: Card, streamType: string): number | null {
+  if (!hitsDecideSingles(streamType)) return null;
+  if (!line.fields["Single Rec Id"] || !card) return null;
+  const comp = Number(card.fields["Comp"]);
+  if (card.fields["Comp"] === undefined || card.fields["Comp"] === null || !Number.isFinite(comp) || comp < 0) return null;
+  const current = Number(line.fields["Market Price Snapshot"]);
+  if (Number.isFinite(current) && current === comp) return null;
+  return comp;
+}
+
+// Bring every single on an open wheel up to its card's current comp. Updates
+// the line rows it is handed in place, so a caller that goes on to use them
+// sees the new prices without fetching again. One lookup for all the cards,
+// and a write only for lines whose price actually moved.
+export async function syncWheelSinglePrices(lines: Line[] & { id?: string }[], streamType: string): Promise<number> {
+  if (!hitsDecideSingles(streamType)) return 0;
+  const ids = Array.from(new Set(lines.map((l) => String(l.fields["Single Rec Id"] || "")).filter(isRecId)));
+  if (!ids.length) return 0;
+  const cards = await atList(T.singles, {
+    filterByFormula: `OR(${ids.map((id) => `RECORD_ID() = '${id}'`).join(", ")})`,
+    "fields[]": ["Comp"],
+  }).catch(() => [] as { id: string; fields: Record<string, any> }[]);
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  let moved = 0;
+  for (const l of lines as ({ id: string } & Line)[]) {
+    const card = byId.get(String(l.fields["Single Rec Id"] || "")) || null;
+    const price = wheelPriceUpdate(l, card, streamType);
+    if (price === null || !l.id) continue;
+    try {
+      await atUpdate(T.lines, l.id, { "Market Price Snapshot": price });
+      l.fields["Market Price Snapshot"] = price;
+      moved++;
+    } catch {}
+  }
+  return moved;
+}
+
 export async function settleStreamSingles(
   streamId: string,
   streamType: string,
@@ -91,6 +137,8 @@ export async function settleStreamSingles(
   if (!isRecId(streamId)) return out;
 
   const lines = await atList(T.lines, { filterByFormula: `{Stream Rec Id} = '${streamId}'` });
+  // settle at today's comp, so a hit sells at what the card is worth now
+  await syncWheelSinglePrices(lines, streamType).catch(() => 0);
   const handled = new Set<string>();
 
   for (const l of lines) {
@@ -104,9 +152,9 @@ export async function settleStreamSingles(
         // the stream stays on a sold card: it records where it went, and it is
         // what lets a later line removal find and undo the sale.
         //
-        // A card hit on a wheel sells at the price it went on the wheel at - the
-        // line's snapshot - so the sale is on the record the moment the show
-        // closes. An auction's price is whatever the bidding reached, which the
+        // A card hit on a wheel sells at the line's price, which the sync above
+        // has just brought up to the card's current comp, so the sale is on the
+        // record the moment the show closes. An auction's price is whatever the bidding reached, which the
         // line does not know, so that one is left for a person to fill in.
         const linePrice = Number(l.fields["Market Price Snapshot"]);
         const salePrice = hitsDecideSingles(streamType) && Number.isFinite(linePrice) && linePrice >= 0 ? { "Sale Price": linePrice } : {};
