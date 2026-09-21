@@ -22,6 +22,8 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   const detail: string[] = [];
   const stockChanges: { name: string; qtyNow: number; delta: number }[] = [];
   for (const l of lines) {
+    // store sales were bought, not left over - nothing of theirs comes back
+    if (l.fields["Is Store Purchase"]) continue;
     const qty = l.fields["Qty"] || 0;
     const hit = l.fields["Qty Hit"] || 0;
     const back = Math.max(qty - hit, 0);
