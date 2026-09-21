@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { parseCsv, readWhatnotCsv, matchProduct, checkAgainstSet, tokens, splitGiveaways, showsIn, suggestShow, localDate, packMultiplier, storeRows, pickShow, type WhatnotSale } from "../whatnotCsv";
+import { parseCsv, readWhatnotCsv, matchProduct, checkAgainstSet, tokens, splitGiveaways, showsIn, suggestShow, localDate, packMultiplier, storeRows, pickShow, planSetFromShow, spinItem, type WhatnotSale } from "../whatnotCsv";
 
 const S = (o: Partial<WhatnotSale>): WhatnotSale => ({ row: 2, title: "", description: "", qty: 1, price: 10, date: "", buyer: "", status: "", giveaway: false, showId: "", showTitle: "", ...o });
 
@@ -148,5 +148,41 @@ describe("store sales", () => {
     ];
     assert.equal(pickShow(shows, { title: "2026-09-18 - 30TH CELEBRATION PKC ETB, 151!! W/ DESTINEE", date: "2026-09-18", streamer: "Destinee" }), "b");
     assert.equal(pickShow(shows, { title: "2026-09-18 - Something else", date: "2026-09-18", streamer: "Alyssa" }), "a");
+  });
+});
+
+describe("filling the show set from a show report", () => {
+  const set = [
+    { id: "bf1", name: "Brilliant Fantasy pack", qty: 2, qtyHit: 0 },
+    { id: "bf2", name: "Brilliant Fantasy pack", qty: 1, qtyHit: 0 },
+    { id: "z", name: "Zarude 2-pack blister", qty: 3, qtyHit: 1 },
+    { id: "etb", name: "30th Celebration Pokemon Center Elite Trainer Box", qty: 1, qtyHit: 0 },
+    { id: "st", name: "obsidian flames (store)", qty: 5, qtyHit: 0, isStore: true },
+  ];
+  const sales = [
+    S({ title: "BANGERS! - BRILLIANT FANTASY PACK", price: 12 }),
+    S({ title: "BANGERS! - BRILLIANT FANTASY PACK!", price: 13 }),
+    S({ title: "BANGERS! - BRILLIANT FANTASY PACK!!", price: 11 }),
+    S({ title: "BANGERS! - BRILLIANT FANTASY PACK", price: 12 }),
+    S({ title: "BANGERS! - \u{1F525}ZARUDE 2-PACK BLISTER \u{1F525}", price: 14 }),
+    S({ title: "BANGERS! - SHADOW RIDER BOX", price: 20 }),
+    S({ title: "5x Obsidian Flames Packs - Ripped Live", price: 79 }),
+    S({ title: "MUST BOOKMARK - HOT SINGLE #1", price: 0 }),
+    S({ title: "MUST BOOKMARK - FREE BOOSTER PACK #1", price: 0 }),
+  ];
+  it("reads the hit item off the end of a wheel listing", () => {
+    assert.equal(spinItem("SHOW - Zarude blister"), "Zarude blister");
+    assert.equal(spinItem("Zarude blister"), "Zarude blister");
+  });
+  it("counts spins per set line, spreads a product over its lines, and flags what does not fit", () => {
+    const p = planSetFromShow(sales, set);
+    assert.equal(p.spins, 6); // the store sale is not a spin
+    assert.equal(p.freePacks, 1);
+    assert.equal(p.freeSingles, 1);
+    const now = Object.fromEntries(p.lines.map((l) => [l.lineId, l.now]));
+    assert.deepEqual(now, { bf1: 2, bf2: 1, z: 1, etb: 0 });
+    assert.deepEqual(p.over, [{ name: "Brilliant Fantasy pack", sold: 4, onSet: 3 }]);
+    assert.deepEqual(p.notOnSet.map((m) => [m.title, m.sold]), [["SHADOW RIDER BOX", 1]]);
+    assert.ok(!p.lines.some((l) => l.lineId === "st"));
   });
 });
