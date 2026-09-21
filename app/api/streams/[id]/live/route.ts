@@ -3,6 +3,7 @@ import { atCreate, atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { recomputeStreamHours } from "@/lib/time";
 import { stockAlert } from "@/lib/alerts";
+import { settleStreamSingles } from "@/lib/streamSingles";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         }
       }
       await stockAlert(changes, "stream approved - relist returns on Whatnot").catch(() => {});
+      // This path used to close the show without touching singles at all, so a
+      // stream closed by approval left every card on it stuck In Stream for
+      // good. Same settle as the return route: hit or auctioned cards sold,
+      // unhit wheel cards back in stock.
+      try {
+        await settleStreamSingles(params.id, String(stream.fields["Stream Type"] || "Surprise Set"));
+      } catch {} // singles table may not exist yet; nothing to do
     }
     await atUpdate(T.streams, params.id, { "Status": "Complete", "Items Returned": true });
     return NextResponse.json({ ok: true, status: "Complete", itemsReturned });
