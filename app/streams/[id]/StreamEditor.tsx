@@ -62,6 +62,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const f = {
       afterFees: d.stream.afterFees ?? "",
       promotion: d.stream.promotion ?? "",
+      shippingAdjustments: d.stream.shippingAdjustments ?? "",
       tips: d.stream.tips ?? "",
       spotsSold: d.stream.spotsSold ?? "",
       giveaways: d.stream.giveaways ?? "",
@@ -96,6 +97,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     pendingRef.current = JSON.stringify({
       afterFees: parseFloat(form.afterFees) || 0,
       promotion: parseFloat(form.promotion) || 0,
+      shippingAdjustments: parseFloat(form.shippingAdjustments) || 0,
       tips: parseFloat(form.tips) || 0,
       spotsSold: parseInt(form.spotsSold) || 0,
       giveaways: parseInt(form.giveaways) || 0,
@@ -337,6 +339,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       body: JSON.stringify({
         afterFees: parseFloat(form.afterFees) || 0,
         promotion: parseFloat(form.promotion) || 0,
+        shippingAdjustments: parseFloat(form.shippingAdjustments) || 0,
         tips: parseFloat(form.tips) || 0,
         spotsSold: parseInt(form.spotsSold) || 0,
         giveaways: parseInt(form.giveaways) || 0,
@@ -370,6 +373,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const spotsSoldNum = parseInt(form.spotsSold) || 0;
   const afterFeesNum = parseFloat(form.afterFees) || 0;
   const promoNum = parseFloat(form.promotion) || 0;
+  // shipping Whatnot re-bills after the show; not in After Fees
+  const shipAdjNum = parseFloat(form.shippingAdjustments) || 0;
   const tipsNum = parseFloat(form.tips) || 0;
   const giveawaysNum = parseInt(form.giveaways) || 0;
   const singlesGivvyNum = parseInt(form.singlesGiveaways) || 0;
@@ -389,9 +394,9 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   // streaming labor at the streamer's hourly rate. Weekly settlement pays the
   // higher of hourly or commission, so this is the floor of true labor cost.
   const streamPay = data?.pay?.hourlyRate ? (stream?.hours || 0) * data.pay.hourlyRate : 0;
-  const netProfit = grossProfit - streamPay - packingPay - promoNum;
+  const netProfit = grossProfit - streamPay - packingPay - promoNum - shipAdjNum;
   const buyNet = m.hitCostDelivered !== null
-    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend + (m.storeBuy || 0)) - streamPay - packingPay - promoNum
+    ? afterFeesNum - (m.hitCostDelivered + giveawaySpend + (m.storeBuy || 0)) - streamPay - packingPay - promoNum - shipAdjNum
     : null;
 
   return (
@@ -616,6 +621,12 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               <span className="text-dim">Promotion</span>
               <span className="num">-{$(promoNum)}</span>
             </div>
+            {shipAdjNum > 0 && (
+              <div className="flex justify-between gap-6">
+                <span className="text-dim">Shipping adjustments</span>
+                <span className="num">-{$(shipAdjNum)}</span>
+              </div>
+            )}
             <div className="flex justify-between gap-6 border-t border-edge pt-1.5">
               <span className="font-bold">Stream profit</span>
               <span className={`num text-xl font-bold ${!resultsEntered ? "text-dim" : netProfit >= 0 ? "text-win" : "text-bad"}`}>
@@ -693,6 +704,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           {field("afterFees", "After fees ($)")}
           {field("promotion", "Promotion ($)")}
           {field("tips", "Tips ($)")}
+          {field("shippingAdjustments", "Shipping adjustments ($)")}
           {field("spotsSold", "Spots sold (spins)", "1")}
           <div>
             {field("giveaways", "Pack givvies run", "1")}
