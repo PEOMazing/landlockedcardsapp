@@ -31,6 +31,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ ok: true, restored: 0, rebuildWindow: true });
   }
   const fields: Record<string, any> = {};
+  // Store sale quantities are tied to what came off the shelf; they are
+  // entered and finished from the Store sales section, not edited here.
+  if (g.line.fields["Is Store Purchase"] && (b.qty !== undefined || b.qtyHit !== undefined)) {
+    return NextResponse.json({ error: "store sales are changed from the Store sales section - undo it and enter it again" }, { status: 400 });
+  }
   if (b.qtyHit !== undefined) {
     if (returned) return NextResponse.json({ error: "items already returned - hits are locked" }, { status: 400 });
     fields["Qty Hit"] = Math.max(0, parseInt(b.qtyHit) || 0);
@@ -105,7 +110,9 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   }
   const qty = g.line.fields["Qty"] || 0;
   const hit = g.line.fields["Qty Hit"] || 0;
-  const restore = returned ? hit : qty;
+  // A store line only ever took its Qty Hit off the shelf (a sale waiting on
+  // inventory took nothing), so that is all that goes back.
+  const restore = g.line.fields["Is Store Purchase"] ? hit : returned ? hit : qty;
   const productId = g.line.fields["Product"]?.[0];
   if (productId && restore > 0) {
     const product = await atGet(T.inventory, productId);
