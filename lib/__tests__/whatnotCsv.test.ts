@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { parseCsv, readWhatnotCsv, matchProduct, checkAgainstSet, tokens, splitGiveaways, showsIn, suggestShow, localDate, type WhatnotSale } from "../whatnotCsv";
+import { parseCsv, readWhatnotCsv, matchProduct, checkAgainstSet, tokens, splitGiveaways, showsIn, suggestShow, localDate, packMultiplier, storeRows, pickShow, type WhatnotSale } from "../whatnotCsv";
 
 const S = (o: Partial<WhatnotSale>): WhatnotSale => ({ row: 2, title: "", description: "", qty: 1, price: 10, date: "", buyer: "", status: "", giveaway: false, showId: "", showTitle: "", ...o });
 
@@ -111,5 +111,42 @@ describe("shorthand in titles", () => {
     assert.equal(matchProduct({ title: "PHANTASMAL FLAMES ETB", description: "" }, products)?.id, "etb");
     assert.equal(matchProduct({ title: "PERFECT ORDER BB", description: "" }, products)?.id, "bb");
     assert.equal(matchProduct({ title: "5x Darkness Ablaze Booster Packs", description: "" }, products)?.id, "da");
+  });
+});
+
+describe("store sales", () => {
+  it("reads the pack count off the front of a listing", () => {
+    assert.equal(packMultiplier("5x Darkness Ablaze Booster Packs"), 5);
+    assert.equal(packMultiplier("10X Gem Pack"), 10);
+    assert.equal(packMultiplier("Darkness Ablaze Booster Pack"), 1);
+    assert.equal(packMultiplier("1 in 5 BANGERS - Gem 4"), 1);
+  });
+  it("takes Buy It Now orders from the earnings report and skips spins, giveaways and shipping", () => {
+    const { rows, guessed } = storeRows([
+      S({ title: "5x Obsidian Flames Packs - Ripped Live", price: 79, format: "BUY_IT_NOW", orderId: "11" }),
+      S({ title: "SHOW - Gem Pack", price: 12, format: "AUCTION", orderId: "12" }),
+      S({ title: "FREE PACK #3", price: 0, format: "GIVEAWAY", giveaway: true, orderId: "13" }),
+      S({ title: "UPGRADED SHIPPING - INCLUDES TRACKING", price: 1, format: "BUY_IT_NOW", orderId: "14" }),
+    ]);
+    assert.equal(guessed, false);
+    assert.deepEqual(rows.map((r) => [r.orderId, r.units, r.price]), [["11", 5, 79]]);
+  });
+  it("guesses from the title on a per-show export, which has no format column", () => {
+    const { rows, guessed } = storeRows([
+      S({ title: "5x Silver Tempest Booster Pack", price: 109 }),
+      S({ title: "5x Obsidian Flames Packs - Ripped Live", price: 79 }),
+      S({ title: "BANGERS ALL NIGHT!! - Gem Pack", price: 12 }),
+      S({ title: "MUST BOOKMARK ALL STREAMS - FREE PACK", price: 0 }),
+    ]);
+    assert.equal(guessed, true);
+    assert.deepEqual(rows.map((r) => r.units), [5, 5]);
+  });
+  it("picks the show whose title matches the stream name", () => {
+    const shows = [
+      { id: "a", title: "Alyssa day show", start: "2026-09-18 18:00:00", orders: 3 },
+      { id: "b", title: "30TH CELEBRATION PKC ETB, 151!! W/ DESTINEE", start: "2026-09-19 01:00:00", orders: 3 },
+    ];
+    assert.equal(pickShow(shows, { title: "2026-09-18 - 30TH CELEBRATION PKC ETB, 151!! W/ DESTINEE", date: "2026-09-18", streamer: "Destinee" }), "b");
+    assert.equal(pickShow(shows, { title: "2026-09-18 - Something else", date: "2026-09-18", streamer: "Alyssa" }), "a");
   });
 });
