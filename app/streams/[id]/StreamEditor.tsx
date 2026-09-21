@@ -8,6 +8,7 @@ import BreakChecklist from "@/components/BreakChecklist";
 import SinglesPicker from "@/components/SinglesPicker";
 import Thumb from "@/components/Thumb";
 import { toast } from "@/components/Toaster";
+import StoreSales from "@/components/StoreSales";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -39,9 +40,6 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [metaManager, setMetaManager] = useState("");
   const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
   const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
-  const [invOptions, setInvOptions] = useState<{ id: string; name: string; market: number; qty: number }[]>([]);
-  const [storeProduct, setStoreProduct] = useState("");
-  const [storePrice, setStorePrice] = useState("");
   const [resultsErr, setResultsErr] = useState("");
   const [setSort, setSetSort] = useState<"board" | "name" | "price">("board");
   const [pasteText, setPasteText] = useState("");
@@ -71,24 +69,6 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
-
-  // in-stock inventory for the store purchase dropdown
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/inventory");
-        if (r.ok) {
-          const d = await r.json();
-          setInvOptions(
-            ((d.items || d.inventory || []) as any[])
-              .filter((i) => (i.qtyOnHand || 0) > 0)
-              .map((i) => ({ id: i.id, name: i.name, market: i.marketPrice || 0, qty: i.qtyOnHand }))
-              .sort((a, b) => a.name.localeCompare(b.name))
-          );
-        }
-      } catch {}
-    })();
-  }, []);
 
   // the whole team for the timeclock For selector - managers log anyone's hours
   useEffect(() => {
@@ -847,85 +827,17 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         )}
       </section>
 
-      {/* Store purchases: a customer bought something straight off the shelf */}
-      {!stream.itemsReturned && (
-        <section className="card p-5 space-y-3">
-          <div className="flex items-baseline justify-between flex-wrap gap-2">
-            <h2 className="label">Store purchases</h2>
-            <span className="text-dim text-xs">Anything in stock can be ripped for a buyer - price it, log it, it books as additional profit without touching spin stats</span>
-          </div>
-          <div className="flex gap-2 flex-wrap items-end">
-            <div className="min-w-64 flex-1">
-              <label className="label">Item</label>
-              <select
-                className="input mt-1 w-full"
-                value={storeProduct}
-                onChange={(e) => {
-                  setStoreProduct(e.target.value);
-                  const p = invOptions.find((i) => i.id === e.target.value);
-                  if (p && !storePrice) setStorePrice(p.market ? String(p.market.toFixed(2)) : "");
-                }}
-              >
-                <option value="">Pick from inventory...</option>
-                {invOptions.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} ({p.qty} on hand{p.market ? ` - mkt $${p.market.toFixed(2)}` : ""})</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Sold for $</label>
-              <input type="number" step="0.01" className="input mt-1 w-28" value={storePrice} onChange={(e) => setStorePrice(e.target.value)} />
-            </div>
-            <button
-              className="btn-win disabled:opacity-40"
-              disabled={busy || !storeProduct || !(parseFloat(storePrice) >= 0)}
-              onClick={async () => {
-                setBusy(true);
-                const r = await fetch("/api/lines/store", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ streamId: id, productId: storeProduct, soldPrice: parseFloat(storePrice) }),
-                });
-                setBusy(false);
-                if (r.ok) { setStoreProduct(""); setStorePrice(""); await load(); }
-                else toast((await r.json().catch(() => ({}))).error || "Could not record that sale", "bad");
-              }}
-            >
-              Sold
-            </button>
-          </div>
-          {(lines as any[]).filter((l) => l.isStore).length > 0 && (
-            <div className="space-y-1 text-sm">
-              {(lines as any[]).filter((l) => l.isStore).map((l) => (
-                <div key={l.id} className="flex items-center justify-between gap-3 border-t border-edge pt-1.5">
-                  <span>{l.name.replace(/ \(store\)$/, "")}</span>
-                  <span className="flex items-center gap-3">
-                    <span className="num">{$(l.soldPrice || 0)}</span>
-                    <span className={`text-xs ${((l.soldPrice || 0) - l.market) >= 0 ? "text-win" : "text-bad"}`}>
-                      {((l.soldPrice || 0) - l.market) >= 0 ? "+" : ""}{$((l.soldPrice || 0) - l.market)} vs market
-                    </span>
-                    <button
-                      className="text-dim hover:text-bad text-xs"
-                      onClick={async () => {
-                        await fetch(`/api/lines/${l.id}`, { method: "DELETE" });
-                        await load();
-                      }}
-                    >
-                      undo
-                    </button>
-                  </span>
-                </div>
-              ))}
-              <div className="flex justify-between gap-3 border-t border-edge pt-1.5 font-semibold">
-                <span>Additional profit over market</span>
-                <span className={`num ${m.storeSales - m.storeMarket >= 0 ? "text-win" : "text-bad"}`}>
-                  {m.storeSales - m.storeMarket >= 0 ? "+" : ""}{$(m.storeSales - m.storeMarket)}
-                </span>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
+      {/* Store sales: bought off the shelf, kept apart from the show set */}
+      <StoreSales
+        streamId={id}
+        streamTitle={stream.title || ""}
+        streamDate={stream.date || ""}
+        streamerName={stream.streamerName || ""}
+        closed={!!stream.itemsReturned}
+        canManage={!!data?.canManage}
+        lines={(lines as any[]).filter((l) => l.isStore)}
+        onChange={load}
+      />
 
       {/* Show set builder */}
       <section className="card p-5 space-y-4">
