@@ -90,6 +90,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       liveStartedAt: stream.fields["Live Started At"] || null,
       afterFees: stream.fields["After Fees"] ?? null,
       promotion: stream.fields["Promotion"] ?? null,
+      shippingAdjustments: stream.fields["Shipping Adjustments"] ?? null,
       tips: stream.fields["Tips"] ?? null,
       hours: stream.fields["Hours Streamed"] ?? null,
       packingHours: stream.fields["Packing Hours"] ?? null,
@@ -194,6 +195,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   if (b.afterFees !== undefined) fields["After Fees"] = b.afterFees;
   if (b.promotion !== undefined) fields["Promotion"] = b.promotion;
+  if (b.shippingAdjustments !== undefined) fields["Shipping Adjustments"] = Math.max(0, parseFloat(b.shippingAdjustments) || 0);
   if (b.tips !== undefined) fields["Tips"] = b.tips;
   if (b.spotsSold !== undefined) fields["Spots Sold"] = b.spotsSold;
   if (b.giveaways !== undefined) fields["Giveaways Run"] = Math.max(0, parseInt(b.giveaways) || 0);
