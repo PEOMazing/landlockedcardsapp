@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { toast } from "@/components/Toaster";
 
 // Live show mode: everything a streamer needs mid-show and nothing else.
 // The elapsed clock runs from the Start stream punch, sales numbers save
@@ -268,6 +269,7 @@ export default function LiveClient({ id }: { id: string }) {
                 });
                 setBusy(false);
                 if (r.ok) { setStoreProduct(""); setStorePrice(""); await load(); }
+                else toast((await r.json().catch(() => ({}))).error || "Could not record that sale", "bad");
               }}
             >
               Sold
