@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { stockAlert } from "@/lib/alerts";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
+import { releaseSingleFromLine } from "@/lib/streamSingles";
 
 async function guard(lineId: string) {
   const me = await getMe();
@@ -51,6 +52,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   if (b.qty !== undefined) {
     if (returned) return NextResponse.json({ error: "items already returned - show set is locked" }, { status: 400 });
+    // one line is one physical card - more copies means adding the card again
+    if (g.line.fields["Single Rec Id"]) return NextResponse.json({ error: "a single card line is always qty 1 - add another copy from the singles picker instead" }, { status: 400 });
     const newQty = Math.max(1, parseInt(b.qty) || 1);
     const oldQty = g.line.fields["Qty"] || 0;
     const hits = g.line.fields["Qty Hit"] || 0;
@@ -111,6 +114,15 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       ).catch(() => {});
     }
   }
+  // A single card's line has no Product, so the restore above skips it. Put
+  // the card itself back instead - otherwise taking a card off a wheel while
+  // building the set leaves it stuck In Stream and invisible to every picker.
+  const singleReleased = await releaseSingleFromLine(
+    g.line,
+    String(g.line.fields["Stream Rec Id"] || ""),
+    String(g.stream.fields["Stream Type"] || "Surprise Set"),
+    returned,
+  );
   await atDelete(T.lines, params.id);
-  return NextResponse.json({ ok: true, restored: restore });
+  return NextResponse.json({ ok: true, restored: restore, singleReleased });
 }
