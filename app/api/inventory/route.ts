@@ -23,6 +23,11 @@ export async function GET() {
     dateAdded: r.fields["Date Added"] || "",
     priceChecked: r.fields["Price Checked"] || null,
     isGiveaway: r.fields["Category"] === "Giveaway",
+    // other names this product goes by: old names, and Whatnot listing titles
+    // matched to it by hand, so a CSV upload can find it
+    aliases: [...String(r.fields["Former Names"] || "").split("\n"), ...String(r.fields["Whatnot Names"] || "").split("\n")]
+      .map((s) => s.trim())
+      .filter(Boolean),
     // mapped = locked to one exact TCGplayer product, so the price is read
     // straight from that product rather than guessed from the name
     tcgMapped: Number(r.fields["TCG Group Id"]) > 0 && Number(r.fields["TCG Category Id"]) > 0,
