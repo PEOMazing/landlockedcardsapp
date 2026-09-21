@@ -9,6 +9,7 @@ import SinglesPicker from "@/components/SinglesPicker";
 import Thumb from "@/components/Thumb";
 import { toast } from "@/components/Toaster";
 import StoreSales from "@/components/StoreSales";
+import WhatnotSync, { type SharedFile } from "@/components/WhatnotSync";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -46,6 +47,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [pasteMsg, setPasteMsg] = useState("");
   const [returnArmed, setReturnArmed] = useState(false);
   const [returnMsg, setReturnMsg] = useState("");
+  // one Whatnot upload feeds both the show set and the store sales
+  const [whatnotFile, setWhatnotFile] = useState<SharedFile | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/streams/${id}`);
@@ -827,8 +830,22 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         )}
       </section>
 
+      {/* Whatnot show report: fills in hits, spots sold and giveaways */}
+      <WhatnotSync
+        streamId={id}
+        streamTitle={stream.title || ""}
+        streamDate={stream.date || ""}
+        streamerName={stream.streamerName || ""}
+        closed={!!stream.itemsReturned}
+        lines={(lines as any[]).map((l) => ({ id: l.id, name: l.name, qty: l.qty, qtyHit: l.qtyHit, isStore: !!l.isStore, isGiveaway: !!l.isGiveaway }))}
+        current={{ spotsSold: stream.spotsSold ?? null, giveaways: stream.giveaways ?? null, singlesGiveaways: stream.singlesGiveaways ?? null }}
+        onFile={setWhatnotFile}
+        onApplied={load}
+      />
+
       {/* Store sales: bought off the shelf, kept apart from the show set */}
       <StoreSales
+        sharedFile={whatnotFile}
         streamId={id}
         streamTitle={stream.title || ""}
         streamDate={stream.date || ""}
