@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { T, atDelete, atGet, atList, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
+import { clampStock } from "@/lib/stock";
 
 // When a quick-added product (buy price 0) gets its real buy price, fix the
 // $0 cost snapshots on streams that are not Complete yet. Complete streams are
@@ -36,7 +37,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     fields["Market Price"] = b.marketPrice;
     fields["Price Checked"] = new Date().toISOString().slice(0, 10);
   }
-  if (b.qtyOnHand !== undefined) fields["Qty On Hand"] = b.qtyOnHand;
+  if (b.qtyOnHand !== undefined) fields["Qty On Hand"] = clampStock(b.qtyOnHand);
   if (b.tcgUrl !== undefined) fields["TCGplayer URL"] = b.tcgUrl;
   if (b.active !== undefined) fields["Active"] = b.active;
   await atUpdate(T.inventory, params.id, fields);
