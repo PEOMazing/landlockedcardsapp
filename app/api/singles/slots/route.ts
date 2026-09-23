@@ -17,13 +17,19 @@ export const maxDuration = 60;
 // with no pocket, and these take the lowest empty ones. Cards added through the
 // app claim a pocket as they are created and never reach this.
 //
+// mode "repack" renumbers every card in the binder solid from pocket 1, in
+// sticker-number order, overwriting where they sit now. It is for filling a
+// binder the first time, where the holes a previous numbering left are just
+// pages of flipping past empty pockets. It moves cards, so it is not something
+// to run once the binder is physically filled.
+//
 // Chunked, because filing a whole binder is more writes than one request has
 // time for. Call it until remaining comes back 0.
 export async function POST(req: Request) {
   const me = await getMe();
   if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}) as any);
-  const mode = b?.mode === "cardNo" ? "cardNo" : "pack";
+  const mode = b?.mode === "cardNo" ? "cardNo" : b?.mode === "repack" ? "repack" : "pack";
   const limit = Math.min(Math.max(parseInt(b?.limit) || 120, 1), 400);
 
   const rows = await atList(T.singles, { "fields[]": ["Slot", "Card No", "Status"] });
@@ -31,6 +37,29 @@ export async function POST(req: Request) {
   // a sold card has left the binder, so it is owed nothing
   const needs = rows.filter((r) => !(Number(r.fields["Slot"]) > 0) && r.fields["Status"] !== "Sold");
   const batch = needs.slice(0, limit);
+
+  if (mode === "repack") {
+    // Targets are recomputed from the whole binder on every call and only the
+    // cards not already on theirs are written, so the run converges however it
+    // is chunked. Two cards can hold one pocket in the middle of a run; by the
+    // last chunk nobody does.
+    const live = rows.filter((r) => r.fields["Status"] !== "Sold");
+    live.sort((x, y) => (Number(x.fields["Card No"]) || 0) - (Number(y.fields["Card No"]) || 0));
+    const wrong = live
+      .map((r, i) => ({ r, want: i + 1 }))
+      .filter(({ r, want }) => Number(r.fields["Slot"]) !== want);
+    let moved = 0;
+    const stuck: string[] = [];
+    for (const { r, want } of wrong.slice(0, limit)) {
+      try {
+        await atUpdate(T.singles, r.id, slotFields(want));
+        moved++;
+      } catch {
+        stuck.push(r.id);
+      }
+    }
+    return NextResponse.json({ mode, filed: moved, failed: stuck.length, remaining: wrong.length - moved });
+  }
 
   const used = new Set(taken);
   let filed = 0;
