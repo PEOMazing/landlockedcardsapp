@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { atList, atUpdate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
-import { nextFreeSlots, slotFields } from "@/lib/slots";
+import { nextFreeSlots, slotAddress, slotFields } from "@/lib/slots";
 
 export const maxDuration = 60;
 
@@ -29,14 +29,31 @@ export async function POST(req: Request) {
   const me = await getMe();
   if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}) as any);
-  const mode = b?.mode === "cardNo" ? "cardNo" : b?.mode === "repack" ? "repack" : "pack";
+  const mode = ["cardNo", "repack", "addresses"].includes(b?.mode) ? b.mode : "pack";
   const limit = Math.min(Math.max(parseInt(b?.limit) || 120, 1), 400);
 
-  const rows = await atList(T.singles, { "fields[]": ["Slot", "Card No", "Status"] });
+  const rows = await atList(T.singles, { "fields[]": ["Slot", "Location", "Card No", "Status"] });
   const taken = rows.map((r) => Number(r.fields["Slot"])).filter((n) => Number.isInteger(n) && n > 0);
   // a sold card has left the binder, so it is owed nothing
   const needs = rows.filter((r) => !(Number(r.fields["Slot"]) > 0) && r.fields["Status"] !== "Sold");
   const batch = needs.slice(0, limit);
+
+  if (mode === "addresses") {
+    // Rewrite the readable address on cards whose pocket has not moved, for
+    // when the way an address is written changes. Nothing is refiled.
+    const stale = rows.filter((r) => {
+      const n = Number(r.fields["Slot"]);
+      return n > 0 && r.fields["Location"] !== slotAddress(n);
+    });
+    let fixed = 0;
+    for (const r of stale.slice(0, limit)) {
+      try {
+        await atUpdate(T.singles, r.id, slotFields(Number(r.fields["Slot"])));
+        fixed++;
+      } catch {}
+    }
+    return NextResponse.json({ mode, filed: fixed, failed: 0, remaining: stale.length - fixed });
+  }
 
   if (mode === "repack") {
     // Targets are recomputed from the whole binder on every call and only the
