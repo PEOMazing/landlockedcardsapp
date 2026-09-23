@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { T, atCreateBatch, atGet, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { toSingle } from "@/lib/singles";
+import { claimSlots, slotFields } from "@/lib/slots";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -36,7 +37,9 @@ const CHUNK = 10;
 // status guard below for why.
 const CARRY = [
   "Card Name", "Set Name", "Card Number", "Card ID", "Rarity", "Variant",
-  "Condition", "Language", "Printing", "Image URL", "Location", "Notes",
+  // Location is deliberately not carried: a pocket holds one card, so every
+  // copy is filed into an empty one of its own below.
+  "Condition", "Language", "Printing", "Image URL", "Notes",
   "Comp", "Comp Source", "Comp Date", "Comp Detail", "Entry Comp",
   "Market", "Market Basis", "Listing Detail",
   "Buy Price", "Owner Rec Id", "Revenue Bucket", "Added By", "Date Added",
@@ -101,6 +104,11 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   // reads qty * buy and qty * comp), so carrying both across unchanged leaves
   // total spend and total value exactly where they were.
   const want = qty - 1;
+  // One empty pocket per copy, taken in one read so the copies cannot be handed
+  // the same one. A collector's cards are not in the company binder. If the
+  // pool cannot be read the copies are created unfiled, which the slots
+  // backfill picks up - better than refusing to split the card.
+  const copySlots = owner === "" ? await claimSlots(want) : [];
   let created = 0;
   let remaining = qty;
   let stoppedBecause = "";
@@ -108,7 +116,10 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   for (let i = 0; i < want; i += CHUNK) {
     const n = Math.min(CHUNK, want - i);
     try {
-      await atCreateBatch(T.singles, Array.from({ length: n }, () => ({ ...copy })));
+      await atCreateBatch(
+        T.singles,
+        Array.from({ length: n }, (_, k) => ({ ...copy, ...(copySlots[i + k] ? slotFields(copySlots[i + k]) : {}) })),
+      );
     } catch (e: any) {
       // The chunk is all-or-nothing at Airtable, so nothing from it landed.
       stoppedBecause = String(e?.message || e).slice(0, 200);
