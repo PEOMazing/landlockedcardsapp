@@ -12,6 +12,7 @@
 // before "Electrode (37)", "9/99" before "20/99") and ignores case.
 
 export type LabelSortable = { name: string; setName: string; number: string; cardNo: string };
+export type SlotSortable = { slot?: number | null };
 
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
@@ -25,4 +26,16 @@ export function alphaOrder<T extends LabelSortable>(list: T[]): T[] {
       (a.cardNo ? 0 : 1) - (b.cardNo ? 0 : 1) ||
       collator.compare(a.cardNo || "", b.cardNo || "")
   );
+}
+
+// The order the binder fills. Re-stickering a shelf of cards means working
+// front to back through the pockets, so the roll should come off in the same
+// order. A card with no pocket yet prints at the end, where it is easy to set
+// aside rather than hunting for a hole that does not exist.
+export function slotOrder<T extends SlotSortable>(list: T[]): T[] {
+  return [...list].sort((a, b) => {
+    const x = Number(a.slot) > 0 ? Number(a.slot) : Infinity;
+    const y = Number(b.slot) > 0 ? Number(b.slot) : Infinity;
+    return x - y;
+  });
 }

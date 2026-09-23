@@ -9,20 +9,32 @@ import { atList, T } from "./airtable";
 // binder in order means sliding every card after the insert down one pocket,
 // and a single new card turns into an afternoon.
 //
-// Location is the same number written the way a person reads it while holding
-// the card. It is derived, never typed.
+// Location is the same number with its binder on the front, which is what the
+// sticker carries. It is derived, never typed.
 export const POCKETS_PER_PAGE = 16;
 export const SLOTS_PER_BINDER = 1280;
 
-// 412 -> "B1-P26-12". Binder 1, page 26, pocket 12.
+// 412 -> "B1-412". The number on the sticker: which binder, then the pocket,
+// counted straight through from the front. Page and pocket are arithmetic on
+// the same number and belong on a screen, not on a label - 635 is something a
+// person can say out loud and sort a stack by.
 export function slotAddress(slot: number | null | undefined): string {
   const n = Number(slot);
   if (!Number.isInteger(n) || n < 1) return "";
-  const binder = Math.floor((n - 1) / SLOTS_PER_BINDER) + 1;
+  return `B${binderOf(n)}-${n}`;
+}
+
+export function binderOf(slot: number): number {
+  return Math.floor((slot - 1) / SLOTS_PER_BINDER) + 1;
+}
+
+// 412 -> "page 26, pocket 12", for the app to show when someone is hunting for
+// a card rather than reading its sticker.
+export function slotPagePocket(slot: number | null | undefined): string {
+  const n = Number(slot);
+  if (!Number.isInteger(n) || n < 1) return "";
   const within = (n - 1) % SLOTS_PER_BINDER;
-  const page = Math.floor(within / POCKETS_PER_PAGE) + 1;
-  const pocket = (within % POCKETS_PER_PAGE) + 1;
-  return `B${binder}-P${page}-${pocket}`;
+  return `page ${Math.floor(within / POCKETS_PER_PAGE) + 1}, pocket ${(within % POCKETS_PER_PAGE) + 1}`;
 }
 
 // The n lowest pockets nobody is sitting in, counting up from 1. Holes first;
@@ -38,7 +50,7 @@ export function nextFreeSlots(taken: Iterable<number | null | undefined>, n: num
   return out;
 }
 
-// Written together, always. A Slot with no Location is a pocket nobody can find.
+// Written together, always. A Slot with no Location is a pocket nobody can read.
 export function slotFields(slot: number): Record<string, any> {
   return { "Slot": slot, "Location": slotAddress(slot) };
 }
