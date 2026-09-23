@@ -49,6 +49,11 @@ const BAND_IN = LABEL_IN - BOTTOM_CLEAR_IN; // 0.64in of usable height
 const SIDE_PAD_IN = 0.05;
 const TOP_PAD_IN = 0.02;
 const MAX_QR_IN = BAND_IN - TOP_PAD_IN * 2; // 0.6in, the tallest the band holds
+// The binder address sits directly under the QR, so it comes out of the same
+// 0.6in. Taking it off the QR rather than letting the column run long means a
+// saved calibration from before the address existed still prints inside the
+// band instead of quietly clipping its own last row.
+const SLOT_LINE_IN = 0.09;
 
 // Dialled in on a real SP310 against real stock: 0.03in. Not guessed off a
 // photograph, which is how an earlier version of this line arrived at 0.12in
@@ -186,6 +191,10 @@ export default function LabelsClient() {
 
   const roll = mode === "roll";
   const printed = order === "az" ? alphaOrder(labels) : labels;
+  // One QR size for the whole run, shrunk to leave room for the address when
+  // any label in it carries one. A mixed batch printing two sizes would look
+  // like a fault.
+  const qrIn = printed.some((l) => l.location) ? Math.min(cal.qr, MAX_QR_IN - SLOT_LINE_IN) : cal.qr;
 
   return (
     <>
@@ -223,8 +232,11 @@ export default function LabelsClient() {
         /* At 203dpi a 0.5in QR is ~101 dots, and a link this short needs about
            33 modules, so even the small end of the dial keeps 3 dots a module
            and scans. Below that it starts to matter. */
-        .qr { width: ${cal.qr}in; height: ${cal.qr}in; flex-shrink: 0; display: block; }
+        .qrcol { display: flex; flex-direction: column; align-items: center; gap: 0.01in; flex-shrink: 0; }
+        .qr { width: ${qrIn}in; height: ${qrIn}in; flex-shrink: 0; display: block; }
         .qr svg { width: 100%; height: 100%; display: block; }
+        /* The pocket this card goes back into, under the code that opens it. */
+        .slot { font-size: 4.5pt; font-weight: 800; line-height: 1; letter-spacing: 0.1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .cardno { font-weight: 800; font-size: 10.5pt; letter-spacing: 0.3px; font-variant-numeric: tabular-nums; }
         .bucketcond { font-weight: 700; font-size: 7pt; letter-spacing: 0.2px; }
         .cardname { font-weight: 700; font-size: 6.5pt; }
@@ -257,8 +269,10 @@ export default function LabelsClient() {
         @page { size: letter; margin: 0; }
         .sheet { display: grid; grid-template-columns: repeat(3, 2.625in); column-gap: 0.125in; padding: 0.5in 0.19in; box-sizing: border-box; }
         .lbl { width: 2.625in; height: 1in; padding: 0.07in 0.1in; box-sizing: border-box; display: flex; gap: 0.08in; align-items: center; overflow: hidden; break-inside: avoid; }
+        .qrcol { display: flex; flex-direction: column; align-items: center; gap: 0.02in; flex-shrink: 0; }
         .qr { width: 0.7in; height: 0.7in; flex-shrink: 0; display: block; }
         .qr svg { width: 100%; height: 100%; display: block; }
+        .slot { font-size: 6pt; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .idcol { flex-shrink: 0; text-align: center; line-height: 1.05; }
         .cardno { font-weight: 800; font-size: 14pt; letter-spacing: 0.5px; font-variant-numeric: tabular-nums; }
         .bucketcond { font-weight: 700; font-size: 9pt; letter-spacing: 0.3px; }
@@ -404,7 +418,10 @@ export default function LabelsClient() {
               {/* the markup is qrcode's own output for a URL we built, not
                   anything a card record can reach, so there is nothing here
                   for a card name to inject into */}
-              <span className="qr" dangerouslySetInnerHTML={{ __html: l.qr }} />
+              <span className="qrcol">
+                <span className="qr" dangerouslySetInnerHTML={{ __html: l.qr }} />
+                {l.location && <span className="slot">{l.location}</span>}
+              </span>
               {!roll && (
                 <div className="idcol">
                   {l.cardNo && <div className="cardno">{l.cardNo}</div>}
@@ -424,8 +441,6 @@ export default function LabelsClient() {
                 <div className="cardset" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {l.setName}{l.number ? ` #${l.number}` : ""}{l.printing ? ` ${l.printing}` : ""}
                 </div>
-                {/* the roll label has no room for extras beyond the essentials */}
-                {!roll && l.location && <div className="cardset">{l.location}</div>}
                 {includePrice && (
                   <div style={{ fontWeight: 800, fontSize: roll ? "8pt" : "12pt" }}>{l.comp !== null ? $(l.comp) : ""}</div>
                 )}
