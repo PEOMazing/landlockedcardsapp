@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { formatCardNo, bucketFor, bucketRange } from "@/lib/cardNo";
-import { alphaOrder } from "@/lib/labelOrder";
+import { alphaOrder, slotOrder } from "@/lib/labelOrder";
 
 // Printable card labels in two shapes, because the two ways of printing them
 // want completely different pages:
@@ -12,7 +12,7 @@ import { alphaOrder } from "@/lib/labelOrder";
 //
 // Each QR resolves to the card's quick-sell page, so scanning a label at the
 // table opens the record ready to be marked sold.
-type L = { id: string; cardNo: string; bucket: string; name: string; setName: string; number: string; condition: string; printing: string; comp: number | null; qr: string; location: string };
+type L = { id: string; cardNo: string; slot: number | null; bucket: string; name: string; setName: string; number: string; condition: string; printing: string; comp: number | null; qr: string; location: string };
 
 type Mode = "sheet" | "roll";
 const MODE_KEY = "llc-label-mode";
@@ -21,7 +21,7 @@ const MODE_KEY = "llc-label-mode";
 // in one go shares a Date Added, so the table order it used to inherit scattered
 // copies of the same card all over the run. "As listed" keeps the Singles page
 // order for the times that is the point, like printing one price box at a time.
-type Order = "az" | "table";
+type Order = "az" | "slot" | "table";
 const ORDER_KEY = "llc-label-order";
 
 // Where a thermal printer actually lays ink down is not something a web page
@@ -49,10 +49,10 @@ const BAND_IN = LABEL_IN - BOTTOM_CLEAR_IN; // 0.64in of usable height
 const SIDE_PAD_IN = 0.05;
 const TOP_PAD_IN = 0.02;
 const MAX_QR_IN = BAND_IN - TOP_PAD_IN * 2; // 0.6in, the tallest the band holds
-// The binder address sits directly under the QR, so it comes out of the same
-// 0.6in. Taking it off the QR rather than letting the column run long means a
-// saved calibration from before the address existed still prints inside the
-// band instead of quietly clipping its own last row.
+// A second line sits directly under the QR, so it comes out of the same 0.6in.
+// Taking it off the QR rather than letting the column run long means a saved
+// calibration from before that line existed still prints inside the band
+// instead of quietly clipping its own last row.
 const SLOT_LINE_IN = 0.09;
 
 // Dialled in on a real SP310 against real stock: 0.03in. Not guessed off a
@@ -96,7 +96,7 @@ export default function LabelsClient() {
       const saved = localStorage.getItem(MODE_KEY);
       if (saved === "roll" || saved === "sheet") setMode(saved);
       const o = localStorage.getItem(ORDER_KEY);
-      if (o === "az" || o === "table") setOrder(o);
+      if (o === "az" || o === "slot" || o === "table") setOrder(o);
       const c = JSON.parse(localStorage.getItem(CAL_KEY) || "null");
       // `nudge` is the old raw-offset spelling, negative for up. Read it so a
       // browser that was already calibrated does not silently lose the setting.
@@ -142,7 +142,7 @@ export default function LabelsClient() {
           // It is also sharper. A raster QR scaled to 0.6in on a 203dpi head
           // lands module edges between dots; a path snaps to them.
           const qr = await QRCode.toString(`${window.location.origin}/label/${id}`, { type: "svg", margin: 0 });
-          out.push({ id, cardNo: formatCardNo(s.cardNo), bucket: bucketFor(s.comp), name: clean(s.name), setName: s.setName, number: s.number, condition: s.condition, printing: s.printing, comp: s.comp, qr, location: s.location || "" });
+          out.push({ id, cardNo: formatCardNo(s.cardNo), slot: s.slot ?? null, bucket: bucketFor(s.comp), name: clean(s.name), setName: s.setName, number: s.number, condition: s.condition, printing: s.printing, comp: s.comp, qr, location: s.location || "" });
         }
         setLabels(out);
         // One label per record, always, because a label is a card number and a
@@ -190,11 +190,11 @@ export default function LabelsClient() {
   if (!labels) return <main className="p-8 text-dim">Building labels...</main>;
 
   const roll = mode === "roll";
-  const printed = order === "az" ? alphaOrder(labels) : labels;
+  const printed = order === "az" ? alphaOrder(labels) : order === "slot" ? slotOrder(labels) : labels;
   // One QR size for the whole run, shrunk to leave room for the address when
   // any label in it carries one. A mixed batch printing two sizes would look
   // like a fault.
-  const qrIn = printed.some((l) => l.location) ? Math.min(cal.qr, MAX_QR_IN - SLOT_LINE_IN) : cal.qr;
+  const qrIn = printed.some((l) => l.cardNo) ? Math.min(cal.qr, MAX_QR_IN - SLOT_LINE_IN) : cal.qr;
 
   return (
     <>
@@ -235,7 +235,8 @@ export default function LabelsClient() {
         .qrcol { display: flex; flex-direction: column; align-items: center; gap: 0.01in; flex-shrink: 0; }
         .qr { width: ${qrIn}in; height: ${qrIn}in; flex-shrink: 0; display: block; }
         .qr svg { width: 100%; height: 100%; display: block; }
-        /* The pocket this card goes back into, under the code that opens it. */
+        /* The card id, under the code that opens its record. The pocket is the
+           big number now: it is what you read while filing. */
         .slot { font-size: 4.5pt; font-weight: 800; line-height: 1; letter-spacing: 0.1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .cardno { font-weight: 800; font-size: 10.5pt; letter-spacing: 0.3px; font-variant-numeric: tabular-nums; }
         .bucketcond { font-weight: 700; font-size: 7pt; letter-spacing: 0.2px; }
@@ -336,7 +337,7 @@ export default function LabelsClient() {
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
             <div className="inline-flex rounded-lg border border-edge overflow-hidden">
-              {([["az", "A to Z"], ["table", "As listed"]] as [Order, string][]).map(([o, label]) => (
+              {([["az", "A to Z"], ["slot", "Binder order"], ["table", "As listed"]] as [Order, string][]).map(([o, label]) => (
                 <button
                   key={o}
                   type="button"
@@ -420,18 +421,18 @@ export default function LabelsClient() {
                   for a card name to inject into */}
               <span className="qrcol">
                 <span className="qr" dangerouslySetInnerHTML={{ __html: l.qr }} />
-                {l.location && <span className="slot">{l.location}</span>}
+                {l.cardNo && <span className="slot">{l.cardNo}</span>}
               </span>
               {!roll && (
                 <div className="idcol">
-                  {l.cardNo && <div className="cardno">{l.cardNo}</div>}
+                  {l.location ? <div className="cardno">{l.location}</div> : l.cardNo && <div className="cardno">{l.cardNo}</div>}
                   <div className="bucketcond">{[l.bucket, l.condition].filter(Boolean).join(" · ")}</div>
                 </div>
               )}
               <div style={{ minWidth: 0, lineHeight: 1.15 }}>
                 {roll && (
                   <div style={{ display: "flex", alignItems: "baseline", gap: "0.05in" }}>
-                    {l.cardNo && <span className="cardno">{l.cardNo}</span>}
+                    {(l.location || l.cardNo) && <span className="cardno">{l.location || l.cardNo}</span>}
                     <span className="bucketcond" style={{ whiteSpace: "nowrap" }}>
                       {[l.bucket, l.condition].filter(Boolean).join(" · ")}
                     </span>
