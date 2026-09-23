@@ -18,6 +18,9 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     setName: f["Set Name"] || "",
     number: f["Card Number"] || "",
     cardId: f["Card ID"] || "",
+    // the binder pocket. Unlike Card No this one is recycled: it empties when
+    // the card sells and the next card added moves into it.
+    slot: f["Slot"] ?? null,
     location: f["Location"] || "",
     language: f["Language"] || "English",
     rarity: f["Rarity"] || "",
