@@ -9,32 +9,19 @@ import { atList, T } from "./airtable";
 // binder in order means sliding every card after the insert down one pocket,
 // and a single new card turns into an afternoon.
 //
-// Location is the same number with its binder on the front, which is what the
-// sticker carries. It is derived, never typed.
-export const POCKETS_PER_PAGE = 16;
-export const SLOTS_PER_BINDER = 1280;
+// Location is the same number as text, which is what the sticker carries. It
+// is derived, never typed.
+//
+// There is deliberately no binder in it. Binders hold different numbers of
+// cards, so any address that names one has to know each binder's capacity, and
+// that number is wrong the day a different binder joins the shelf. A pocket
+// that just counts from 1 across the whole collection never needs to know.
+// Which binder a pocket is in is written on the binder: 1-1000, 1001-2000.
 
-// 412 -> "B1-412". The number on the sticker: which binder, then the pocket,
-// counted straight through from the front. Page and pocket are arithmetic on
-// the same number and belong on a screen, not on a label - 635 is something a
-// person can say out loud and sort a stack by.
 export function slotAddress(slot: number | null | undefined): string {
   const n = Number(slot);
   if (!Number.isInteger(n) || n < 1) return "";
-  return `B${binderOf(n)}-${n}`;
-}
-
-export function binderOf(slot: number): number {
-  return Math.floor((slot - 1) / SLOTS_PER_BINDER) + 1;
-}
-
-// 412 -> "page 26, pocket 12", for the app to show when someone is hunting for
-// a card rather than reading its sticker.
-export function slotPagePocket(slot: number | null | undefined): string {
-  const n = Number(slot);
-  if (!Number.isInteger(n) || n < 1) return "";
-  const within = (n - 1) % SLOTS_PER_BINDER;
-  return `page ${Math.floor(within / POCKETS_PER_PAGE) + 1}, pocket ${(within % POCKETS_PER_PAGE) + 1}`;
+  return String(n);
 }
 
 // The n lowest pockets nobody is sitting in, counting up from 1. Holes first;
