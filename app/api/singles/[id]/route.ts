@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { toSingle } from "@/lib/singles";
+import { CLEARED_SLOT, claimSlot, slotFields } from "@/lib/slots";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
@@ -30,8 +31,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.language !== undefined) fields["Language"] = b.language;
   if (b.status !== undefined && ["In Stock", "In Stream", "Sold"].includes(b.status)) {
     fields["Status"] = b.status;
-    if (b.status === "Sold") fields["Sold Date"] = new Date().toISOString().slice(0, 10);
-    if (b.status === "In Stock") { fields["Sold Date"] = null; fields["Sale Price"] = null; }
+    if (b.status === "Sold") {
+      fields["Sold Date"] = new Date().toISOString().slice(0, 10);
+      // the card has left the binder, so its pocket is free for the next one in
+      Object.assign(fields, CLEARED_SLOT);
+    }
+    if (b.status === "In Stock") {
+      fields["Sold Date"] = null;
+      fields["Sale Price"] = null;
+      // A card coming back from sold needs filing again, and the pocket it used
+      // to be in is very likely someone else's by now. A card coming back off a
+      // stream still holds its own pocket and is left alone. Collector cards are
+      // not in the company binder at all.
+      if (owner === "" && !(Number(existing.fields["Slot"]) > 0)) {
+        const slot = await claimSlot();
+        if (slot) Object.assign(fields, slotFields(slot));
+      }
+    }
   }
   if (b.salePrice !== undefined) fields["Sale Price"] = Math.max(0, parseFloat(b.salePrice) || 0);
   if (b.comp !== undefined) {
