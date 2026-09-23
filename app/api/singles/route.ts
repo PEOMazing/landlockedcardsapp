@@ -4,6 +4,7 @@ import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
 import { conditionSoldComp, getTcgcsvCard, tcgProductIdFromCardId } from "@/lib/tcgcsvCards";
 import { toSingle } from "@/lib/singles";
+import { claimSlot, slotFields } from "@/lib/slots";
 import { roundUpDollar } from "@/lib/salesWindow";
 
 export const dynamic = "force-dynamic";
@@ -151,6 +152,13 @@ export async function POST(req: Request) {
 
   // entry benchmark: whatever the comp is at the moment of entry
   if (typeof fields["Comp"] === "number" && fields["Comp"] > 0) fields["Entry Comp"] = fields["Comp"];
+  // File it in the lowest empty pocket, which is a gap a sold card left before
+  // it is the end of the binder. A collector's card is not in the company
+  // binder, so it is not given one of its pockets.
+  if (!me.isCollector) {
+    const slot = await claimSlot();
+    if (slot) Object.assign(fields, slotFields(slot));
+  }
   const rec = await atCreate(T.singles, fields);
   return NextResponse.json({ single: toSingle(rec, me.isAdmin) });
 }
