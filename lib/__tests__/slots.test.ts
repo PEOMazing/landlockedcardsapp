@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { slotAddress, nextFreeSlots, slotFields, slotFieldsFor } from "../slots";
+import { slotAddress, nextFreeSlots, slotFields, slotFieldsFor, pickSlot, clearedSlotFields } from "../slots";
 import { slotOrder } from "../labelOrder";
 
 describe("slotAddress", () => {
@@ -77,5 +77,38 @@ describe("slotOrder", () => {
     const list = [{ slot: 2 }, { slot: 1 }];
     slotOrder(list);
     assert.deepEqual(list.map((x) => x.slot), [2, 1]);
+  });
+});
+
+describe("clearedSlotFields", () => {
+  it("frees the pocket but remembers which one it was", () => {
+    assert.deepEqual(clearedSlotFields(412), { Slot: null, Location: "", "Last Slot": 412 });
+  });
+
+  it("remembers nothing about a card that was not in a pocket", () => {
+    assert.deepEqual(clearedSlotFields(null), { Slot: null, Location: "" });
+    assert.deepEqual(clearedSlotFields(0), { Slot: null, Location: "" });
+  });
+});
+
+describe("pickSlot", () => {
+  it("gives a returning card its own pocket back when it is still empty", () => {
+    // 412 sold, so it is not in the taken list; nobody has moved in
+    assert.equal(pickSlot([1, 2, 3], 412), 412);
+  });
+
+  it("gives it the lowest empty pocket when someone took its old one", () => {
+    assert.equal(pickSlot([1, 3, 412], 412), 2);
+  });
+
+  it("falls back to the lowest empty pocket when it never had one", () => {
+    assert.equal(pickSlot([1, 2, 4], null), 3);
+    assert.equal(pickSlot([1, 2, 3], 0), 4);
+  });
+
+  it("does not hand back a pocket that is taken just because it was asked for", () => {
+    const got = pickSlot([5], 5);
+    assert.notEqual(got, 5);
+    assert.equal(got, 1);
   });
 });
