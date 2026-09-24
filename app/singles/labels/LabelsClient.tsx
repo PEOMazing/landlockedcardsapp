@@ -55,6 +55,10 @@ const MAX_QR_IN = BAND_IN - TOP_PAD_IN * 2; // 0.6in, the tallest the band holds
 // instead of quietly clipping its own last row.
 const SLOT_LINE_IN = 0.09;
 
+// How many cards one stamp request records. Roughly 100 Airtable writes fit
+// inside a serverless minute with room to spare.
+const STAMP_CHUNK = 100;
+
 // Dialled in on a real SP310 against real stock: 0.03in. Not guessed off a
 // photograph, which is how an earlier version of this line arrived at 0.12in
 // and would have pushed the card number off the top of the sticker. A
@@ -175,14 +179,20 @@ export default function LabelsClient() {
     // writing, so there is nothing for this side to screen out.
     const ids = labels.map((l) => l.id);
     if (ids.length === 0) return;
-    try {
-      await fetch("/api/singles/labels-printed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-    } catch {
-      // the paper is already out; drift tracking catching up later is fine
+    // In chunks, because the stamp is one Airtable write per card and a serverless
+    // function gets a minute. A 635-label run sent as one request printed every
+    // sticker, wrote 338 of them, and was killed mid-loop - leaving half the
+    // collection reading as never re-printed with nothing on screen to say so.
+    for (let i = 0; i < ids.length; i += STAMP_CHUNK) {
+      try {
+        await fetch("/api/singles/labels-printed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(i, i + STAMP_CHUNK) }),
+        });
+      } catch {
+        // the paper is already out; drift tracking catching up later is fine
+      }
     }
   }
 
