@@ -1,5 +1,5 @@
 import { atGet, atList, atUpdate, isRecId, T } from "./airtable";
-import { CLEARED_SLOT, claimSlot, slotFieldsFor } from "./slots";
+import { clearedSlotFields, reclaimSlot } from "./slots";
 
 // What happens to the single cards on a stream when the show closes.
 //
@@ -159,7 +159,7 @@ export async function settleStreamSingles(
         // line does not know, so that one is left for a person to fill in.
         const linePrice = Number(l.fields["Market Price Snapshot"]);
         const salePrice = hitsDecideSingles(streamType) && Number.isFinite(linePrice) && linePrice >= 0 ? { "Sale Price": linePrice } : {};
-        await atUpdate(T.singles, sid, { "Status": "Sold", "Sold Date": today(), ...salePrice, ...CLEARED_SLOT });
+        await atUpdate(T.singles, sid, { "Status": "Sold", "Sold Date": today(), ...salePrice, ...clearedSlotFields(card?.fields?.["Slot"]) });
         out.sold++;
       } else if (act === "return") {
         await atUpdate(T.singles, sid, { "Status": "In Stock", "Stream Rec Id": "" });
@@ -182,7 +182,7 @@ export async function settleStreamSingles(
   }).catch(() => [] as any[]);
   for (const s of stragglers) {
     if (handled.has(s.id)) continue;
-    await atUpdate(T.singles, s.id, { "Status": "Sold", "Sold Date": today(), ...CLEARED_SLOT });
+    await atUpdate(T.singles, s.id, { "Status": "Sold", "Sold Date": today(), ...clearedSlotFields(s.fields["Slot"]) });
     out.legacy++;
   }
   return out;
@@ -202,10 +202,10 @@ export async function releaseSingleFromLine(
     if (act === "copy-restore") { await bumpQty(sid, 1); return true; }
     if (act === "restore") {
       // undoing a sale takes its price back off too, and the card needs filing
-      // again: the pocket it had before the sale went back in the pool and is
-      // very likely someone else's by now. A card that still holds a pocket
-      // keeps it.
-      const refile = card && Number(card.fields?.["Slot"]) > 0 ? {} : slotFieldsFor(await claimSlot());
+      // again: it goes back to the pocket printed on its sticker when that is
+      // still empty, and to the lowest empty one when it is not. A card that
+      // still holds a pocket keeps it.
+      const refile = card && Number(card.fields?.["Slot"]) > 0 ? {} : (await reclaimSlot(card?.fields?.["Last Slot"])).fields;
       await atUpdate(T.singles, sid, { "Status": "In Stock", "Stream Rec Id": "", "Sold Date": null as any, "Sale Price": null as any, ...refile });
       return true;
     }
