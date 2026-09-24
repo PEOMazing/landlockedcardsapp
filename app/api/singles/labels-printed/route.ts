@@ -5,6 +5,9 @@ import { bucketFor } from "@/lib/cardNo";
 
 export const maxDuration = 60;
 
+// Comfortably inside the minute at roughly 200ms a write.
+const MAX_PER_CALL = 150;
+
 // Called the moment labels actually go to the printer, recording which price
 // bucket each sticker carries.
 //
@@ -17,12 +20,18 @@ export async function POST(req: Request) {
   if (!me?.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const ids: string[] = Array.isArray(body.ids) ? body.ids.filter((i: any) => isRecId(String(i))) : [];
-  if (ids.length === 0) return NextResponse.json({ error: "no cards given" }, { status: 400 });
+  const all: string[] = Array.isArray(body.ids) ? body.ids.filter((i: any) => isRecId(String(i))) : [];
+  if (all.length === 0) return NextResponse.json({ error: "no cards given" }, { status: 400 });
+
+  // A stamp is one write per card and this function gets a minute, so a run
+  // longer than that is cut here and the leftovers are handed back rather than
+  // being lost to a timeout halfway through the loop. The caller sends the rest.
+  const ids = all.slice(0, MAX_PER_CALL);
 
   // One read for the whole batch: comps come from the record rather than the
   // client, so a stale browser tab cannot stamp a bucket that was never true.
-  const rows = await atList(T.singles);
+  // Two fields, because that is all a stamp decides on.
+  const rows = await atList(T.singles, { "fields[]": ["Comp", "Printed Bucket"] });
   const byId = new Map(rows.map((r) => [r.id, r]));
 
   // Two different questions, so two different fields.
@@ -46,5 +55,5 @@ export async function POST(req: Request) {
     await atUpdate(T.singles, id, fields);
     stamped++;
   }
-  return NextResponse.json({ stamped, of: ids.length });
+  return NextResponse.json({ stamped, of: ids.length, remaining: all.length - ids.length });
 }
