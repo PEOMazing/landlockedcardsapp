@@ -25,6 +25,7 @@ export default async function SharePage() {
     "fields[]": [
       "Card Name", "Set Name", "Card Number", "Rarity", "Variant",
       "Condition", "Language", "Printing", "Comp", "Image URL", "Card No",
+      "Order Pending",
     ],
     "sort[0][field]": "Card Name",
     "sort[0][direction]": "asc",
@@ -44,6 +45,9 @@ export default async function SharePage() {
       printing: String(r.fields["Printing"] || ""),
       price: Number(r.fields["Comp"]) > 0 ? Number(r.fields["Comp"]) : null,
       image: String(r.fields["Image URL"] || ""),
+      // somebody has already asked for this one; it stays listed so a second
+      // buyer can decide for themselves whether to chance it
+      pending: !!r.fields["Order Pending"],
     }))
     .filter((c) => c.name);
 
