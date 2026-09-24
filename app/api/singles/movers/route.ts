@@ -37,8 +37,12 @@ export async function GET(req: Request) {
     dateAdded: String(r.fields["Date Added"] || ""),
   }));
 
-  // days 0 leans entirely on Entry Comp, so the log is not read at all.
-  const cutoff = days > 0 ? daysAgo(days) : "0000-01-01";
+  // days 0 leans entirely on Entry Comp, so the log is not read at all. Its
+  // cutoff is today rather than the beginning of time: the "did the card even
+  // exist yet" guard compares the card's added date against the cutoff, and a
+  // cutoff in the distant past says every card is too new to rank, which is the
+  // exact opposite of what since-added means.
+  const cutoff = days > 0 ? daysAgo(days) : daysAgo(0);
   const points = days > 0 ? await pointsSince(daysAgo(days + 1)) : new Map();
   const movers = rankMovers(cards, points, cutoff);
 
