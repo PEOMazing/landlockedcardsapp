@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { toSingle } from "@/lib/singles";
-import { CLEARED_SLOT, claimSlot, slotFields } from "@/lib/slots";
+import { clearedSlotFields, reclaimSlot } from "@/lib/slots";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
@@ -21,6 +21,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const fields: Record<string, any> = {};
+  // set when a card came back to a different pocket than the one on its sticker
+  let refiled: number | null = null;
   if (b.name !== undefined) fields["Card Name"] = b.name;
   if (b.setName !== undefined) fields["Set Name"] = b.setName;
   if (b.number !== undefined) fields["Card Number"] = b.number;
@@ -33,19 +35,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     fields["Status"] = b.status;
     if (b.status === "Sold") {
       fields["Sold Date"] = new Date().toISOString().slice(0, 10);
-      // the card has left the binder, so its pocket is free for the next one in
-      Object.assign(fields, CLEARED_SLOT);
+      // The card has left the binder, so its pocket is free for the next one in.
+      // Which pocket it was is kept, because that number is printed on the card.
+      Object.assign(fields, clearedSlotFields(existing.fields["Slot"]));
     }
     if (b.status === "In Stock") {
       fields["Sold Date"] = null;
       fields["Sale Price"] = null;
-      // A card coming back from sold needs filing again, and the pocket it used
-      // to be in is very likely someone else's by now. A card coming back off a
-      // stream still holds its own pocket and is left alone. Collector cards are
-      // not in the company binder at all.
+      // A card coming back from sold needs filing again, and it goes back to the
+      // pocket printed on its sticker if that is still empty. A card coming back
+      // off a stream never gave its pocket up and is left alone. Collector cards
+      // are not in the company binder at all.
       if (owner === "" && !(Number(existing.fields["Slot"]) > 0)) {
-        const slot = await claimSlot();
-        if (slot) Object.assign(fields, slotFields(slot));
+        const back = await reclaimSlot(existing.fields["Last Slot"]);
+        Object.assign(fields, back.fields);
+        refiled = back.slot && !back.kept ? back.slot : null;
       }
     }
   }
@@ -61,7 +65,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     fields["Buy Price"] = Math.max(0, parseFloat(b.buyPrice) || 0);
   }
   const rec = await atUpdate(T.singles, params.id, fields);
-  return NextResponse.json({ single: toSingle(rec, me.isAdmin || me.isCollector) });
+  return NextResponse.json({
+    single: toSingle(rec, me.isAdmin || me.isCollector),
+    // the sticker on this card now says the wrong pocket
+    ...(refiled ? { refiled } : {}),
+  });
 }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
