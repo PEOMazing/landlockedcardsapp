@@ -60,6 +60,15 @@ describe("valueAsOf", () => {
   it("gives up rather than guess when there is nothing at all", () => {
     assert.equal(valueAsOf([], null, "2026-03-15"), null);
   });
+
+  // The since-added window asks a different question: not "where was this a
+  // month ago" but "where did it start". A cutoff of today lets every card
+  // through the existence guard and lands on its entry comp, where a cutoff at
+  // the beginning of time would say every card is too new to have a number.
+  it("answers since-added when the cutoff is today", () => {
+    assert.equal(valueAsOf([], { date: "2026-09-20", comp: 12 }, "2026-09-24"), 12);
+    assert.equal(valueAsOf([], { date: "2026-09-24", comp: 12 }, "2026-09-24"), 12);
+  });
 });
 
 describe("rankMovers", () => {
