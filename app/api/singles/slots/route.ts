@@ -29,10 +29,10 @@ export async function POST(req: Request) {
   const me = await getMe();
   if (!me?.isAdmin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}) as any);
-  const mode = ["cardNo", "repack", "addresses"].includes(b?.mode) ? b.mode : "pack";
+  const mode = ["cardNo", "repack", "addresses", "compact"].includes(b?.mode) ? b.mode : "pack";
   const limit = Math.min(Math.max(parseInt(b?.limit) || 120, 1), 400);
 
-  const rows = await atList(T.singles, { "fields[]": ["Slot", "Location", "Card No", "Status"] });
+  const rows = await atList(T.singles, { "fields[]": ["Slot", "Location", "Card No", "Status", "Label Printed"] });
   const taken = rows.map((r) => Number(r.fields["Slot"])).filter((n) => Number.isInteger(n) && n > 0);
   // a sold card has left the binder, so it is owed nothing
   const needs = rows.filter((r) => !(Number(r.fields["Slot"]) > 0) && r.fields["Status"] !== "Sold");
@@ -53,6 +53,42 @@ export async function POST(req: Request) {
       } catch {}
     }
     return NextResponse.json({ mode, filed: fixed, failed: 0, remaining: stale.length - fixed });
+  }
+
+  if (mode === "compact") {
+    // Close the gaps, but only by moving cards that have no sticker yet.
+    //
+    // repack renumbers the whole binder, which is correct exactly once - before
+    // anything is printed. After that it is the most expensive operation in the
+    // app, because every card it moves needs a new label. A card that has never
+    // been printed has nothing to contradict, so it can be re-filed for free.
+    //
+    // That is the everyday case: a batch lands in whatever pockets were free at
+    // the time, deletes free up lower pockets afterwards, and the new cards
+    // should slide down into them before anyone prints a sheet.
+    const live = rows.filter((r) => r.fields["Status"] !== "Sold");
+    const held = new Set(
+      live.filter((r) => r.fields["Label Printed"]).map((r) => Number(r.fields["Slot"])).filter((n) => n > 0),
+    );
+    const movable = live.filter((r) => !r.fields["Label Printed"]);
+    movable.sort((x, y) => (Number(x.fields["Card No"]) || 0) - (Number(y.fields["Card No"]) || 0));
+    // the lowest pockets no stickered card is sitting in
+    const free: number[] = [];
+    for (let s = 1; free.length < movable.length; s++) if (!held.has(s)) free.push(s);
+    const wrong = movable
+      .map((r, i) => ({ r, want: free[i] }))
+      .filter(({ r, want }) => Number(r.fields["Slot"]) !== want);
+    let moved = 0;
+    let stuck = 0;
+    for (const { r, want } of wrong.slice(0, limit)) {
+      try {
+        await atUpdate(T.singles, r.id, slotFields(want));
+        moved++;
+      } catch {
+        stuck++;
+      }
+    }
+    return NextResponse.json({ mode, filed: moved, failed: stuck, remaining: wrong.length - moved });
   }
 
   if (mode === "repack") {
