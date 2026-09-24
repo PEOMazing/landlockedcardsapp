@@ -12,6 +12,7 @@ export const T = {
   singles: "Singles",
   alerts: "Alerts",
   snapshots: "Price History",
+  priceLog: "Single Price Log",
   purchases: "Purchase Log",
   customSets: "Custom Sets",
   payrollPaid: "Payroll Payments",

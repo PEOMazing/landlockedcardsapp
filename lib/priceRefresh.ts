@@ -2,6 +2,7 @@ import { atCreate, atList, atUpdate, T, AtRecord } from "./airtable";
 import { recordAlert } from "./alerts";
 import { RAW_CONDITIONS, isRawCondition, recompSingle } from "./comp";
 import { MappedTarget, isTcgUrl, priceMappedProducts } from "./tcgMap";
+import { Move, logMoves } from "./priceLog";
 import { renameFields } from "./productNames";
 
 // ---------------- tcgcsv (free nightly TCGplayer mirror) ----------------
@@ -232,7 +233,7 @@ export async function tcgcsvBulkRefresh(targets: AtRecord[]) {
 
 // ---------------- nightly singles comp refresh ----------------
 // re-comps raw in-stock singles from fresh condition sales, capped per run
-export async function refreshSingleComps(cap = 50): Promise<{ updated: number; checked: number; linked: number }> {
+export async function refreshSingleComps(cap = 50): Promise<{ updated: number; checked: number; linked: number; logged: number }> {
   let rows: AtRecord[] = [];
   try {
     // No Card ID filter here any more. It used to look sensible and was
@@ -257,10 +258,13 @@ export async function refreshSingleComps(cap = 50): Promise<{ updated: number; c
       maxRecords: String(cap),
     });
   } catch {
-    return { updated: 0, checked: 0, linked: 0 };
+    return { updated: 0, checked: 0, linked: 0, logged: 0 };
   }
 
   let updated = 0, checked = 0, linked = 0;
+  // Collected rather than written card by card, so the whole batch costs one
+  // read of today's log instead of one per card.
+  const moves: Move[] = [];
   for (const rec of rows) {
     if (checked >= cap) break;
     // Belt and braces: the formula already excludes graded, but recompSingle
@@ -271,11 +275,18 @@ export async function refreshSingleComps(cap = 50): Promise<{ updated: number; c
       const r = await recompSingle(rec);
       if (!r.ok || !r.fields) continue;
       await atUpdate(T.singles, rec.id, r.fields);
+      // The comp the card is leaving behind is only knowable here, before the
+      // write lands. Nothing downstream can reconstruct it.
+      const nextComp = Number(r.fields["Comp"]);
+      if (Number.isFinite(nextComp) && nextComp > 0) {
+        moves.push({ rec, before: rec.fields["Comp"], comp: nextComp, market: r.fields["Market"] });
+      }
       if (r.linked) linked++;
       updated++;
     } catch {}
   }
-  return { updated, checked, linked };
+  const logged = await logMoves(moves).catch(() => 0);
+  return { updated, checked, linked, logged };
 }
 
 
