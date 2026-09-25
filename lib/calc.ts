@@ -56,6 +56,39 @@ export function streamMetrics(lines: Line[], s: Settings) {
   };
 }
 
+// What the product on a set is made of.
+//
+// Singles and sealed come off different shelves, get priced different ways and
+// get replaced at different speeds, so "there is $1,800 on this set" is two
+// quite different shows depending on the split. A line is a single when it
+// points back at a card in the singles inventory; everything else is sealed.
+//
+// Takes the shape the stream page already has rather than calc's Line, so it
+// works off what is on screen without another pass over Airtable. Store
+// purchases are the caller's to exclude, same as everywhere else in the P&L.
+export type KindSplit = {
+  singlesValue: number; singlesQty: number;
+  sealedValue: number; sealedQty: number;
+};
+
+export function splitByKind(
+  lines: { qty?: number; market?: number; singleRecId?: string | null }[],
+): KindSplit {
+  const out: KindSplit = { singlesValue: 0, singlesQty: 0, sealedValue: 0, sealedQty: 0 };
+  for (const l of lines || []) {
+    const qty = Number(l?.qty) || 0;
+    const value = qty * (Number(l?.market) || 0);
+    if (String(l?.singleRecId || "").trim()) {
+      out.singlesQty += qty;
+      out.singlesValue += value;
+    } else {
+      out.sealedQty += qty;
+      out.sealedValue += value;
+    }
+  }
+  return out;
+}
+
 // ---- progressive commission tiers ----
 // Streamer commission is a flat percentage of commissionable profit
 // (settings key commission_pct, default 20%). The old three-tier ladder is
