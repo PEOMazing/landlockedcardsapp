@@ -82,6 +82,54 @@ async function bumpQty(sid: string, by: number): Promise<void> {
   await atUpdate(T.singles, sid, { "Qty": (Number(card.fields["Qty"]) || 0) + by });
 }
 
+// ---------------------------------------------------------------------------
+// Claiming a card for a show
+//
+// Putting a single on a set is read-then-write: check the card is in stock,
+// then take it. Anything slow in between is a window where a second request can
+// read the same "in stock" and take the same card again, and the add used to do
+// its live reprice inside that window - a second or two, easily long enough for
+// a double click to land two lines on one physical card. On a wheel that is two
+// tiles for a card that can only be won once.
+//
+// So the claim goes first and the slow work happens after: by the time the
+// price lookup starts, the card is already off the market. The window shrinks
+// to the one write, and a second request reads a card that is no longer in
+// stock and gets turned away.
+//
+// A record holding several copies gives one up and stays in stock; a single
+// copy moves wholesale. Same distinction the close undoes later.
+
+export type Claim = { copy: boolean; fields: Record<string, any> };
+
+// Why this card cannot go on a set right now, or null if it can.
+export function unavailableReason(card: Card): string | null {
+  if (!card) return "that card no longer exists";
+  const status = String(card.fields["Status"] || "In Stock");
+  if (status !== "In Stock") {
+    return status === "In Stream"
+      ? "that card is already on a show set"
+      : `that card is ${String(status).toLowerCase()}, not in stock`;
+  }
+  if (Number(card.fields["Qty"] ?? 1) < 1) return "there are no copies of that card left in stock";
+  return null;
+}
+
+export function claimForStream(card: Card, streamId: string): Claim {
+  const qty = Number(card?.fields?.["Qty"] ?? 1);
+  return qty > 1
+    ? { copy: true, fields: { "Qty": qty - 1 } }
+    : { copy: false, fields: { "Status": "In Stream", "Stream Rec Id": streamId } };
+}
+
+// Put back a card that was claimed for an add that then failed. A copy comes
+// back as a fresh read plus one rather than the number we happened to see, so
+// another add landing in between is not overwritten.
+export async function undoClaim(sid: string, claim: Claim): Promise<void> {
+  if (claim.copy) await bumpQty(sid, 1);
+  else await atUpdate(T.singles, sid, { "Status": "In Stock", "Stream Rec Id": "" });
+}
+
 const fetchCard = (sid: string) => atGet(T.singles, sid).catch(() => null);
 
 // A single on a wheel is always worth its card's current comp. The line takes
