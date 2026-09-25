@@ -16,17 +16,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // having on stream, because the board gets more readable exactly as the
 // remaining cards get more interesting.
 
-type Card = { id: string; image: string; price: number; left: number };
+type Card = { id: string; image: string; thumb: string; left: number };
 
 const POLL_MS = 3000;
 
 // Pokemon card art is 734x1024, near enough to 5:7.
 const CARD_RATIO = 5 / 7;
 
-// Fit n tiles of a fixed aspect ratio into the viewport and hand back the
-// column count that makes them biggest. Pure arithmetic rather than a CSS
-// guess, because "as large as will fit" is the entire brief and grid
-// auto-fit cannot express it.
+// Fit n tiles of a fixed aspect ratio into a box and hand back the column
+// count that makes them biggest. Pure arithmetic rather than a CSS guess,
+// because "as large as will fit" is the entire brief and grid auto-fit cannot
+// express it.
 function bestColumns(n: number, w: number, h: number, gap: number): number {
   if (n <= 0 || w <= 0 || h <= 0) return 1;
   let best = 1;
@@ -43,13 +43,11 @@ function bestColumns(n: number, w: number, h: number, gap: number): number {
   return best;
 }
 
-const $ = (n: number) => "$" + (n >= 100 ? Math.round(n).toLocaleString("en-US") : n.toFixed(2));
-
 export default function OverlayClient({ apiKey }: { apiKey: string }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [gone, setGone] = useState(false);
-  const [size, setSize] = useState({ w: 1920, h: 1080 });
-  const boxRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 1920, h: 980 });
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,14 +69,17 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
     return () => clearInterval(t);
   }, [load]);
 
+  // Measured off the grid rather than the window, because the banner takes a
+  // slice off the top and tiles sized to the whole viewport would overflow it.
   useEffect(() => {
     const measure = () => {
-      const el = boxRef.current;
+      const el = gridRef.current;
       if (el) setSize({ w: el.clientWidth, h: el.clientHeight });
     };
     measure();
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    const t = setInterval(measure, 1000); // the banner appearing changes the box
+    return () => { window.removeEventListener("resize", measure); clearInterval(t); };
   }, []);
 
   // One tile per remaining copy, so a line holding three chances looks like
@@ -90,81 +91,104 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
 
   const gap = tiles.length > 24 ? 8 : tiles.length > 8 ? 14 : 22;
   const cols = bestColumns(tiles.length, size.w, size.h, gap);
+  const empty = gone || tiles.length === 0;
 
   return (
     <div
-      ref={boxRef}
       style={{
         position: "fixed",
         inset: 0,
-        display: "grid",
-        gridTemplateColumns: `repeat(${cols}, 1fr)`,
-        gridAutoRows: "1fr",
-        gap,
-        padding: gap,
-        placeItems: "center",
-        // Transparent so OBS composites it over the camera or the game.
+        display: "flex",
+        flexDirection: "column",
         background: "transparent",
         overflow: "hidden",
       }}
     >
-      {tiles.map((c) => (
+      {/* Nothing at all when the board is empty. A banner over an empty scene
+          announcing hits that do not exist is worse than no banner. */}
+      {!empty && (
         <div
-          key={c.id}
           style={{
-            position: "relative",
-            height: "100%",
-            aspectRatio: String(CARD_RATIO),
-            maxWidth: "100%",
-            // The card art is the thing; the glow just lifts it off whatever
-            // is behind it in the scene so it does not disappear into a busy
-            // background.
-            filter: "drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 4px 18px rgba(0,0,0,.6))",
-            animation: "llcIn .35s ease-out",
+            flex: "0 0 auto",
+            textAlign: "center",
+            padding: "1.4vh 0 0.6vh",
+            fontFamily: '"Space Grotesk", Inter, system-ui, sans-serif',
+            fontWeight: 700,
+            fontSize: "clamp(22px, 5.2vh, 74px)",
+            letterSpacing: ".06em",
+            lineHeight: 1,
+            color: "#FFE9A8",
+            // Heavy outline and glow rather than a panel behind it, so it stays
+            // readable over a bright card or a busy scene without putting an
+            // opaque bar across the shot.
+            textShadow:
+              "0 0 6px rgba(0,0,0,.95), 0 0 18px rgba(0,0,0,.8), 0 3px 0 rgba(0,0,0,.85), 0 0 46px rgba(245,196,81,.55)",
+            WebkitTextStroke: "1px rgba(0,0,0,.55)",
+            animation: "llcFlash 1.15s ease-in-out infinite",
+            whiteSpace: "nowrap",
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={c.image}
-            alt=""
-            style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "4%" }}
-          />
-          {c.price > 0 && (
-            <div
-              style={{
-                position: "absolute",
-                left: "50%",
-                bottom: "-2%",
-                transform: "translateX(-50%)",
-                // Scales with the tile rather than the page, so the price stays
-                // readable whether there are 30 cards up or 3.
-                fontSize: "clamp(11px, 13cqw, 42px)",
-                fontWeight: 800,
-                lineHeight: 1,
-                padding: ".28em .6em",
-                borderRadius: "999px",
-                color: "#0D0F14",
-                background: "linear-gradient(180deg,#FFE9A8,#F5C451)",
-                border: "2px solid rgba(0,0,0,.35)",
-                boxShadow: "0 3px 10px rgba(0,0,0,.55)",
-                whiteSpace: "nowrap",
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-              }}
-            >
-              {$(c.price)}
-            </div>
-          )}
+          HITS STILL LIVE
         </div>
-      ))}
+      )}
 
-      {/* Nothing left, or a key that no longer resolves. Either way the board
-          shows nothing at all rather than an error a viewer would see. */}
-      {(gone || (cards && tiles.length === 0)) && <div />}
+      <div
+        ref={gridRef}
+        style={{
+          flex: "1 1 auto",
+          minHeight: 0,
+          display: "grid",
+          gridTemplateColumns: `repeat(${cols}, 1fr)`,
+          gridAutoRows: "1fr",
+          gap,
+          padding: gap,
+          placeItems: "center",
+        }}
+      >
+        {tiles.map((c) => (
+          <div
+            key={c.id}
+            style={{
+              position: "relative",
+              height: "100%",
+              aspectRatio: String(CARD_RATIO),
+              maxWidth: "100%",
+              // The card art is the thing; the glow just lifts it off whatever
+              // is behind it in the scene so it does not disappear into a busy
+              // background.
+              filter: "drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 4px 18px rgba(0,0,0,.6))",
+              animation: "llcIn .35s ease-out",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={c.image}
+              alt=""
+              // The big art is a rewrite of the stored URL, so a size this CDN
+              // does not happen to have must fall back rather than leave a hole
+              // on stream. Guarded so a broken thumbnail cannot loop.
+              onError={(e) => {
+                const el = e.currentTarget;
+                if (c.thumb && el.src !== c.thumb) el.src = c.thumb;
+              }}
+              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "4%" }}
+            />
+          </div>
+        ))}
+      </div>
 
       <style>{`
         html, body { background: transparent !important; margin: 0; overflow: hidden; }
         @keyframes llcIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
-        div[style*="aspect-ratio"] { container-type: inline-size; }
+        @keyframes llcFlash {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: .45; transform: scale(.985); }
+        }
+        /* OBS respects this, and a banner that stops moving is better than one
+           that makes somebody ill. */
+        @media (prefers-reduced-motion: reduce) {
+          [style*="llcFlash"] { animation: none !important; }
+        }
       `}</style>
     </div>
   );
