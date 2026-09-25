@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { T, atGet, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
-import { BOARD_SPEED_MAX, BOARD_SPEED_MIN, boardKinds, boardLayout, boardSpeed, ensureOverlayKey, newOverlayKey } from "@/lib/overlay";
+import { BOARD_SHINE_MAX, BOARD_SPEED_MAX, BOARD_SPEED_MIN, boardKinds, boardLayout, boardShine, boardSpeed, ensureOverlayKey, newOverlayKey } from "@/lib/overlay";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     kinds: boardKinds(g.stream),
     layout: boardLayout(g.stream),
     speed: boardSpeed(g.stream),
+    shine: boardShine(g.stream),
     hitThreshold: Number(settings?.hit_threshold) || 0,
   });
 }
@@ -51,7 +52,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (b?.rotate) {
     const key = newOverlayKey();
     await atUpdate(T.streams, params.id, { "Overlay Key": key });
-    return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(g.stream), layout: boardLayout(g.stream), speed: boardSpeed(g.stream), rotated: true });
+    return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(g.stream), layout: boardLayout(g.stream), speed: boardSpeed(g.stream), shine: boardShine(g.stream), rotated: true });
   }
 
   // Stored inverted - hide rather than show - so a stream nobody has touched
@@ -70,10 +71,22 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
     fields["Board Speed"] = Math.round(n * 100) / 100;
   }
+  // Zero is a real setting here, not a missing one: it is how the shine gets
+  // turned off, so it has to pass the range check rather than read as blank.
+  if (b?.shine !== undefined) {
+    const n = Number(b.shine);
+    if (!Number.isFinite(n) || n < 0 || n > BOARD_SHINE_MAX) {
+      return NextResponse.json(
+        { error: `shine has to be between 0 and ${BOARD_SHINE_MAX}` },
+        { status: 400 },
+      );
+    }
+    fields["Board Shine"] = Math.round(n * 100) / 100;
+  }
   if (Object.keys(fields).length === 0) {
     return NextResponse.json({ error: "nothing to do" }, { status: 400 });
   }
   const updated = await atUpdate(T.streams, params.id, fields);
   const key = await ensureOverlayKey(updated);
-  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated), layout: boardLayout(updated), speed: boardSpeed(updated) });
+  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated), layout: boardLayout(updated), speed: boardSpeed(updated), shine: boardShine(updated) });
 }
