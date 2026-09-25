@@ -47,6 +47,13 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
   const [resultsErr, setResultsErr] = useState("");
   const [setSort, setSetSort] = useState<"board" | "name" | "price" | "hitValue">("board");
+
+  // A Single Stream auctions each card, so what it went for has to be recorded
+  // per card. A Surprise Set does not: the spin price is the price, whatever
+  // card comes out, so a per-card sale box there is a field asking to be filled
+  // in wrongly. The column only exists on shows that actually sell one card at
+  // a time.
+  const sellsPerCard = (stream: any) => String(stream?.streamType || "") === "Single Stream";
   const [pasteText, setPasteText] = useState("");
   const [pasteMsg, setPasteMsg] = useState("");
   const [returnArmed, setReturnArmed] = useState(false);
@@ -981,7 +988,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             <thead>
               <tr>
                 <th>Product</th><th>Qty</th><th>Market</th><th>Hits</th><th>Remain</th><th>Hit value left</th>
-                {lines.some((l) => l.singleRecId) && <th>Sale</th>}
+                {sellsPerCard(stream) && lines.some((l) => l.singleRecId) && <th>Sale</th>}
                 <th></th>
               </tr>
             </thead>
@@ -1135,7 +1142,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                   </td>
                   <td>{Math.max(l.qty - l.qtyHit, 0)}</td>
                   <td>{$(Math.max(l.qty - l.qtyHit, 0) * l.market)}</td>
-                  {lines.some((x) => x.singleRecId) && (
+                  {sellsPerCard(stream) && lines.some((x) => x.singleRecId) && (
                     <td>
                       {l.singleRecId ? (
                         <input
