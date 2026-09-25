@@ -40,6 +40,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (returned) return NextResponse.json({ error: "items already returned - hits are locked" }, { status: 400 });
     fields["Qty Hit"] = Math.max(0, parseInt(b.qtyHit) || 0);
   }
+  // Pull a card off the OBS board, or put it back. Purely cosmetic: it changes
+  // nothing about quantities, hits, stock or pay, which is the point - the
+  // streamer needs a way to take a card off screen mid-show without claiming
+  // it was won.
+  if (b.offBoard !== undefined) {
+    fields["Off Board"] = !!b.offBoard;
+  }
   if (b.market !== undefined) {
     // pricing is admin/manager territory
     if (!canManageStream(g.me, g.stream)) {
