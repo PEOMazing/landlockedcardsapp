@@ -53,6 +53,40 @@ describe("a lone recent sale that disagrees with the older ones", () => {
   });
 });
 
+// The shape that actually occurred in production, and the one the first cut
+// of this guard missed. Every sale is inside the 30-day window, so nothing is
+// distinguishable by date. dropWashSales anchors on the $150 and deletes the
+// four real sales for being under 20% of it, which is how a five-sale card
+// ends up reporting "median of 1".
+describe("an outlier whose peers are all inside the window too", () => {
+  it("catches Espeon, where the wash filter ate the evidence", () => {
+    const pick = pickSoldPrice(0, [
+      { date: d(3), price: 17.24 },
+      { date: d(5), price: 150 },
+      { date: d(7), price: 19.95 },
+      { date: d(16), price: 22.51 },
+      { date: d(16), price: 25 },
+    ], null, NOW);
+    assert.equal(pick.demotedOutlier, true);
+    assert.equal(pick.droppedPrice, 150);
+    assert.equal(pick.peerMedian, 21.23);
+    assert.equal(pick.price, 21.23);
+  });
+
+  it("catches the Eevee this import just created", () => {
+    const pick = pickSoldPrice(0, [
+      { date: d(1), price: 6.09 },
+      { date: d(1), price: 6 },
+      { date: d(2), price: 6.75 },
+      { date: d(3), price: 6.5 },
+      { date: d(5), price: 70 },
+    ], null, NOW);
+    assert.equal(pick.demotedOutlier, true);
+    assert.equal(pick.droppedPrice, 70);
+    assert.equal(pick.price, 6.3); // (6.09 + 6.5) / 2
+  });
+});
+
 describe("what the guard deliberately leaves alone", () => {
   it("a thin card with no older sales to argue with keeps its one sale", () => {
     // Gabe's case: low volume, one sale, nothing to compare against. Firing
