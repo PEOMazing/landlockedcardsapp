@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { T, atList } from "@/lib/airtable";
-import { boardKinds, boardLayout, boardSpeed, onBoard, streamForOverlayKey } from "@/lib/overlay";
+import { boardKinds, boardLayout, boardShine, boardSpeed, isShiny, onBoard, streamForOverlayKey } from "@/lib/overlay";
 import { getSettings } from "@/lib/settings";
 import { bigCardImage } from "@/lib/cardImage";
 
@@ -24,6 +24,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
   }).catch(() => []);
 
   const kinds = boardKinds(stream);
+  const shine = boardShine(stream);
   // One definition of a hit for the whole app: the board shows exactly what the
   // hit stats count, so the two can never tell a viewer different things.
   const settings = await getSettings().catch(() => null);
@@ -76,6 +77,9 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
         // Not shown on the board - the price tags came off - but it still
         // decides the order, so the best card leads.
         value: Number(l.fields["Market Price Snapshot"]) || 0,
+        // Decided here rather than on the page so the threshold stays one
+        // number in one place, and the board never has to reason about price.
+        shiny: isShiny(Number(l.fields["Market Price Snapshot"]) || 0, shine),
       };
     })
     // Art is the whole point; a tile with no picture is a grey hole on stream.
@@ -88,6 +92,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       kinds,
       layout: boardLayout(stream),
       speed: boardSpeed(stream),
+      shine,
       hitThreshold,
       cards,
       count: cards.reduce((n, c) => n + c.left, 0),
