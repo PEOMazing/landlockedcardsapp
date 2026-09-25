@@ -179,7 +179,14 @@ const LAST_SALE_MAX_LIFT = 2;
 // With no peers to disagree with, nothing fires. A card whose only evidence is
 // a single sale keeps that sale and stays flagged as thin, which is the
 // existing MIN_CONFIDENT_SALES behaviour and stays correct.
+// How many sales have to be standing near the price before it counts as a
+// real opinion rather than one print. This is what keeps a card that has
+// genuinely climbed from being dragged back down: three recent sales at $90
+// against older ones at $20 are three votes for $90, and nothing fires.
 const OUTLIER_MAX_FRESH = 2;
+// A sale at least this share of the price is close enough to be saying the
+// same thing, so it counts as support rather than as a peer arguing against.
+const OUTLIER_SUPPORT_FRACTION = 0.5;
 const OUTLIER_MIN_PEERS = 3;
 const OUTLIER_MULT = 3;
 // Absolute floor as well as a ratio, so a common going from $0.40 to $1.60 is
@@ -257,23 +264,31 @@ export function pickSoldPrice(
   // otherwise fire here would carry the same bad number: the median is the
   // outlier when it is the only recent sale, and the rising-sale lift would
   // then take that very sale as proof the card is climbing.
-  // Read off the RAW sales rather than the cleaned ones, which matters more
-  // than it looks. dropWashSales keeps only sales within WASH_FRACTION of the
-  // highest one, so when the highest is the bogus sale it deletes exactly the
-  // peers that prove it: Espeon's four genuine sales all sat under 20% of the
-  // $150 and were binned before anything could compare them. Asking the
-  // unfiltered history is the only way to see the disagreement at all.
-  const raw = (detailIn || []).filter((s) => Number(s?.price) > 0);
-  const rawRecent = raw.filter((d) => String(d.date) >= cutoff);
-  const peers = raw.filter((d) => String(d.date) < cutoff).map((d) => d.price);
-  const rawFresh = rawRecent.length ? round2(medianOf(rawRecent.map((d) => d.price))) : 0;
+  // Split by VALUE, not by date, and read the RAW sales rather than the
+  // cleaned ones. Both of those are load-bearing.
+  //
+  // Raw, because dropWashSales keeps only sales within WASH_FRACTION of the
+  // highest one. When the highest IS the bogus sale it deletes exactly the
+  // peers that disprove it, which is the whole mechanism: Espeon's four real
+  // sales at $17.24 to $25 were all under 20% of the $150 and were binned as
+  // wash trading, leaving a "median" of one sale.
+  //
+  // By value, because the outlier is not distinguished by being recent. All
+  // five of Espeon's sales landed inside the same 30 days. What sets the bad
+  // one apart is that it stands alone: nothing else the card ever sold for is
+  // anywhere near it.
+  const raw = (detailIn || []).filter((s) => Number(s?.price) > 0).map((s) => s.price);
+  const chosen = base.price;
+  // Sales close enough to the chosen price to be saying the same thing.
+  const supporters = raw.filter((p) => p >= chosen * OUTLIER_SUPPORT_FRACTION);
+  const peers = raw.filter((p) => p < chosen * OUTLIER_SUPPORT_FRACTION);
   const peerMid = peers.length >= OUTLIER_MIN_PEERS ? round2(medianOf(peers)) : 0;
   if (
-    rawFresh > 0 &&
-    rawRecent.length <= OUTLIER_MAX_FRESH &&
+    chosen > 0 &&
+    supporters.length <= OUTLIER_MAX_FRESH &&
     peerMid > 0 &&
-    rawFresh > peerMid * OUTLIER_MULT &&
-    rawFresh - peerMid >= OUTLIER_MIN_GAP
+    chosen > peerMid * OUTLIER_MULT &&
+    chosen - peerMid >= OUTLIER_MIN_GAP
   ) {
     // The older sales are real money that changed hands, so they answer. The
     // live asking floor still holds the number up when it is higher, exactly
@@ -288,7 +303,7 @@ export function pickSoldPrice(
       usedFloor: false,
       priceFromSales: peerMid,
       demotedOutlier: true,
-      droppedPrice: rawFresh,
+      droppedPrice: chosen,
       peerMedian: peerMid,
       peerCount: peers.length,
     };
