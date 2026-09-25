@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { T, atGet, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
-import { BOARD_SHINE_MAX, BOARD_SPEED_MAX, BOARD_SPEED_MIN, boardKinds, boardLayout, boardShine, boardSpeed, ensureOverlayKey, newOverlayKey } from "@/lib/overlay";
+import { BOARD_SHINE_MAX, BOARD_SPEED_MAX, BOARD_SPEED_MIN, boardKinds, boardLayout, boardShine, boardSpeed, ensureOverlayKey, heatLevel, newOverlayKey, spinsSinceHit } from "@/lib/overlay";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +40,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     layout: boardLayout(g.stream),
     speed: boardSpeed(g.stream),
     shine: boardShine(g.stream),
+    spins: spinsSinceHit(g.stream),
+    heat: heatLevel(spinsSinceHit(g.stream)),
     hitThreshold: Number(settings?.hit_threshold) || 0,
   });
 }
@@ -83,10 +85,28 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
     fields["Board Shine"] = Math.round(n * 100) / 100;
   }
+  // Two ways to move the dry streak. bumpSpins counts off the spin that just
+  // happened and is relative, because the streamer may have the live page and
+  // the stream page open at once and an absolute write from a stale tab would
+  // quietly undo a tally. spins is the absolute set, which is how the reset
+  // button gets back to zero.
+  if (b?.bumpSpins !== undefined) {
+    const by = Math.trunc(Number(b.bumpSpins));
+    if (!Number.isFinite(by) || by === 0 || Math.abs(by) > 99) {
+      return NextResponse.json({ error: "bumpSpins has to be a small non-zero whole number" }, { status: 400 });
+    }
+    fields["Spins Since Hit"] = Math.max(0, spinsSinceHit(g.stream) + by);
+  } else if (b?.spins !== undefined) {
+    const n = Math.trunc(Number(b.spins));
+    if (!Number.isFinite(n) || n < 0 || n > 999) {
+      return NextResponse.json({ error: "spins has to be between 0 and 999" }, { status: 400 });
+    }
+    fields["Spins Since Hit"] = n;
+  }
   if (Object.keys(fields).length === 0) {
     return NextResponse.json({ error: "nothing to do" }, { status: 400 });
   }
   const updated = await atUpdate(T.streams, params.id, fields);
   const key = await ensureOverlayKey(updated);
-  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated), layout: boardLayout(updated), speed: boardSpeed(updated), shine: boardShine(updated) });
+  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated), layout: boardLayout(updated), speed: boardSpeed(updated), shine: boardShine(updated), spins: spinsSinceHit(updated), heat: heatLevel(spinsSinceHit(updated)) });
 }
