@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
 import { conditionSoldComp, resolveSingleToTcg, subTypeForVariant } from "@/lib/tcgcsvCards";
 import { conditionFloor } from "@/lib/tcgListings";
-import { conditionMarket, pricePoints } from "@/lib/tcgPricePoints";
+import { conditionMarket } from "@/lib/tcgPricePoints";
 import {
   isRawCondition, pickSoldPrice, conditionEstimate,
   soldsCompSource, lastSaleCompSource, risingSaleCompSource, outlierCompSource,
@@ -134,7 +134,7 @@ export async function POST(req: Request) {
     const [sold, floor, point] = await Promise.all([
       conditionSoldComp(hit.productId, cond).catch(() => null),
       conditionFloor(hit.productId, printing, cond).catch(() => null),
-      conditionMarket(hit.productId, printing, cond).catch(() => null),
+      conditionMarket(hit.groupId, hit.productId, printing, cond).catch(() => null),
     ]);
 
     if (floor) {
@@ -148,8 +148,8 @@ export async function POST(req: Request) {
     // the like-for-like comparison against anyone else's valuation, and the
     // sold median is the better answer to what a copy moves for today.
     if (point) {
-      row.conditionMarket = point.market || null;
-      row.listedMedian = point.listedMedian || null;
+      row.conditionMarket = point.market;
+      row.conditionMarketSales = point.sales;
     }
 
     if (sold) {
@@ -186,23 +186,10 @@ export async function POST(req: Request) {
     out.push(row);
   }
 
-  // Every printing and condition the price-point feed knows about for the
-  // first card in the batch. Only for confirming by hand that the numbers
-  // being read are the ones the product page shows.
-  let debug: any = undefined;
-  if (body?.debug) {
-    const first = out.find((r: any) => r.matched) as any;
-    if (first) {
-      const map = await pricePoints(first.productId).catch(() => null);
-      debug = { productId: first.productId, points: map ? [...map.entries()] : null };
-    }
-  }
-
   const priced = out.filter((r: any) => Number(r.comp) > 0 || (mode === "market" && Number(r.market) > 0));
   const ext = (r: any) => (mode === "market" ? r.market : r.comp) * r.qty;
   return NextResponse.json({
     mode,
-    debug,
     rows: out,
     count: out.length,
     matchedCount: out.filter((r: any) => r.matched).length,
