@@ -24,8 +24,12 @@ export function toLine(r: AtRecord): Line {
 }
 
 // ---- per-stream metrics (the old Sheet2 right side) ----
+// At or above the threshold, not merely above it: the rule as it is actually
+// spoken is "ten dollars or more is a hit", and a card comped at exactly $10.00
+// failing that test is the kind of off-by-a-penny surprise nobody ever guesses
+// at when a number looks wrong.
 export function isHitLine(l: Line, s: Settings): boolean {
-  return !l.isGiveaway && l.market > s.hit_threshold;
+  return !l.isGiveaway && l.market >= s.hit_threshold;
 }
 
 export function streamMetrics(lines: Line[], s: Settings) {

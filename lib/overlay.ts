@@ -57,6 +57,13 @@ export const isSingleLine = (line: { fields: Record<string, any> }) =>
  *  so an untouched show includes both. */
 export type BoardKinds = { singles: boolean; sealed: boolean };
 
+/** Grid fills the whole canvas and resizes tiles to the count. Banner is a
+ *  single row that scrolls, for a strip along the bottom of the scene. */
+export type BoardLayout = "grid" | "banner";
+
+export const boardLayout = (stream: { fields: Record<string, any> }): BoardLayout =>
+  stream.fields["Board Banner"] ? "banner" : "grid";
+
 export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds {
   return {
     singles: !stream.fields["Board Hide Singles"],
@@ -72,17 +79,23 @@ export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds 
 //   store purchase - gone. Already sold off the shelf, never on the wheel.
 //   wrong kind     - gone. A singles wheel and a sealed break are different
 //                    shows, and a mixed board reads as neither.
+//   under the hit  - gone. The board is advertising what is still winnable,
+//     threshold      and a $2 common is not a reason to keep spinning. Same
+//                    threshold the rest of the app calls a hit, so the board
+//                    and the hit stats can never disagree.
 //   no image       - gone, but the caller handles that one, since only it
 //                    knows whether a picture was actually found.
 export function onBoard(
   line: { fields: Record<string, any> },
   kinds: BoardKinds = { singles: true, sealed: true },
+  hitThreshold = 0,
 ): boolean {
   const f = line.fields;
   if (f["Off Board"]) return false;
   if (f["Is Giveaway"]) return false;
   if (f["Is Store Purchase"]) return false;
   if (!(isSingleLine(line) ? kinds.singles : kinds.sealed)) return false;
+  if ((Number(f["Market Price Snapshot"]) || 0) < hitThreshold) return false;
   const remaining = (Number(f["Qty"]) || 0) - (Number(f["Qty Hit"]) || 0);
   return remaining > 0;
 }
