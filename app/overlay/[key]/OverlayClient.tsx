@@ -246,7 +246,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
             <span className="llc-words">
               {spins > 0 && alt
                 ? `${spins} SPIN${spins === 1 ? "" : "S"} SINCE LAST HIT`
-                : `${liveCount} HIT${liveCount === 1 ? "" : "S"} STILL LIVE`}
+                : `${liveCount} HIT${liveCount === 1 ? "" : "S"} LIVE!`}
             </span>
 
             {heat >= 2 && (
@@ -438,13 +438,16 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
            start at a quarter opacity on the third spin and reach full on the
            sixth, so the fire arrives over three spins rather than switching
            on. */
-        .llc-fire { bottom: -.1em; height: 2.2em; z-index: 2; }
+        .llc-fire { bottom: -.1em; height: 1.6em; z-index: 2; }
         .llc-fire i {
           position: absolute;
           bottom: 0;
           left: calc(var(--i) * 11% + 2%);
           width: calc(.2em + var(--h, 0) * .012em);
-          height: calc(.34em + var(--h, 0) * .2em);
+          /* Tips land just over the cap height at full heat. Taller than that
+             and they stop licking the letters and become a curtain hanging in
+             front of the board. */
+          height: calc(.3em + var(--h, 0) * .12em);
           background: linear-gradient(to top,
             #fff6c4 0%, #ffd24a 18%, #ff9500 45%, #ff3c00 72%, rgba(255,40,0,0) 100%);
           border-radius: 50% 50% 46% 46% / 66% 66% 34% 34%;
