@@ -6,6 +6,7 @@ import CopyShowSet from "@/components/CopyShowSet";
 import Timeclock from "@/components/Timeclock";
 import BreakChecklist from "@/components/BreakChecklist";
 import SinglesPicker from "@/components/SinglesPicker";
+import CardBoard from "@/components/CardBoard";
 import Thumb from "@/components/Thumb";
 import { toast } from "@/components/Toaster";
 import StoreSales from "@/components/StoreSales";
@@ -928,6 +929,13 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             </p>
           </div>
         )}
+        {/* The OBS link lives here as well as on the live page, because OBS gets
+            set up while the set is being built, not once the show has started. */}
+        <CardBoard
+          streamId={id}
+          lines={(lines as any[]).filter((l) => !l.isStore)}
+          onChanged={load}
+        />
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
