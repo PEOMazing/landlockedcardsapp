@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BOARD_SHINE_MAX, boardKinds, boardLayout, boardShine, boardSpeed, isOverlayKey, isShiny, isSingleLine, newOverlayKey, onBoard } from "../overlay";
+import { BOARD_SHINE_MAX, HEAT_MAX, boardKinds, boardLayout, boardShine, boardSpeed, heatLevel, isOverlayKey, isShiny, isSingleLine, newOverlayKey, onBoard, spinsSinceHit } from "../overlay";
 
 const line = (f: Record<string, any>) => ({ fields: { Qty: 1, "Qty Hit": 0, ...f } });
 
@@ -249,5 +249,52 @@ describe("which cards get the foil", () => {
     const card = { fields: { Qty: 1, "Qty Hit": 0, "Market Price Snapshot": 12 } };
     assert.equal(onBoard(card, { singles: true, sealed: true }, 10), true);
     assert.equal(isShiny(12, 50), false);
+  });
+});
+
+describe("the dry streak and how hot it makes the banner", () => {
+  it("is calm on a show nobody has tallied", () => {
+    assert.equal(spinsSinceHit({ fields: {} }), 0);
+    assert.equal(spinsSinceHit({ fields: { "Spins Since Hit": null } }), 0);
+    assert.equal(heatLevel(0), 0);
+  });
+
+  it("counts the spins back as tallied", () => {
+    assert.equal(spinsSinceHit({ fields: { "Spins Since Hit": 4 } }), 4);
+    assert.equal(spinsSinceHit({ fields: { "Spins Since Hit": 23 } }), 23);
+  });
+
+  it("refuses to go below zero", () => {
+    // The undo button can be pressed on a streak of nothing, and a negative
+    // streak would drive a negative shake amplitude - the banner would lean
+    // the wrong way rather than sit still.
+    assert.equal(spinsSinceHit({ fields: { "Spins Since Hit": -3 } }), 0);
+    assert.equal(heatLevel(-3), 0);
+  });
+
+  it("ignores junk and fractions", () => {
+    assert.equal(spinsSinceHit({ fields: { "Spins Since Hit": "lots" } }), 0);
+    assert.equal(spinsSinceHit({ fields: { "Spins Since Hit": 2.7 } }), 2);
+    assert.equal(heatLevel(NaN), 0);
+  });
+
+  it("climbs one stage per spin", () => {
+    // The page interpolates smoke, sparks, shake and flame off this single
+    // number, so the ramp has to be exactly the spin count up to the cap.
+    assert.deepEqual([1, 2, 3, 4, 5, 6].map(heatLevel), [1, 2, 3, 4, 5, 6]);
+  });
+
+  it("is a full blaze at six and no hotter after", () => {
+    assert.equal(heatLevel(6), HEAT_MAX);
+    assert.equal(heatLevel(7), HEAT_MAX);
+    assert.equal(heatLevel(40), HEAT_MAX);
+  });
+
+  it("keeps the true count even once the fire has capped", () => {
+    // The headline says the real number - "11 SPINS SINCE LAST HIT" is the
+    // whole point of a cold streak - while the fire stops climbing at six.
+    const stream = { fields: { "Spins Since Hit": 11 } };
+    assert.equal(spinsSinceHit(stream), 11);
+    assert.equal(heatLevel(spinsSinceHit(stream)), 6);
   });
 });
