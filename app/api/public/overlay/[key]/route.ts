@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { T, atList } from "@/lib/airtable";
-import { boardKinds, boardLayout, boardShine, boardSpeed, isShiny, onBoard, streamForOverlayKey } from "@/lib/overlay";
+import { boardKinds, boardLayout, boardShine, boardSpeed, heatLevel, isShiny, onBoard, spinsSinceHit, streamForOverlayKey } from "@/lib/overlay";
 import { getSettings } from "@/lib/settings";
 import { bigCardImage } from "@/lib/cardImage";
 
@@ -25,6 +25,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
 
   const kinds = boardKinds(stream);
   const shine = boardShine(stream);
+  const spins = spinsSinceHit(stream);
   // One definition of a hit for the whole app: the board shows exactly what the
   // hit stats count, so the two can never tell a viewer different things.
   const settings = await getSettings().catch(() => null);
@@ -93,6 +94,10 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       layout: boardLayout(stream),
       speed: boardSpeed(stream),
       shine,
+      // The dry streak, and the one number the banner's whole escalation hangs
+      // off. Sent together so the page never has to work out the rule itself.
+      spins,
+      heat: heatLevel(spins),
       hitThreshold,
       cards,
       count: cards.reduce((n, c) => n + c.left, 0),
