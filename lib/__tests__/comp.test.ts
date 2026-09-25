@@ -67,7 +67,10 @@ describe("subTypeForVariant", () => {
   it("reads the printing off the Variant column", () => {
     assert.equal(subTypeForVariant("Reverse", "Holo Rare"), "Reverse Holofoil");
     assert.equal(subTypeForVariant("Holo", "Holo Rare"), "Holofoil");
-    assert.equal(subTypeForVariant("1st Edition", "Rare"), "1st Edition Holofoil");
+    // A 1st Edition common is not a holo, and asking for one by the holo name
+    // is how an Unlimited card used to land on the 1st Edition price.
+    assert.equal(subTypeForVariant("1st Edition", "Rare"), "1st Edition");
+    assert.equal(subTypeForVariant("1st Edition", "Holo Rare"), "1st Edition Holofoil");
   });
 
   it("falls back to rarity when the variant is blank", () => {
