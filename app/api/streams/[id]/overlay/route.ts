@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { T, atGet, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
-import { boardKinds, ensureOverlayKey, newOverlayKey } from "@/lib/overlay";
+import { boardKinds, boardLayout, ensureOverlayKey, newOverlayKey } from "@/lib/overlay";
+import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,16 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   const g = await guard(params.id);
   if ("err" in g) return g.err;
   const key = await ensureOverlayKey(g.stream);
-  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(g.stream) });
+  // Sent so the control panel counts the same cards the board draws, rather
+  // than promising twelve on screen and showing four.
+  const settings = await getSettings().catch(() => null);
+  return NextResponse.json({
+    key,
+    url: urlFor(req, key),
+    kinds: boardKinds(g.stream),
+    layout: boardLayout(g.stream),
+    hitThreshold: Number(settings?.hit_threshold) || 0,
+  });
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -40,7 +50,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (b?.rotate) {
     const key = newOverlayKey();
     await atUpdate(T.streams, params.id, { "Overlay Key": key });
-    return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(g.stream), rotated: true });
+    return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(g.stream), layout: boardLayout(g.stream), rotated: true });
   }
 
   // Stored inverted - hide rather than show - so a stream nobody has touched
@@ -48,10 +58,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const fields: Record<string, any> = {};
   if (b?.singles !== undefined) fields["Board Hide Singles"] = !b.singles;
   if (b?.sealed !== undefined) fields["Board Hide Sealed"] = !b.sealed;
+  if (b?.layout !== undefined) fields["Board Banner"] = b.layout === "banner";
   if (Object.keys(fields).length === 0) {
     return NextResponse.json({ error: "nothing to do" }, { status: 400 });
   }
   const updated = await atUpdate(T.streams, params.id, fields);
   const key = await ensureOverlayKey(updated);
-  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated) });
+  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated), layout: boardLayout(updated) });
 }
