@@ -16,6 +16,7 @@ const $ = (n: number) => `$${(n || 0).toFixed(2)}`;
 type Line = {
   id: string; name: string; qty: number; qtyHit: number; market: number;
   isGiveaway?: boolean; isStore?: boolean; image?: string; offBoard?: boolean;
+  singleRecId?: string;
 };
 
 export default function CardBoard({
@@ -28,13 +29,17 @@ export default function CardBoard({
   onChanged: () => Promise<void> | void;
 }) {
   const [url, setUrl] = useState("");
+  const [kinds, setKinds] = useState({ singles: true, sealed: true });
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<string>("");
 
   const loadUrl = useCallback(async () => {
     try {
       const r = await fetch(`/api/streams/${streamId}/overlay`);
-      if (r.ok) setUrl((await r.json()).url || "");
+      if (!r.ok) return;
+      const d = await r.json();
+      setUrl(d.url || "");
+      if (d.kinds) setKinds(d.kinds);
     } catch {}
   }, [streamId]);
   useEffect(() => { loadUrl(); }, [loadUrl]);
@@ -43,7 +48,27 @@ export default function CardBoard({
   // belong there, and a card with no art cannot be drawn.
   const eligible = lines.filter((l) => !l.isGiveaway && !l.isStore && l.image);
   const remaining = eligible.filter((l) => l.qty - l.qtyHit > 0);
-  const showing = remaining.filter((l) => !l.offBoard);
+  const kindOk = (l: Line) => (l.singleRecId ? kinds.singles : kinds.sealed);
+  const showing = remaining.filter((l) => !l.offBoard && kindOk(l));
+  const singlesLeft = remaining.filter((l) => l.singleRecId).length;
+  const sealedLeft = remaining.length - singlesLeft;
+
+  async function setKind(which: "singles" | "sealed", on: boolean) {
+    // Never let both go off - that is an empty board and always a mistake
+    // rather than a choice, and it is a confusing one to recover from mid-show.
+    const next = { ...kinds, [which]: on };
+    if (!next.singles && !next.sealed) {
+      toast("Turn the other one on first - the board cannot show nothing");
+      return;
+    }
+    setKinds(next);
+    const r = await fetch(`/api/streams/${streamId}/overlay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [which]: on }),
+    });
+    if (!r.ok) { setKinds(kinds); toast("Could not change the board"); }
+  }
 
   async function toggle(l: Line) {
     setSaving(l.id);
@@ -115,10 +140,30 @@ export default function CardBoard({
         <a className="btn !px-3 !py-1 text-xs" href={url || "#"} target="_blank" rel="noreferrer">Preview</a>
       </div>
       <p className="text-dim text-xs">
-        In OBS: Sources, add a Browser Source, paste the link, set the size to your canvas
-        (1920 x 1080) and tick Shutdown source when not visible. The background is transparent,
-        the tiles grow as cards come off, and a card disappears the moment you mark it hit.
+        In OBS: Sources, add a Browser Source, paste the link, set the width and height to your
+        canvas (1920 x 1080 - not smaller, or the art renders soft) and tick Shutdown source when
+        not visible. The background is fully transparent, the tiles grow as cards come off, and a
+        card disappears the moment you mark it hit.
       </p>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setKind("singles", !kinds.singles)}
+          className={`!px-3 !py-1 text-xs ${kinds.singles ? "btn-foil" : "btn opacity-60"}`}
+        >
+          {kinds.singles ? "Including singles" : "Include singles"}
+          <span className="num ml-1.5 opacity-70">{singlesLeft}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setKind("sealed", !kinds.sealed)}
+          className={`!px-3 !py-1 text-xs ${kinds.sealed ? "btn-foil" : "btn opacity-60"}`}
+        >
+          {kinds.sealed ? "Including sealed" : "Include sealed"}
+          <span className="num ml-1.5 opacity-70">{sealedLeft}</span>
+        </button>
+      </div>
 
       <div className="flex items-center gap-2 text-xs">
         <button
@@ -150,8 +195,9 @@ export default function CardBoard({
             <label
               key={l.id}
               className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 cursor-pointer ${
-                l.offBoard ? "border-edge opacity-50" : "border-foil/40"
+                l.offBoard || !kindOk(l) ? "border-edge opacity-50" : "border-foil/40"
               }`}
+              title={kindOk(l) ? "" : `Hidden by the ${l.singleRecId ? "singles" : "sealed"} filter`}
             >
               <input
                 type="checkbox"
