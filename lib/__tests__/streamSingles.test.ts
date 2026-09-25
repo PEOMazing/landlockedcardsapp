@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { closeActionFor, releaseActionFor, hitsDecideSingles, soldAtClose, wheelPriceUpdate } from "../streamSingles";
+import { claimForStream, closeActionFor, releaseActionFor, hitsDecideSingles, soldAtClose, unavailableReason, wheelPriceUpdate } from "../streamSingles";
 
 // These rules decide whether a card is Sold or back on the shelf when a show
 // closes. Getting one wrong silently corrupts inventory - which is exactly the
@@ -105,5 +105,70 @@ describe("wheelPriceUpdate", () => {
     assert.equal(wheelPriceUpdate(line(10, ""), card(125), "Surprise Set"), null);
     assert.equal(wheelPriceUpdate(line(10), card(null), "Surprise Set"), null);
     assert.equal(wheelPriceUpdate(line(10), null, "Surprise Set"), null);
+  });
+});
+
+describe("claiming a card for a show", () => {
+  const card = (f: Record<string, any>) => ({ fields: f });
+
+  it("lets an in-stock card on", () => {
+    assert.equal(unavailableReason(card({ Status: "In Stock", Qty: 1 })), null);
+    // Records predate both fields; a blank one has always meant one copy in stock.
+    assert.equal(unavailableReason(card({})), null);
+  });
+
+  it("turns away a card that is already on a set", () => {
+    // This is the message a second click gets, so it has to read like an
+    // explanation rather than an error.
+    assert.equal(
+      unavailableReason(card({ Status: "In Stream", Qty: 1 })),
+      "that card is already on a show set",
+    );
+  });
+
+  it("turns away a card that has left the building", () => {
+    assert.equal(unavailableReason(card({ Status: "Sold" })), "that card is sold, not in stock");
+    assert.equal(unavailableReason(null), "that card no longer exists");
+  });
+
+  it("turns away a record with no copies left", () => {
+    assert.equal(
+      unavailableReason(card({ Status: "In Stock", Qty: 0 })),
+      "there are no copies of that card left in stock",
+    );
+  });
+
+  it("moves a one-copy record onto the stream whole", () => {
+    const c = claimForStream(card({ Status: "In Stock", Qty: 1 }), S);
+    assert.equal(c.copy, false);
+    assert.deepEqual(c.fields, { "Status": "In Stream", "Stream Rec Id": S });
+  });
+
+  it("takes one copy off a record holding several and leaves it in stock", () => {
+    const c = claimForStream(card({ Status: "In Stock", Qty: 3 }), S);
+    assert.equal(c.copy, true);
+    assert.deepEqual(c.fields, { "Qty": 2 });
+  });
+
+  it("treats the last copy of a multi-copy record as the whole record", () => {
+    // Qty 1 is Qty 1 however it got there, and the close has to be able to flip
+    // it back. A copy claim here would decrement to zero and strand the record
+    // In Stock with nothing in it.
+    const c = claimForStream(card({ Status: "In Stock", Qty: 1 }), S);
+    assert.equal(c.copy, false);
+  });
+
+  it("claims a blank-Qty record whole", () => {
+    assert.equal(claimForStream(card({}), S).copy, false);
+  });
+
+  it("writes nothing the close does not know how to undo", () => {
+    // closeActionFor and releaseActionFor both key off Single Copy plus the
+    // card's Status and Stream Rec Id. Claim and undo have to move exactly
+    // those, or a card comes back from a show in a state nothing reads.
+    const whole = claimForStream(card({ Qty: 1 }), S);
+    assert.deepEqual(Object.keys(whole.fields).sort(), ["Status", "Stream Rec Id"]);
+    const copy = claimForStream(card({ Qty: 2 }), S);
+    assert.deepEqual(Object.keys(copy.fields), ["Qty"]);
   });
 });
