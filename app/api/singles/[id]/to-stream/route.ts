@@ -40,10 +40,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "set a comp on this card first - it drives spot value and pay" }, { status: 400 });
   }
 
-  // The sticker number leads the line so a hit on the live board tells whoever
-  // is packing exactly which sleeve to pull, without reading the card name back
-  // against a binder.
-  const cardNo = formatCardNo(single.fields["Card No"]);
+  // The binder slot leads the line so a hit tells whoever is packing exactly
+  // which pocket to open, without reading the card name back against a binder.
+  // Slot, not Card No: the slot is the big number printed on the sticker and
+  // the one written on the binder spine. Card No is the permanent id and is
+  // printed small under the QR, so it is the fallback for a card that is not
+  // filed in a binder yet.
+  const cardNo = formatCardNo(single.fields["Slot"] ?? single.fields["Card No"]);
   const name = [
     cardNo ? `[${cardNo}]` : "",
     single.fields["Condition"] ? String(single.fields["Condition"]) : "",
