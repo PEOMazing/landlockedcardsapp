@@ -68,3 +68,62 @@ export async function findCardImage(rec: AtRecord): Promise<CardImage> {
 
   return null;
 }
+
+// ---------------- detecting art that belongs to a different card ----------------
+//
+// Filling a blank image is not the only failure. A card can carry a picture
+// that is confidently, silently wrong: "Dark Blastoise (JP)" sat in the binder
+// for weeks showing a Dark Hypno, because its Image URL pointed at product
+// 84613 while its Card ID said 575743. Nothing flagged it. The fill pass skips
+// anything that already has a URL, so a wrong picture is more permanent than
+// no picture at all.
+//
+// The Card ID is the authority here. It is what the pricing engine trades on,
+// it is what the QR scan resolves, and it is written by a resolver that
+// refuses to guess. If the image and the Card ID name two different products,
+// the image is the one that is wrong.
+
+// Every host we have ever written art from. A URL from anywhere else was put
+// there by a human on purpose, and a human's choice is not ours to overwrite.
+const TCG_IMAGE_HOST = /^(tcgplayer-cdn\.tcgplayer\.com|product-images\.tcgplayer\.com)$/i;
+
+/** The TCGplayer product a stored image URL is showing, or null if we cannot
+ *  tell. Handles every shape we have written: `/product/90738_400w.jpg`,
+ *  `/product/90738_in_200x200.jpg`, and the older `/fit-in/437x437/90738.jpg`. */
+export function imageProductId(url: string): number | null {
+  const raw = String(url || "").trim();
+  if (!raw) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (!TCG_IMAGE_HOST.test(parsed.hostname)) return null;
+
+  // The id is always the leading digits of the final path segment. Sizing
+  // hints ("_400w", "_in_200x200") and the extension follow it; directory
+  // segments that look numeric ("437x437") are not the last one, so they
+  // cannot be mistaken for it.
+  const last = parsed.pathname.split("/").filter(Boolean).pop() || "";
+  const m = last.match(/^(\d+)(?:[_.]|$)/);
+  if (!m) return null;
+
+  const id = parseInt(m[1], 10);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+/** True only when we can prove the stored art is a different product than the
+ *  Card ID claims. Deliberately answers false whenever anything is unknown:
+ *  no image, no Card ID, a hand-uploaded image from another host, or a URL
+ *  shape we do not recognise. Repair should never fire on a guess. */
+export function imageMismatch(url: string, cardId: string): boolean {
+  const shown = imageProductId(url);
+  if (shown === null) return false;
+
+  const linked = parseCardId(String(cardId || "").trim());
+  if (!linked) return false;
+
+  return shown !== linked.productId;
+}
