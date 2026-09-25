@@ -12,6 +12,9 @@ const config: Config = {
         foil: "#7AA2FF",
         win: "#3ECF8E",
         givvy: "#C084FC",
+        // amber, for "this still works but check it" - distinct from bad,
+        // which is reserved for something that has actually gone wrong
+        warn: "#E8B341",
         bad: "#F0625D",
       },
     },
