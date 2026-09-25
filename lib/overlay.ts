@@ -78,6 +78,34 @@ export function boardSpeed(stream: { fields: Record<string, any> }): number {
   return Math.min(BOARD_SPEED_MAX, Math.max(BOARD_SPEED_MIN, Math.round(raw * 100) / 100));
 }
 
+/** The price at which a card starts to shine.
+ *
+ *  The board draws a card worth this much or more with the full foil treatment
+ *  - a slow tilt, a glare sweeping across it, a rainbow sheen and sparkles -
+ *  and everything under it plain. It is a second tier above the hit threshold:
+ *  ten dollars is worth putting on the board, but the card people are actually
+ *  waiting for should not look like the rest of the row.
+ *
+ *  Blank or zero means no shine at all, which is what every stream that
+ *  existed before this reads as. Capped because every shining card costs the
+ *  streaming machine real frames, and a negative is meaningless.
+ */
+export const BOARD_SHINE_MAX = 100000;
+
+export function boardShine(stream: { fields: Record<string, any> }): number {
+  const raw = Number(stream.fields["Board Shine"]);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(BOARD_SHINE_MAX, Math.round(raw * 100) / 100);
+}
+
+/** Does this card get the foil treatment? Shine off means nobody does, which
+ *  keeps "off" a single check rather than a threshold nothing can clear. */
+export function isShiny(value: number, shine: number): boolean {
+  if (!(shine > 0)) return false;
+  const v = Number(value);
+  return Number.isFinite(v) && v >= shine;
+}
+
 export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds {
   return {
     singles: !stream.fields["Board Hide Singles"],
