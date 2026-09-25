@@ -72,6 +72,14 @@ export function risingSaleCompSource(cond: string, date: string, median: number,
   return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date} above the ${money(median)} median of ${count} in last 30d)`;
 }
 
+// A recent sale was thrown out for disagreeing with every older one. Names the
+// price that was rejected as well as the one that won, because this is a comp
+// that deliberately ignores the most recent thing that happened to the card
+// and anyone looking at it deserves to see that written down.
+export function outlierCompSource(cond: string, dropped: number, median: number, peers: number): string {
+  return `TCGplayer ${SOLDS_MARKER} (${cond}, ${money(dropped)} sale set aside as an outlier, ${money(median)} median of ${peers} earlier sales)`;
+}
+
 export function listingCompSource(cond: string, printing: string, count: number, note = ""): string {
   return `TCGplayer ${LISTING_MARKER} ${cond} listing (${printing}, ${count} live${note ? `, ${note}` : ""})`;
 }
@@ -150,6 +158,35 @@ const LAST_SALE_FRESH_DAYS = 10;
 // sale from setting a card's price for as long as it stays in the window.
 const LAST_SALE_MAX_LIFT = 2;
 
+// A lone high sale, checked against the card's own other sales.
+//
+// dropWashSales throws out sales that are far too LOW and nothing did the same
+// job at the top, so one inflated sale set a card's price for as long as it
+// sat in the window. Espeon (Majestic Dawn) is the case: sales at $17.24,
+// $19.95, $22.51 and $25, then a single $150 that happened to be the only one
+// inside the 30 days. The comp became $150 on evidence of one, and ten other
+// cards had the same shape - Ponyta at $39 against four sales under $0.80,
+// Wurmple at $31 against four under $1.
+//
+// The comparison is against the card's OWN older sales and deliberately never
+// against market. Market here is the cheapest live ask, and on a thin card it
+// sits well below what the card actually trades at, so a "3x market" rule
+// would fire constantly on exactly the low-volume cards it has no business
+// touching. Four sales that agree with each other are a real opinion; one that
+// disagrees with all four by this much is a typo, a bundle, or a graded copy
+// sold under the raw product.
+//
+// With no peers to disagree with, nothing fires. A card whose only evidence is
+// a single sale keeps that sale and stays flagged as thin, which is the
+// existing MIN_CONFIDENT_SALES behaviour and stays correct.
+const OUTLIER_MAX_FRESH = 2;
+const OUTLIER_MIN_PEERS = 3;
+const OUTLIER_MULT = 3;
+// Absolute floor as well as a ratio, so a common going from $0.40 to $1.60 is
+// left alone. At that size the ratio is meaningless and the dollars are not
+// worth a wrong answer in either direction.
+const OUTLIER_MIN_GAP = 5;
+
 export type SoldPick = {
   price: number;
   /** no sale inside the window, so the listing floor answered instead */
@@ -165,6 +202,14 @@ export type SoldPick = {
   latestDate: string;
   /** the newest sale beat the median and set the price */
   usedLastSale?: boolean;
+  /** a lone recent sale disagreed with the older ones and was set aside */
+  demotedOutlier?: boolean;
+  /** what that sale claimed, kept so the comp source can name it */
+  droppedPrice?: number;
+  /** the median of the older sales that outvoted it */
+  peerMedian?: number;
+  /** how many older sales that median was taken over */
+  peerCount?: number;
 };
 
 // Which number a set of sold sales should actually produce. Pure, because this
@@ -205,6 +250,49 @@ export function pickSoldPrice(
     priceFromSales: fresh,
     latestDate: latest ? latest.date : "",
   };
+
+  // One recent sale, and the rest of the card's history says it is wrong.
+  //
+  // Checked before every branch below, because both of the ones that could
+  // otherwise fire here would carry the same bad number: the median is the
+  // outlier when it is the only recent sale, and the rising-sale lift would
+  // then take that very sale as proof the card is climbing.
+  // Read off the RAW sales rather than the cleaned ones, which matters more
+  // than it looks. dropWashSales keeps only sales within WASH_FRACTION of the
+  // highest one, so when the highest is the bogus sale it deletes exactly the
+  // peers that prove it: Espeon's four genuine sales all sat under 20% of the
+  // $150 and were binned before anything could compare them. Asking the
+  // unfiltered history is the only way to see the disagreement at all.
+  const raw = (detailIn || []).filter((s) => Number(s?.price) > 0);
+  const rawRecent = raw.filter((d) => String(d.date) >= cutoff);
+  const peers = raw.filter((d) => String(d.date) < cutoff).map((d) => d.price);
+  const rawFresh = rawRecent.length ? round2(medianOf(rawRecent.map((d) => d.price))) : 0;
+  const peerMid = peers.length >= OUTLIER_MIN_PEERS ? round2(medianOf(peers)) : 0;
+  if (
+    rawFresh > 0 &&
+    rawRecent.length <= OUTLIER_MAX_FRESH &&
+    peerMid > 0 &&
+    rawFresh > peerMid * OUTLIER_MULT &&
+    rawFresh - peerMid >= OUTLIER_MIN_GAP
+  ) {
+    // The older sales are real money that changed hands, so they answer. The
+    // live asking floor still holds the number up when it is higher, exactly
+    // as it does everywhere else in this function.
+    const askFloor = usableFloor ? usableFloor.low : 0;
+    return {
+      ...base,
+      price: round2(Math.max(peerMid, askFloor)),
+      // Left false on purpose even when the floor is what won. The story of
+      // this comp is the sale that was rejected, and usedFloor is read first
+      // when the source line is chosen, so setting it would hide that.
+      usedFloor: false,
+      priceFromSales: peerMid,
+      demotedOutlier: true,
+      droppedPrice: rawFresh,
+      peerMedian: peerMid,
+      peerCount: peers.length,
+    };
+  }
 
   // Every recent sale sitting far under what anyone will part with a copy for
   // is not a discount, it is wash trading that the sale count should not
@@ -379,6 +467,10 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
           : `recent sales only reached ${money(pick.priceFromSales)}`
       );
       floorLift = pick.priceFromSales > 0 ? pick.price / pick.priceFromSales : 0;
+    } else if (pick.demotedOutlier) {
+      fields["Comp Source"] = outlierCompSource(
+        cond, pick.droppedPrice || 0, pick.peerMedian || 0, pick.peerCount || 0,
+      );
     } else if (pick.staleSales) {
       fields["Comp Source"] = lastSaleCompSource(cond, pick.latestDate);
     } else if (pick.usedLastSale) {
