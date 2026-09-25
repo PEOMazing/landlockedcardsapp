@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // having on stream, because the board gets more readable exactly as the
 // remaining cards get more interesting.
 
-type Card = { id: string; image: string; thumb: string; left: number };
+type Card = { id: string; image: string; thumb: string; left: number; shiny?: boolean };
 
 const POLL_MS = 3000;
 
@@ -113,7 +113,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
   // run takes. The floor keeps a two-card board from becoming a blur.
   const duration = Math.max(4, runWidth / (BANNER_PX_PER_SEC * speed));
 
-  const tile = (c: Card, w?: number) => (
+  const tile = (c: Card, i: number, w?: number) => (
     <div
       key={c.id}
       style={{
@@ -126,23 +126,44 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
         // The card art is the thing; the glow just lifts it off whatever
         // is behind it in the scene so it does not disappear into a busy
         // background.
-        filter: "drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 4px 18px rgba(0,0,0,.6))",
+        filter: c.shiny
+          ? "drop-shadow(0 0 14px rgba(255,215,120,.45)) drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 4px 18px rgba(0,0,0,.6))"
+          : "drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 4px 18px rgba(0,0,0,.6))",
         animation: "llcIn .35s ease-out",
       }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={c.image}
-        alt=""
-        // The big art is a rewrite of the stored URL, so a size this CDN
-        // does not happen to have must fall back rather than leave a hole
-        // on stream. Guarded so a broken thumbnail cannot loop.
-        onError={(e) => {
-          const el = e.currentTarget;
-          if (c.thumb && el.src !== c.thumb) el.src = c.thumb;
-        }}
-        style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "4%" }}
-      />
+      {/* The foil layers are siblings of the art, all clipped to the same
+          rounded rectangle, so they sit on the card rather than around it.
+          The stagger is a negative delay, which starts each card partway
+          through its loop: without it forty cards tilt and flash in perfect
+          unison, which looks like a screen fault rather than foil. */}
+      <div
+        className={c.shiny ? "llc-card llc-tilt" : "llc-card"}
+        style={{ ["--d" as any]: `${((i % 7) * 0.83).toFixed(2)}s` }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={c.image}
+          alt=""
+          // The big art is a rewrite of the stored URL, so a size this CDN
+          // does not happen to have must fall back rather than leave a hole
+          // on stream. Guarded so a broken thumbnail cannot loop.
+          onError={(e) => {
+            const el = e.currentTarget;
+            if (c.thumb && el.src !== c.thumb) el.src = c.thumb;
+          }}
+          style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "4%" }}
+        />
+        {c.shiny && (
+          <>
+            <span className="llc-holo" />
+            <span className="llc-sparkle" />
+            <span className="llc-glarewrap">
+              <span className="llc-glare" />
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 
@@ -217,11 +238,11 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
               justifyContent: scrolls ? undefined : "center",
             }}
           >
-            {tiles.map((c) => tile(c, bannerTileW))}
-            {scrolls && tiles.map((c) => tile({ ...c, id: c.id + ":b" }, bannerTileW))}
+            {tiles.map((c, i) => tile(c, i, bannerTileW))}
+            {scrolls && tiles.map((c, i) => tile({ ...c, id: c.id + ":b" }, i, bannerTileW))}
           </div>
         ) : (
-          tiles.map((c) => tile(c))
+          tiles.map((c, i) => tile(c, i))
         )}
       </div>
 
@@ -236,10 +257,83 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: .45; transform: scale(.985); }
         }
+
+        /* ---- foil ----------------------------------------------------- */
+        /* Four layers over the art, the way a real holo reads: the card
+           turns, a hard specular band runs across it, a rainbow sits in the
+           surface and shifts as it turns, and glitter catches the light.
+           Every one of them is a transform or an opacity so the GPU does the
+           work - OBS renders these frames on the same machine that is
+           encoding the stream, and a layout-thrashing effect would cost
+           dropped frames, which viewers notice long before they notice
+           a card looking flat. */
+        .llc-card { position: relative; width: 100%; height: 100%; }
+        .llc-card > span { position: absolute; inset: 0; border-radius: 4%; pointer-events: none; }
+
+        .llc-tilt {
+          animation: llcTilt 5.6s ease-in-out infinite;
+          animation-delay: calc(var(--d, 0s) * -1);
+          will-change: transform;
+        }
+        @keyframes llcTilt {
+          0%, 100% { transform: perspective(1000px) rotateY(-8deg) rotateX(3.5deg); }
+          50%      { transform: perspective(1000px) rotateY(8deg) rotateX(-3.5deg); }
+        }
+
+        /* Overlay rather than screen: it tints the art and keeps its
+           contrast, where screen washes a dark card out to pastel. */
+        .llc-holo {
+          background: linear-gradient(115deg,
+            rgba(255,0,140,.65) 0%, rgba(255,190,0,.60) 18%, rgba(70,255,190,.60) 36%,
+            rgba(0,170,255,.65) 54%, rgba(180,60,255,.60) 72%, rgba(255,0,140,.65) 100%);
+          background-size: 260% 260%;
+          mix-blend-mode: overlay;
+          opacity: .42;
+          animation: llcHolo 7.2s ease-in-out infinite;
+          animation-delay: calc(var(--d, 0s) * -1);
+        }
+        @keyframes llcHolo {
+          0%, 100% { background-position: 0% 50%; }
+          50%      { background-position: 100% 50%; }
+        }
+
+        .llc-sparkle {
+          background-image: radial-gradient(circle, rgba(255,255,255,.95) .5px, transparent 1.4px);
+          background-size: 6.5% 4.6%;
+          mix-blend-mode: screen;
+          animation: llcSparkle 2.9s ease-in-out infinite;
+          animation-delay: calc(var(--d, 0s) * -1);
+        }
+        @keyframes llcSparkle {
+          0%, 100% { opacity: .07; background-position: 0% 0%; }
+          50%      { opacity: .40; background-position: 38% 26%; }
+        }
+
+        /* The band is wider and taller than the card and runs off both
+           edges, so the sweep has no visible start or stop. */
+        .llc-glarewrap { overflow: hidden; }
+        .llc-glare {
+          position: absolute;
+          top: -40%; bottom: -40%; left: 0; width: 38%;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.85), transparent);
+          filter: blur(7px);
+          mix-blend-mode: screen;
+          transform: rotate(16deg) translateX(-300%);
+          animation: llcGlare 4.4s ease-in-out infinite;
+          animation-delay: calc(var(--d, 0s) * -1);
+          will-change: transform;
+        }
+        @keyframes llcGlare {
+          0%        { transform: rotate(16deg) translateX(-300%); }
+          45%, 100% { transform: rotate(16deg) translateX(420%); }
+        }
+
         /* OBS respects this, and a banner that stops moving is better than one
            that makes somebody ill. */
         @media (prefers-reduced-motion: reduce) {
           [style*="llcFlash"] { animation: none !important; }
+          .llc-tilt, .llc-holo, .llc-sparkle, .llc-glare { animation: none !important; }
+          .llc-holo, .llc-sparkle, .llc-glare { opacity: .18; }
         }
       `}</style>
     </div>
