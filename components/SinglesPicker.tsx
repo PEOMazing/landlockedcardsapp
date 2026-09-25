@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Thumb from "@/components/Thumb";
 import { priceBound, inPriceRange, rangeBackwards } from "@/lib/priceRange";
@@ -54,6 +54,10 @@ export default function SinglesPicker({
   const [sort, setSort] = useState<"price" | "slot">("price");
   const [shown, setShown] = useState(PAGE);
   const [adding, setAdding] = useState<string>("");
+  // Cards with an add already in the air. A ref rather than state because it
+  // has to be true the instant a click handler runs: disabling the button is a
+  // render away, and a fast double click gets both clicks in before that.
+  const inFlight = useRef<Set<string>>(new Set());
   const [err, setErr] = useState("");
   const [checking, setChecking] = useState(0);
   const [checked, setChecked] = useState("");
@@ -151,25 +155,36 @@ export default function SinglesPicker({
   }
 
   async function add(s: SingleT) {
+    // Two clicks on the same card used to make two lines for one physical
+    // card, which on a wheel is a slot that can be won twice. The server turns
+    // the second one away now as well; this is so it never gets sent.
+    if (inFlight.current.has(s.id)) return;
+    inFlight.current.add(s.id);
     setAdding(s.id); setErr("");
-    const res = await fetch(`/api/singles/${s.id}/to-stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ streamId }),
-    });
-    if (!res.ok) {
-      const d = await res.json();
-      setErr(d.error || "Could not add card");
-    } else {
-      // Drop the card from the list here rather than re-reading the whole
-      // inventory. Building a 40-card wheel was pulling all 800-odd singles
-      // back down after every single add, which is most of why adding felt
-      // slow. The server has already taken the card out of stock; this is just
-      // the screen agreeing with it.
-      setItems((prev) => prev.filter((x) => x.id !== s.id));
-      await onAdded();
+    try {
+      const res = await fetch(`/api/singles/${s.id}/to-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ streamId }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setErr(d.error || "Could not add card");
+      } else {
+        // Drop the card from the list here rather than re-reading the whole
+        // inventory. Building a 40-card wheel was pulling all 800-odd singles
+        // back down after every single add, which is most of why adding felt
+        // slow. The server has already taken the card out of stock; this is just
+        // the screen agreeing with it.
+        setItems((prev) => prev.filter((x) => x.id !== s.id));
+        await onAdded();
+      }
+    } catch (e: any) {
+      setErr(String(e?.message || e) || "Could not add card");
+    } finally {
+      inFlight.current.delete(s.id);
+      setAdding("");
     }
-    setAdding("");
   }
 
   return (
