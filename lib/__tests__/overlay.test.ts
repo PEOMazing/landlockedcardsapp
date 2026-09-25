@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { boardKinds, boardLayout, isOverlayKey, isSingleLine, newOverlayKey, onBoard } from "../overlay";
+import { boardKinds, boardLayout, boardSpeed, isOverlayKey, isSingleLine, newOverlayKey, onBoard } from "../overlay";
 
 const line = (f: Record<string, any>) => ({ fields: { Qty: 1, "Qty Hit": 0, ...f } });
 
@@ -157,5 +157,33 @@ describe("board layout", () => {
     assert.equal(boardLayout({ fields: {} }), "grid");
     assert.equal(boardLayout({ fields: { "Board Banner": false } }), "grid");
     assert.equal(boardLayout({ fields: { "Board Banner": true } }), "banner");
+  });
+});
+
+describe("banner scroll speed", () => {
+  it("is 1x on a stream nobody has set it on", () => {
+    assert.equal(boardSpeed({ fields: {} }), 1);
+    assert.equal(boardSpeed({ fields: { "Board Speed": null } }), 1);
+  });
+
+  it("reads a multiplier back as given", () => {
+    assert.equal(boardSpeed({ fields: { "Board Speed": 1.25 } }), 1.25);
+    assert.equal(boardSpeed({ fields: { "Board Speed": 2 } }), 2);
+  });
+
+  it("refuses to stop the banner or run it backwards", () => {
+    // Zero would freeze it and a negative would scroll it the wrong way.
+    // Either is a worse outcome than ignoring the value.
+    assert.equal(boardSpeed({ fields: { "Board Speed": 0 } }), 1);
+    assert.equal(boardSpeed({ fields: { "Board Speed": -2 } }), 1);
+  });
+
+  it("clamps a value that would strobe a live audience", () => {
+    assert.equal(boardSpeed({ fields: { "Board Speed": 40 } }), 4);
+    assert.equal(boardSpeed({ fields: { "Board Speed": 0.01 } }), 0.25);
+  });
+
+  it("ignores junk", () => {
+    assert.equal(boardSpeed({ fields: { "Board Speed": "fast" } }), 1);
   });
 });
