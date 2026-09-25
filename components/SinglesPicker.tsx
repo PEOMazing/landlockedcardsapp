@@ -161,7 +161,13 @@ export default function SinglesPicker({
       const d = await res.json();
       setErr(d.error || "Could not add card");
     } else {
-      await Promise.all([onAdded(), loadStock()]);
+      // Drop the card from the list here rather than re-reading the whole
+      // inventory. Building a 40-card wheel was pulling all 800-odd singles
+      // back down after every single add, which is most of why adding felt
+      // slow. The server has already taken the card out of stock; this is just
+      // the screen agreeing with it.
+      setItems((prev) => prev.filter((x) => x.id !== s.id));
+      await onAdded();
     }
     setAdding("");
   }
