@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { T, atList } from "@/lib/airtable";
-import { boardKinds, boardLayout, onBoard, streamForOverlayKey } from "@/lib/overlay";
+import { boardKinds, boardLayout, boardSpeed, onBoard, streamForOverlayKey } from "@/lib/overlay";
 import { getSettings } from "@/lib/settings";
 import { bigCardImage } from "@/lib/cardImage";
 
@@ -87,6 +87,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       title: String(stream.fields["Title"] || ""),
       kinds,
       layout: boardLayout(stream),
+      speed: boardSpeed(stream),
       hitThreshold,
       cards,
       count: cards.reduce((n, c) => n + c.left, 0),
