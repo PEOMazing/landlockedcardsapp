@@ -29,6 +29,22 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     if (inv.fields["TCGplayer URL"]) tcgByProduct[inv.id] = inv.fields["TCGplayer URL"];
     if (inv.fields["Image URL"]) imageByProduct[inv.id] = inv.fields["Image URL"];
   }
+  // Card art for single-card lines, which keep it on the Singles record rather
+  // than on an Inventory product. Without this every card on a wheel came back
+  // imageless, which is fine for a text list and useless for the OBS board.
+  const imageBySingle: Record<string, string> = {};
+  const singleIds = Array.from(
+    new Set(lineRows.map((l) => String(l.fields["Single Rec Id"] || "")).filter(Boolean)),
+  );
+  if (singleIds.length) {
+    const or = singleIds.map((sid) => `RECORD_ID() = '${sid}'`).join(", ");
+    const singleRows = await atList(T.singles, { filterByFormula: `OR(${or})` }).catch(() => []);
+    for (const s of singleRows) {
+      const url = String(s.fields["Image URL"] || "").trim();
+      if (url) imageBySingle[s.id] = url;
+    }
+  }
+
   // An open wheel shows its singles at today's comp, not the price they had
   // when the set was built. A closed show keeps the prices it closed at.
   if (!isComplete && !stream.fields["Items Returned"]) {
@@ -122,7 +138,12 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       productId: lineRows[i].fields["Product"]?.[0] || "",
       isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
       tcgUrl: tcgByProduct[lineRows[i].fields["Product"]?.[0]] || "",
-      image: imageByProduct[lineRows[i].fields["Product"]?.[0]] || "",
+      image:
+        imageBySingle[String(lineRows[i].fields["Single Rec Id"] || "")] ||
+        imageByProduct[lineRows[i].fields["Product"]?.[0]] ||
+        "",
+      // whether the streamer has pulled this card off the OBS board by hand
+      offBoard: !!lineRows[i].fields["Off Board"],
       ...(me.isAdmin ? { buy: l.buy } : {}),
     })),
     config: {
