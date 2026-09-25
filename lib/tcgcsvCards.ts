@@ -181,24 +181,66 @@ export function parseCardId(id: string): { productId: number; groupId: number; s
 // the TCGplayer export wrote, so it is already in TCGplayer's own vocabulary.
 export function subTypeForVariant(variant: string, rarity: string): string {
   const v = norm(variant);
-  if (v.includes("reverse")) return "Reverse Holofoil";
-  if (v.includes("1st")) return "1st Edition Holofoil";
-  if (v.includes("holo") || v.includes("foil")) return "Holofoil";
   const r = norm(rarity);
-  if (r.includes("holo") || r.includes("ultra") || r.includes("secret")) return "Holofoil";
-  return "Normal";
+  const foil =
+    v.includes("holo") || v.includes("foil") ||
+    r.includes("holo") || r.includes("ultra") || r.includes("secret");
+  if (v.includes("reverse")) return "Reverse Holofoil";
+  // "1st Edition" and "Unlimited" are print runs, and on WotC-era sets they are
+  // the subtype names TCGplayer actually uses - sometimes on their own, and
+  // sometimes with "Holofoil" attached. Both spellings have to be reachable or
+  // an Unlimited card gets quoted at its 1st Edition price, which on Jungle and
+  // Fossil is three to five times too much.
+  if (v.includes("1st")) return foil ? "1st Edition Holofoil" : "1st Edition";
+  if (v.includes("unlimited")) return foil ? "Unlimited Holofoil" : "Unlimited";
+  return foil ? "Holofoil" : "Normal";
+}
+
+// How well a printing TCGplayer has matches the printing we are looking for.
+// Shared words earn, unasked-for words cost. That ordering is what keeps a
+// plain "Holofoil" request off the 1st Edition row: "Unlimited Holofoil"
+// carries one word we did not ask for, "1st Edition Holofoil" carries two.
+function subScore(want: string, have: string): number {
+  const w = new Set(subSlug(want).split("-").filter(Boolean));
+  const h = subSlug(have).split("-").filter(Boolean);
+  let shared = 0;
+  for (const t of h) if (w.has(t)) shared++;
+  return shared * 2 - (h.length - shared);
 }
 
 // Pick the market price for the printing we hold, falling back through the
 // other printings rather than returning nothing: a wrong-printing price beats
 // a blank comp, and the caller records which printing it used.
+//
+// The fallback used to be "whichever printing came first in the price file",
+// which is not a choice so much as an accident, and on old sets that accident
+// was consistently 1st Edition - the expensive one. Now the closest printing by
+// name wins, and a tie goes to the cheaper of them. Guessing high puts a price
+// on a sticker that no buyer will pay and that we would have to honour; guessing
+// low costs a few dollars of margin on a card a human can still look at.
+export function pickPrinting(
+  available: Iterable<[string, number]>,
+  want: string,
+): { price: number; sub: string } | null {
+  const subs = [...available];
+  if (subs.length === 0) return null;
+  const slug = subSlug(want);
+  for (const [name, price] of subs) if (subSlug(name) === slug) return { price, sub: name };
+
+  let best: { price: number; sub: string; score: number } | null = null;
+  for (const [name, price] of subs) {
+    const score = subScore(want, name);
+    if (!best || score > best.score || (score === best.score && price < best.price)) {
+      best = { price, sub: name, score };
+    }
+  }
+  return best ? { price: best.price, sub: best.sub } : null;
+}
+
 function marketFor(d: GroupCache, productId: number, want: string): { price: number; sub: string } | null {
   const subs = d.bySub.get(productId);
   if (!subs || subs.size === 0) return null;
-  const slug = subSlug(want);
-  for (const [name, price] of subs) if (subSlug(name) === slug) return { price, sub: name };
-  const first = [...subs.entries()][0];
-  return { price: first[1], sub: first[0] };
+  return pickPrinting(subs, want);
 }
 
 export async function getTcgcsvCard(id: string): Promise<PokeCard | null> {
