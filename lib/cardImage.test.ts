@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { imageMismatch, imageProductId } from "./cardImage";
+import { bigCardImage, imageMismatch, imageProductId } from "./cardImage";
 
 describe("imageProductId", () => {
   it("reads the product out of every url shape we have written", () => {
@@ -61,5 +61,50 @@ describe("imageMismatch", () => {
     assert.equal(imageMismatch(good, "tcg:575743:23724:reverse-holofoil"), false);
     // old two-part id still parses
     assert.equal(imageMismatch(good, "tcg:575743:23724"), false);
+  });
+});
+
+describe("bigCardImage", () => {
+  it("swaps a thumbnail for the full-size art", () => {
+    // The blur the OBS board shipped with: 200px art stretched across a tile
+    // several hundred pixels wide.
+    assert.equal(
+      bigCardImage("https://tcgplayer-cdn.tcgplayer.com/product/664098_200w.jpg"),
+      "https://tcgplayer-cdn.tcgplayer.com/product/664098_in_1000x1000.jpg",
+    );
+    assert.equal(
+      bigCardImage("https://tcgplayer-cdn.tcgplayer.com/product/90738_400w.jpg"),
+      "https://tcgplayer-cdn.tcgplayer.com/product/90738_in_1000x1000.jpg",
+    );
+  });
+
+  it("upgrades a size that is already in the _in_ form", () => {
+    assert.equal(
+      bigCardImage("https://tcgplayer-cdn.tcgplayer.com/product/575743_in_200x200.jpg"),
+      "https://tcgplayer-cdn.tcgplayer.com/product/575743_in_1000x1000.jpg",
+    );
+  });
+
+  it("handles a bare product image with no size at all", () => {
+    assert.equal(
+      bigCardImage("https://product-images.tcgplayer.com/fit-in/437x437/84613.jpg"),
+      "https://product-images.tcgplayer.com/fit-in/437x437/84613_in_1000x1000.jpg",
+    );
+  });
+
+  it("leaves a hand-uploaded image from another host exactly as it is", () => {
+    // Somebody chose that URL on purpose and it has no size variants to ask
+    // for. Rewriting it would turn a working picture into a 404.
+    const other = "https://images.example.com/my-scan.png";
+    assert.equal(bigCardImage(other), other);
+  });
+
+  it("leaves anything it cannot parse alone", () => {
+    assert.equal(bigCardImage(""), "");
+    assert.equal(bigCardImage("not a url"), "not a url");
+    assert.equal(
+      bigCardImage("https://tcgplayer-cdn.tcgplayer.com/product/banner.svg"),
+      "https://tcgplayer-cdn.tcgplayer.com/product/banner.svg",
+    );
   });
 });

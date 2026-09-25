@@ -48,19 +48,41 @@ export async function ensureOverlayKey(stream: AtRecord): Promise<string> {
   return key;
 }
 
+/** A line is a single card when it points at one. Everything else on a show
+ *  set is sealed product. */
+export const isSingleLine = (line: { fields: Record<string, any> }) =>
+  !!String(line.fields["Single Rec Id"] || "").trim();
+
+/** Which kinds of product the board is showing. Stored inverted on the stream
+ *  so an untouched show includes both. */
+export type BoardKinds = { singles: boolean; sealed: boolean };
+
+export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds {
+  return {
+    singles: !stream.fields["Board Hide Singles"],
+    sealed: !stream.fields["Board Hide Sealed"],
+  };
+}
+
 // What the board shows, and why each rule is here:
 //
 //   fully hit      - gone. The card has been won; leaving it up is a lie.
 //   off board      - gone. The streamer pulled it by hand.
 //   giveaway       - gone. Not something a viewer is spinning for.
 //   store purchase - gone. Already sold off the shelf, never on the wheel.
-//   no image       - gone. A board of grey rectangles is worse than a
-//                    smaller board, and the point of this is the card art.
-export function onBoard(line: { fields: Record<string, any> }): boolean {
+//   wrong kind     - gone. A singles wheel and a sealed break are different
+//                    shows, and a mixed board reads as neither.
+//   no image       - gone, but the caller handles that one, since only it
+//                    knows whether a picture was actually found.
+export function onBoard(
+  line: { fields: Record<string, any> },
+  kinds: BoardKinds = { singles: true, sealed: true },
+): boolean {
   const f = line.fields;
   if (f["Off Board"]) return false;
   if (f["Is Giveaway"]) return false;
   if (f["Is Store Purchase"]) return false;
+  if (!(isSingleLine(line) ? kinds.singles : kinds.sealed)) return false;
   const remaining = (Number(f["Qty"]) || 0) - (Number(f["Qty Hit"]) || 0);
   return remaining > 0;
 }

@@ -114,6 +114,47 @@ export function imageProductId(url: string): number | null {
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
+// ---------------- asking the CDN for the big version ----------------
+//
+// Stored art is the 200px thumbnail, which is right for a table row and far
+// too small for anything a viewer sees: blown up to fill an OBS tile it is
+// visibly soft. TCGplayer serves the same product at several sizes and the
+// largest is the "_in_1000x1000" form, which comes back around 1000px on the
+// long edge - five times the linear resolution, checked across a whole show's
+// worth of products.
+//
+// A rewrite, not a new stored value. The thumbnail is still the right thing
+// almost everywhere, and a URL nobody has to migrate is a URL that cannot go
+// stale. Callers that need the big one ask for it at the point of use and keep
+// the original as a fallback, because this is somebody else's CDN and the only
+// guarantee we have is what it happened to serve last time.
+
+/** The largest version of a TCGplayer image URL. Anything not recognisably
+ *  theirs comes back untouched: a hand-uploaded image from another host has no
+ *  size variants to ask for, and guessing at one would break a working link. */
+export function bigCardImage(url: string): string {
+  const raw = String(url || "").trim();
+  if (!raw) return raw;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return raw;
+  }
+  if (!TCG_IMAGE_HOST.test(parsed.hostname)) return raw;
+
+  const segs = parsed.pathname.split("/");
+  const last = segs[segs.length - 1] || "";
+  // "90738_200w.jpg", "90738_400w.jpg", "90738_in_200x200.jpg", "90738.jpg"
+  const m = last.match(/^(\d+)(?:_.*)?\.(jpg|jpeg|png|webp)$/i);
+  if (!m) return raw;
+
+  segs[segs.length - 1] = `${m[1]}_in_1000x1000.jpg`;
+  parsed.pathname = segs.join("/");
+  return parsed.toString();
+}
+
 /** True only when we can prove the stored art is a different product than the
  *  Card ID claims. Deliberately answers false whenever anything is unknown:
  *  no image, no Card ID, a hand-uploaded image from another host, or a URL
