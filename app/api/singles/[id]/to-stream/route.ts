@@ -4,6 +4,9 @@ import { getMe, ownsStream } from "@/lib/auth";
 import { formatCardNo } from "@/lib/cardNo";
 import { isRawCondition, recompSingle } from "@/lib/comp";
 
+// How recently a comp has to have been checked for the add to trust it.
+const FRESH_MS = 10 * 60 * 1000;
+
 // Put a single onto a stream's show set. The comp snapshots in as the line's
 // market price and the buy price snapshots as cost, so the pay engine and all
 // metrics treat it exactly like a sealed product line.
@@ -24,13 +27,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   // Re-price at the moment it goes on the stream. This snapshot becomes the
   // line's market price, which drives spot value and what the streamer gets
-  // paid, so it is the single worst number in the app to let go stale. One
-  // card's worth of latency is a fair trade for that, and a failure here falls
-  // through to the stored comp rather than blocking the card.
-  if (isRawCondition(String(single.fields["Condition"] || "Raw"))) {
+  // paid, so it is the single worst number in the app to let go stale, and a
+  // failure here falls through to the stored comp rather than blocking the card.
+  //
+  // Skipped when the comp was already checked in the last few minutes. A live
+  // reprice is three calls to somebody else's API and it dominates the time an
+  // add takes; building a 40-card wheel was paying that 40 times over for
+  // prices that had not moved since the last one. A card checked minutes ago is
+  // not stale by any definition that matters to a show starting tonight.
+  const checkedAt = Date.parse(String(single.fields["Comp Checked"] || ""));
+  const fresh = Number.isFinite(checkedAt) && Date.now() - checkedAt < FRESH_MS;
+  let repriced = false;
+  if (!fresh && isRawCondition(String(single.fields["Condition"] || "Raw"))) {
     try {
       const r = await recompSingle(single, { live: true });
-      if (r.ok && r.fields) single = await atUpdate(T.singles, params.id, r.fields);
+      if (r.ok && r.fields) { single = await atUpdate(T.singles, params.id, r.fields); repriced = true; }
     } catch {
       // stored comp it is - a pricing hiccup must not stop a card going live
     }
@@ -78,5 +89,5 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   } else {
     await atUpdate(T.singles, params.id, { "Status": "In Stream", "Stream Rec Id": b.streamId });
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, repriced, comp: single.fields["Comp"] ?? null });
 }
