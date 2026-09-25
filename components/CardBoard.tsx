@@ -37,6 +37,11 @@ export default function CardBoard({
   // value rather than a blank, so it round-trips like any other setting.
   const [shine, setShine] = useState(0);
   const [shineDraft, setShineDraft] = useState("");
+  // The dry streak on the banner. Held locally and moved optimistically: the
+  // board only picks the change up on its next poll, and a button that waits
+  // on a round trip before it looks pressed gets pressed twice.
+  const [spins, setSpins] = useState(0);
+  const [spinBusy, setSpinBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<string>("");
 
@@ -53,6 +58,7 @@ export default function CardBoard({
         setShine(Number(d.shine));
         setShineDraft(Number(d.shine) > 0 ? String(Number(d.shine)) : "");
       }
+      if (Number.isFinite(Number(d.spins))) setSpins(Math.max(0, Number(d.spins)));
       if (typeof d.hitThreshold === "number") setHitThreshold(d.hitThreshold);
     } catch {}
   }, [streamId]);
@@ -83,6 +89,31 @@ export default function CardBoard({
       body: JSON.stringify({ speed: next }),
     });
     if (!r.ok) { setSpeed(prev); toast("Could not change the speed"); }
+  }
+
+  // bumpSpins is relative and spins is absolute, and which one gets sent
+  // matters: the tally has to survive the live page and the stream page both
+  // being open, where an absolute write from whichever tab loaded first would
+  // roll the count back.
+  async function moveSpins(body: Record<string, any>, optimistic: number) {
+    const prev = spins;
+    setSpins(optimistic);
+    setSpinBusy(true);
+    try {
+      const r = await fetch(`/api/streams/${streamId}/overlay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { setSpins(prev); toast("Could not update the spin count"); return; }
+      const d = await r.json();
+      if (Number.isFinite(Number(d.spins))) setSpins(Math.max(0, Number(d.spins)));
+    } catch {
+      setSpins(prev);
+      toast("Could not update the spin count");
+    } finally {
+      setSpinBusy(false);
+    }
   }
 
   async function setBoardShine(next: number) {
@@ -245,6 +276,54 @@ export default function CardBoard({
             scrolling banner
           </button>
         </div>
+      </div>
+
+      {/* The dry streak. These two are the only controls here that get pressed
+          mid-spin with one hand, so they are big, they are first, and they say
+          what they do rather than carrying an icon. */}
+      <div className="flex items-center gap-2 flex-wrap rounded-lg border border-edge px-2.5 py-2">
+        <span className="label !mb-0">Spins since last hit</span>
+        <span
+          className={`num text-2xl leading-none tabular-nums ${
+            spins >= 6 ? "text-bad" : spins >= 3 ? "text-warn" : spins > 0 ? "text-foil" : "text-dim"
+          }`}
+        >
+          {spins}
+        </span>
+        <button
+          type="button"
+          className="btn-foil !px-4 !py-1.5 disabled:opacity-40"
+          disabled={spinBusy}
+          onClick={() => moveSpins({ bumpSpins: 1 }, spins + 1)}
+        >
+          +1 spin
+        </button>
+        <button
+          type="button"
+          className="btn !px-4 !py-1.5 disabled:opacity-40"
+          disabled={spinBusy || spins === 0}
+          onClick={() => moveSpins({ spins: 0 }, 0)}
+        >
+          Hit! reset
+        </button>
+        {spins > 0 && (
+          <button
+            type="button"
+            className="text-dim hover:text-body text-xs underline"
+            disabled={spinBusy}
+            onClick={() => moveSpins({ bumpSpins: -1 }, Math.max(0, spins - 1))}
+            title="Tapped one too many"
+          >
+            undo one
+          </button>
+        )}
+        <span className="text-dim text-xs ml-auto">
+          {spins === 0
+            ? "banner reads HITS STILL LIVE"
+            : spins >= 6
+              ? "banner is fully on fire"
+              : `banner is alternating, and ${["smoking", "sparking", "catching", "burning", "blazing"][Math.min(4, spins - 1)]}`}
+        </span>
       </div>
 
       {/* Which cards get the foil treatment. Priced rather than counted, so it
