@@ -6,6 +6,30 @@ import { toLine, isHitLine } from "@/lib/calc";
 import { syncWheelSinglePrices } from "@/lib/streamSingles";
 
 
+// The historical delivery rate is computed from every line and every completed
+// stream in the base. That is two whole-table reads, and this route runs on
+// every keystroke-ish action on the stream page - adding forty cards to a wheel
+// was pulling the entire Stream Products table forty times for a number that
+// moves once a week. Cached in the warm instance for a few minutes; a stale
+// percentage on a background stat is not a number anybody acts on.
+const HIST_TTL = 5 * 60 * 1000;
+const histCache: { lines?: { at: number; rows: any[] }; streams?: { at: number; rows: any[] } } = {};
+
+async function histLines(): Promise<any[]> {
+  if (histCache.lines && Date.now() - histCache.lines.at < HIST_TTL) return histCache.lines.rows;
+  const rows = await atList(T.lines);
+  histCache.lines = { at: Date.now(), rows };
+  return rows;
+}
+
+async function histStreams(): Promise<any[]> {
+  if (histCache.streams && Date.now() - histCache.streams.at < HIST_TTL) return histCache.streams.rows;
+  const rows = await atList(T.streams, { filterByFormula: "AND({Status} = 'Complete', {Deleted At} = BLANK())" });
+  histCache.streams = { at: Date.now(), rows };
+  return rows;
+}
+
+
 // Put the card's current binder slot at the front of a show-set line, replacing
 // whatever number is already there. Blank slot leaves the line untouched: a
 // sealed product has no pocket, and a card waiting to be filed is better shown
@@ -28,8 +52,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     atList(T.lines, { filterByFormula: `{Stream Rec Id} = '${params.id}'` }),
     atList(T.time, { filterByFormula: `{Stream Rec Id} = '${params.id}'`, "sort[0][field]": "Start" }),
     getSettings(),
-    isComplete ? Promise.resolve([]) : atList(T.lines),
-    isComplete ? Promise.resolve([]) : atList(T.streams, { filterByFormula: "AND({Status} = 'Complete', {Deleted At} = BLANK())" }),
+    isComplete ? Promise.resolve([]) : histLines(),
+    isComplete ? Promise.resolve([]) : histStreams(),
     atList(T.inventory),
   ]);
   const categoryByProduct: Record<string, string> = {};
