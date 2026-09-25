@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { imageMismatch, imageProductId } from "../cardImage";
+import { imageMismatch, imageProductId } from "./cardImage";
 
 describe("imageProductId", () => {
   it("reads the product out of every url shape we have written", () => {
