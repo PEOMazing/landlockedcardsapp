@@ -106,6 +106,32 @@ export function isShiny(value: number, shine: number): boolean {
   return Number.isFinite(v) && v >= shine;
 }
 
+/** Spins tallied since the last hit landed, and how hot that makes the banner.
+ *
+ *  The streamer taps a button between spins. Nothing infers this: a giveaway,
+ *  a re-spin, a card marked hit by mistake and corrected all mean the count on
+ *  screen and the count in the room would drift apart, and the one on screen is
+ *  the one the audience is reading. A person decides.
+ *
+ *  Heat runs 0 to 6 and is the only thing the banner's look depends on, so the
+ *  escalation is a single number the page can interpolate everything else from.
+ *  It stops at 6: a seventh dry spin is not more on fire than a sixth, and a
+ *  scale with no ceiling is one where the top end has to be guessed at.
+ */
+export const HEAT_MAX = 6;
+
+export function spinsSinceHit(stream: { fields: Record<string, any> }): number {
+  const raw = Number(stream.fields["Spins Since Hit"]);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.floor(raw);
+}
+
+export function heatLevel(spins: number): number {
+  const n = Number(spins);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(HEAT_MAX, Math.floor(n));
+}
+
 export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds {
   return {
     singles: !stream.fields["Board Hide Singles"],
