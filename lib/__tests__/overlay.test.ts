@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { boardKinds, boardLayout, boardSpeed, isOverlayKey, isSingleLine, newOverlayKey, onBoard } from "../overlay";
+import { BOARD_SHINE_MAX, boardKinds, boardLayout, boardShine, boardSpeed, isOverlayKey, isShiny, isSingleLine, newOverlayKey, onBoard } from "../overlay";
 
 const line = (f: Record<string, any>) => ({ fields: { Qty: 1, "Qty Hit": 0, ...f } });
 
@@ -185,5 +185,69 @@ describe("banner scroll speed", () => {
 
   it("ignores junk", () => {
     assert.equal(boardSpeed({ fields: { "Board Speed": "fast" } }), 1);
+  });
+});
+
+describe("which cards get the foil", () => {
+  it("is off on a stream nobody has set it on", () => {
+    // Every show that existed before the shine did renders exactly as it did
+    // before, with no backfill.
+    assert.equal(boardShine({ fields: {} }), 0);
+    assert.equal(boardShine({ fields: { "Board Shine": null } }), 0);
+  });
+
+  it("reads a threshold back as given", () => {
+    assert.equal(boardShine({ fields: { "Board Shine": 50 } }), 50);
+    assert.equal(boardShine({ fields: { "Board Shine": 24.99 } }), 24.99);
+  });
+
+  it("treats zero and negatives as off rather than as a threshold", () => {
+    assert.equal(boardShine({ fields: { "Board Shine": 0 } }), 0);
+    assert.equal(boardShine({ fields: { "Board Shine": -10 } }), 0);
+  });
+
+  it("ignores junk", () => {
+    assert.equal(boardShine({ fields: { "Board Shine": "fifty" } }), 0);
+  });
+
+  it("caps a threshold nothing could ever clear", () => {
+    assert.equal(boardShine({ fields: { "Board Shine": 9e9 } }), BOARD_SHINE_MAX);
+  });
+
+  it("foils a card at or above the number, same as the hit rule", () => {
+    // "Fifty dollars and up" said out loud includes fifty. The board already
+    // reads its hit threshold that way and two different rules for two
+    // thresholds on one screen is a trap.
+    assert.equal(isShiny(50, 50), true);
+    assert.equal(isShiny(50.01, 50), true);
+    assert.equal(isShiny(340, 50), true);
+  });
+
+  it("leaves a card under the number flat", () => {
+    assert.equal(isShiny(49.99, 50), false);
+    assert.equal(isShiny(12, 50), false);
+    assert.equal(isShiny(0, 50), false);
+  });
+
+  it("foils nothing at all when the shine is off", () => {
+    // Off has to be one check rather than a threshold of zero that every card
+    // clears, which would turn the whole board to foil.
+    assert.equal(isShiny(340, 0), false);
+    assert.equal(isShiny(0, 0), false);
+    assert.equal(isShiny(340, -1), false);
+  });
+
+  it("leaves an unpriced card flat instead of guessing", () => {
+    assert.equal(isShiny(NaN, 50), false);
+    assert.equal(isShiny(undefined as any, 50), false);
+    assert.equal(isShiny("lots" as any, 50), false);
+  });
+
+  it("is a separate tier from the hit threshold, not a replacement", () => {
+    // A $12 card is still a hit and still belongs on the board; it just does
+    // not get to look like the $340 one.
+    const card = { fields: { Qty: 1, "Qty Hit": 0, "Market Price Snapshot": 12 } };
+    assert.equal(onBoard(card, { singles: true, sealed: true }, 10), true);
+    assert.equal(isShiny(12, 50), false);
   });
 });
