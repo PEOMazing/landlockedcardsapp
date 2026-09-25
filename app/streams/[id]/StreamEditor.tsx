@@ -11,6 +11,7 @@ import Thumb from "@/components/Thumb";
 import { toast } from "@/components/Toaster";
 import StoreSales from "@/components/StoreSales";
 import WhatnotSync, { type SharedFile } from "@/components/WhatnotSync";
+import { splitByKind } from "@/lib/calc";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -197,8 +198,11 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const unpricedQty = base.filter((l) => !l.isGiveaway && !(l.market > 0)).reduce((a, l) => a + l.qty, 0);
     const showBuy = lines.some((l) => typeof l.buy === "number"); // admin only
     const buyCost = base.reduce((a, l) => a + l.qty * (l.buy ?? 0), 0);
+    // Splits the product at the top of the P&L into cards and sealed. Same
+    // set of lines, so the two always add back up to totalValue.
+    const kinds = splitByKind(base);
     return {
-      cfg, spots, unpricedQty, givvyQty, givvyValue, totalValue, showBuy,
+      cfg, spots, unpricedQty, givvyQty, givvyValue, totalValue, showBuy, kinds,
       buyCost: showBuy ? buyCost : null,
       valuePerSpot: spots > 0 ? totalValue / spots : 0,
       breakEven: spots > 0 ? (totalValue / spots) * cfg.breakevenMult : 0,
@@ -595,6 +599,33 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             <div className="flex justify-between gap-6 border-t border-edge pt-1.5 font-semibold">
               <span>Product sold this show</span>
               <span className="num">{$(productSold)}</span>
+            </div>
+
+            {/* What the product at the top is made of. Worth its own two lines
+                because singles and sealed restock completely differently: a
+                show that is mostly cards needs the binder pulled and repriced
+                before the next one, and a glance here says which kind of show
+                this was without counting the set by hand. */}
+            <div className="pt-4 space-y-1.5">
+              <div className="text-dim text-xs">What the product at start is made of</div>
+              <div className="flex justify-between gap-6">
+                <span className="text-dim">
+                  Singles value
+                  {m.kinds.singlesQty > 0 && (
+                    <span className="text-dim/60"> ({m.kinds.singlesQty} card{m.kinds.singlesQty === 1 ? "" : "s"})</span>
+                  )}
+                </span>
+                <span className="num">{$(m.kinds.singlesValue)}</span>
+              </div>
+              <div className="flex justify-between gap-6">
+                <span className="text-dim">
+                  Sealed value
+                  {m.kinds.sealedQty > 0 && (
+                    <span className="text-dim/60"> ({m.kinds.sealedQty} item{m.kinds.sealedQty === 1 ? "" : "s"})</span>
+                  )}
+                </span>
+                <span className="num">{$(m.kinds.sealedValue)}</span>
+              </div>
             </div>
           </div>
 
