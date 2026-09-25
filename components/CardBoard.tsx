@@ -33,6 +33,10 @@ export default function CardBoard({
   const [layout, setLayout] = useState<"grid" | "banner">("grid");
   const [hitThreshold, setHitThreshold] = useState(0);
   const [speed, setSpeed] = useState(1);
+  // The price at which a card starts to shine. 0 is off, and it is a real
+  // value rather than a blank, so it round-trips like any other setting.
+  const [shine, setShine] = useState(0);
+  const [shineDraft, setShineDraft] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<string>("");
 
@@ -45,6 +49,10 @@ export default function CardBoard({
       if (d.kinds) setKinds(d.kinds);
       if (d.layout) setLayout(d.layout);
       if (Number(d.speed) > 0) setSpeed(Number(d.speed));
+      if (Number.isFinite(Number(d.shine))) {
+        setShine(Number(d.shine));
+        setShineDraft(Number(d.shine) > 0 ? String(Number(d.shine)) : "");
+      }
       if (typeof d.hitThreshold === "number") setHitThreshold(d.hitThreshold);
     } catch {}
   }, [streamId]);
@@ -61,6 +69,10 @@ export default function CardBoard({
   const showing = remaining.filter((l) => !l.offBoard && kindOk(l));
   const singlesLeft = remaining.filter((l) => l.singleRecId).length;
   const sealedLeft = remaining.length - singlesLeft;
+  // What the streamer is about to see, counted the same way the board counts
+  // it. Worth showing: "$50 and up" means nothing until you know it is four
+  // cards tonight and twenty-six tomorrow.
+  const shinyCount = shine > 0 ? showing.filter((l) => (l.market || 0) >= shine).length : 0;
 
   async function setBoardSpeed(next: number) {
     const prev = speed;
@@ -71,6 +83,22 @@ export default function CardBoard({
       body: JSON.stringify({ speed: next }),
     });
     if (!r.ok) { setSpeed(prev); toast("Could not change the speed"); }
+  }
+
+  async function setBoardShine(next: number) {
+    const prev = shine;
+    setShine(next);
+    setShineDraft(next > 0 ? String(next) : "");
+    const r = await fetch(`/api/streams/${streamId}/overlay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shine: next }),
+    });
+    if (!r.ok) {
+      setShine(prev);
+      setShineDraft(prev > 0 ? String(prev) : "");
+      toast("Could not change the shine");
+    }
   }
 
   async function setBoardLayout(next: "grid" | "banner") {
@@ -218,6 +246,52 @@ export default function CardBoard({
           </button>
         </div>
       </div>
+
+      {/* Which cards get the foil treatment. Priced rather than counted, so it
+          keeps meaning the same thing as the set changes underneath it. */}
+      <div className="flex items-center gap-1 flex-wrap text-xs">
+        <span className="text-dim">shine at</span>
+        <div className={`flex items-center gap-1 rounded border px-1.5 py-0.5 ${shine > 0 ? "border-foil/60 bg-foil/10" : "border-edge"}`}>
+          <span className={shine > 0 ? "text-foil" : "text-dim"}>$</span>
+          <input
+            className="input !w-16 !px-1 !py-0.5 !text-xs num"
+            inputMode="decimal"
+            placeholder="off"
+            value={shineDraft}
+            onChange={(e) => setShineDraft(e.target.value)}
+            onBlur={() => {
+              const n = Math.max(0, parseFloat(shineDraft) || 0);
+              if (n !== shine) setBoardShine(n);
+              else setShineDraft(shine > 0 ? String(shine) : "");
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+          />
+        </div>
+        {[0, 25, 50, 100, 250].map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setBoardShine(v)}
+            className={`px-2 py-0.5 rounded border num ${
+              shine === v ? "border-foil text-foil" : "border-edge text-dim hover:text-body"
+            }`}
+          >
+            {v === 0 ? "off" : `$${v}`}
+          </button>
+        ))}
+        <span className="text-dim">
+          {shine > 0
+            ? `${shinyCount} card${shinyCount === 1 ? "" : "s"} on screen will foil`
+            : "cards render flat"}
+        </span>
+      </div>
+      {shinyCount > 12 && (
+        <p className="text-warn text-xs">
+          That is a lot of cards shimmering at once. It is your streaming machine drawing every
+          frame of it, so if OBS starts dropping frames, raise the number until only the chase
+          cards foil.
+        </p>
+      )}
 
       {/* Only means anything to the banner, so it only appears for the banner. */}
       {layout === "banner" && (
