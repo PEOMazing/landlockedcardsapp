@@ -14,6 +14,7 @@ const $ = (n: number) => `$${(n || 0).toFixed(2)}`;
 type Line = {
   id: string; name: string; qty: number; qtyHit: number; market: number;
   isGiveaway: boolean; isStore?: boolean; soldPrice?: number; image?: string; offBoard?: boolean;
+  singleRecId?: string;
 };
 
 export default function LiveClient({ id }: { id: string }) {
