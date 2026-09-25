@@ -32,6 +32,7 @@ export default function CardBoard({
   const [kinds, setKinds] = useState({ singles: true, sealed: true });
   const [layout, setLayout] = useState<"grid" | "banner">("grid");
   const [hitThreshold, setHitThreshold] = useState(0);
+  const [speed, setSpeed] = useState(1);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<string>("");
 
@@ -43,6 +44,7 @@ export default function CardBoard({
       setUrl(d.url || "");
       if (d.kinds) setKinds(d.kinds);
       if (d.layout) setLayout(d.layout);
+      if (Number(d.speed) > 0) setSpeed(Number(d.speed));
       if (typeof d.hitThreshold === "number") setHitThreshold(d.hitThreshold);
     } catch {}
   }, [streamId]);
@@ -59,6 +61,17 @@ export default function CardBoard({
   const showing = remaining.filter((l) => !l.offBoard && kindOk(l));
   const singlesLeft = remaining.filter((l) => l.singleRecId).length;
   const sealedLeft = remaining.length - singlesLeft;
+
+  async function setBoardSpeed(next: number) {
+    const prev = speed;
+    setSpeed(next);
+    const r = await fetch(`/api/streams/${streamId}/overlay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speed: next }),
+    });
+    if (!r.ok) { setSpeed(prev); toast("Could not change the speed"); }
+  }
 
   async function setBoardLayout(next: "grid" | "banner") {
     if (next === layout) return;
@@ -205,6 +218,27 @@ export default function CardBoard({
           </button>
         </div>
       </div>
+
+      {/* Only means anything to the banner, so it only appears for the banner. */}
+      {layout === "banner" && (
+        <div className="flex items-center gap-1 flex-wrap text-xs">
+          <span className="text-dim">scroll speed</span>
+          {[0.75, 1, 1.25, 1.5, 1.75, 2, 3].map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setBoardSpeed(m)}
+              className={`px-2 py-0.5 rounded border num ${
+                Math.abs(speed - m) < 0.01
+                  ? "border-foil text-foil"
+                  : "border-edge text-dim hover:text-body"
+              }`}
+            >
+              {m}x
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 text-xs">
         <button
