@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { T, atList } from "@/lib/airtable";
-import { onBoard, streamForOverlayKey } from "@/lib/overlay";
+import { boardKinds, onBoard, streamForOverlayKey } from "@/lib/overlay";
+import { bigCardImage } from "@/lib/cardImage";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,8 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
     filterByFormula: `{Stream Rec Id} = '${stream.id}'`,
   }).catch(() => []);
 
-  const live = lineRows.filter(onBoard);
+  const kinds = boardKinds(stream);
+  const live = lineRows.filter((l) => onBoard(l, kinds));
 
   // Card art lives on the Singles record, not the line, so the images have to
   // be fetched. One query for the lot rather than one per card: a 40-card wheel
@@ -58,20 +60,27 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       const image = imageBySingle[singleId] || imageByProduct[productId] || "";
       return {
         id: l.id,
-        image,
-        price: Number(l.fields["Market Price Snapshot"]) || 0,
+        // The big version for the tile, the stored thumbnail as a fallback:
+        // this is somebody else's CDN and a missing size must not leave a hole
+        // on stream.
+        image: bigCardImage(image),
+        thumb: image,
         // A line holding three copies is three chances on the board, so it
         // draws three tiles rather than one with a quiet "x3" nobody reads.
         left: Math.max(0, (Number(l.fields["Qty"]) || 0) - (Number(l.fields["Qty Hit"]) || 0)),
+        // Not shown on the board - the price tags came off - but it still
+        // decides the order, so the best card leads.
+        value: Number(l.fields["Market Price Snapshot"]) || 0,
       };
     })
     // Art is the whole point; a tile with no picture is a grey hole on stream.
     .filter((c) => c.image)
-    .sort((a, b) => b.price - a.price);
+    .sort((a, b) => b.value - a.value);
 
   return NextResponse.json(
     {
       title: String(stream.fields["Title"] || ""),
+      kinds,
       cards,
       count: cards.reduce((n, c) => n + c.left, 0),
     },
