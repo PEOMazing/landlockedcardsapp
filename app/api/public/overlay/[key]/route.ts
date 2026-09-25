@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { T, atList } from "@/lib/airtable";
-import { boardKinds, onBoard, streamForOverlayKey } from "@/lib/overlay";
+import { boardKinds, boardLayout, onBoard, streamForOverlayKey } from "@/lib/overlay";
+import { getSettings } from "@/lib/settings";
 import { bigCardImage } from "@/lib/cardImage";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,11 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
   }).catch(() => []);
 
   const kinds = boardKinds(stream);
-  const live = lineRows.filter((l) => onBoard(l, kinds));
+  // One definition of a hit for the whole app: the board shows exactly what the
+  // hit stats count, so the two can never tell a viewer different things.
+  const settings = await getSettings().catch(() => null);
+  const hitThreshold = Number(settings?.hit_threshold) || 0;
+  const live = lineRows.filter((l) => onBoard(l, kinds, hitThreshold));
 
   // Card art lives on the Singles record, not the line, so the images have to
   // be fetched. One query for the lot rather than one per card: a 40-card wheel
@@ -81,6 +86,8 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
     {
       title: String(stream.fields["Title"] || ""),
       kinds,
+      layout: boardLayout(stream),
+      hitThreshold,
       cards,
       count: cards.reduce((n, c) => n + c.left, 0),
     },
