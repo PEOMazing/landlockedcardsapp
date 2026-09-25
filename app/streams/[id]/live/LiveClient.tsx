@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "@/components/Toaster";
+import CardBoard from "@/components/CardBoard";
 
 // Live show mode: everything a streamer needs mid-show and nothing else.
 // The elapsed clock runs from the Start stream punch, sales numbers save
@@ -12,7 +13,7 @@ const $ = (n: number) => `$${(n || 0).toFixed(2)}`;
 
 type Line = {
   id: string; name: string; qty: number; qtyHit: number; market: number;
-  isGiveaway: boolean; isStore?: boolean; soldPrice?: number; image?: string;
+  isGiveaway: boolean; isStore?: boolean; soldPrice?: number; image?: string; offBoard?: boolean;
 };
 
 export default function LiveClient({ id }: { id: string }) {
@@ -200,6 +201,8 @@ export default function LiveClient({ id }: { id: string }) {
           </span>
         </section>
       )}
+
+      <CardBoard streamId={id} lines={setLines_} onChanged={load} />
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-3">
