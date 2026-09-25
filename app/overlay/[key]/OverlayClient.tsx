@@ -288,7 +288,10 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
             rgba(0,170,255,.65) 54%, rgba(180,60,255,.60) 72%, rgba(255,0,140,.65) 100%);
           background-size: 260% 260%;
           mix-blend-mode: overlay;
-          opacity: .42;
+          /* Low. At anything like full strength the rainbow stops reading as
+             a sheen on the surface and starts reading as a colour filter over
+             the art, and a purple Espeon is not what anybody is spinning for. */
+          opacity: .24;
           animation: llcHolo 7.2s ease-in-out infinite;
           animation-delay: calc(var(--d, 0s) * -1);
         }
@@ -297,16 +300,23 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           50%      { background-position: 100% 50%; }
         }
 
+        /* Two grids of specks rather than one. A single tiled gradient is a
+           perfectly regular dot grid, and the eye finds it instantly - it
+           reads as a dirty lens, not as glitter. Two layers at sizes that do
+           not divide into each other, drifting in different directions, never
+           line up long enough to look like a pattern. */
         .llc-sparkle {
-          background-image: radial-gradient(circle, rgba(255,255,255,.95) .5px, transparent 1.4px);
-          background-size: 6.5% 4.6%;
+          background-image:
+            radial-gradient(circle, rgba(255,255,255,.90) .4px, transparent 1px),
+            radial-gradient(circle, rgba(255,255,255,.55) .5px, transparent 1.7px);
+          background-size: 9.7% 6.3%, 17.3% 12.9%;
           mix-blend-mode: screen;
-          animation: llcSparkle 2.9s ease-in-out infinite;
+          animation: llcSparkle 3.4s ease-in-out infinite;
           animation-delay: calc(var(--d, 0s) * -1);
         }
         @keyframes llcSparkle {
-          0%, 100% { opacity: .07; background-position: 0% 0%; }
-          50%      { opacity: .40; background-position: 38% 26%; }
+          0%, 100% { opacity: .05; background-position: 0% 0%, 40% 20%; }
+          50%      { opacity: .21; background-position: 25% 18%, 12% 44%; }
         }
 
         /* The band is wider and taller than the card and runs off both
