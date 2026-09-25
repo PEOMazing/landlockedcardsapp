@@ -50,6 +50,7 @@ function bestColumns(n: number, w: number, h: number, gap: number): number {
 export default function OverlayClient({ apiKey }: { apiKey: string }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [layout, setLayout] = useState<"grid" | "banner">("grid");
+  const [speed, setSpeed] = useState(1);
   const [gone, setGone] = useState(false);
   const [size, setSize] = useState({ w: 1920, h: 980 });
   const gridRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
       const d = await r.json();
       setGone(false);
       setLayout(d.layout === "banner" ? "banner" : "grid");
+      setSpeed(Number(d.speed) > 0 ? Number(d.speed) : 1);
       setCards(Array.isArray(d.cards) ? d.cards : []);
     } catch {
       // A blip on someone's home wifi should leave the last good board on
@@ -107,7 +109,9 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
   // Nothing to scroll when the whole board already fits. Motion for its own
   // sake is just something else for a viewer to track.
   const scrolls = runWidth > size.w;
-  const duration = Math.max(6, runWidth / BANNER_PX_PER_SEC);
+  // Speed is a multiplier on the pace, so doubling it halves the time a full
+  // run takes. The floor keeps a two-card board from becoming a blur.
+  const duration = Math.max(4, runWidth / (BANNER_PX_PER_SEC * speed));
 
   const tile = (c: Card, w?: number) => (
     <div
