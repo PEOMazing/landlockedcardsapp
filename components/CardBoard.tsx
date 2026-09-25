@@ -30,6 +30,8 @@ export default function CardBoard({
 }) {
   const [url, setUrl] = useState("");
   const [kinds, setKinds] = useState({ singles: true, sealed: true });
+  const [layout, setLayout] = useState<"grid" | "banner">("grid");
+  const [hitThreshold, setHitThreshold] = useState(0);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState<string>("");
 
@@ -40,18 +42,35 @@ export default function CardBoard({
       const d = await r.json();
       setUrl(d.url || "");
       if (d.kinds) setKinds(d.kinds);
+      if (d.layout) setLayout(d.layout);
+      if (typeof d.hitThreshold === "number") setHitThreshold(d.hitThreshold);
     } catch {}
   }, [streamId]);
   useEffect(() => { loadUrl(); }, [loadUrl]);
 
   // Only cards that could be on the board. Giveaways and store sales never
-  // belong there, and a card with no art cannot be drawn.
-  const eligible = lines.filter((l) => !l.isGiveaway && !l.isStore && l.image);
+  // belong there, a card with no art cannot be drawn, and anything under the
+  // hit threshold is not what the board is advertising.
+  const eligible = lines.filter(
+    (l) => !l.isGiveaway && !l.isStore && l.image && (l.market || 0) >= hitThreshold,
+  );
   const remaining = eligible.filter((l) => l.qty - l.qtyHit > 0);
   const kindOk = (l: Line) => (l.singleRecId ? kinds.singles : kinds.sealed);
   const showing = remaining.filter((l) => !l.offBoard && kindOk(l));
   const singlesLeft = remaining.filter((l) => l.singleRecId).length;
   const sealedLeft = remaining.length - singlesLeft;
+
+  async function setBoardLayout(next: "grid" | "banner") {
+    if (next === layout) return;
+    const prev = layout;
+    setLayout(next);
+    const r = await fetch(`/api/streams/${streamId}/overlay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ layout: next }),
+    });
+    if (!r.ok) { setLayout(prev); toast("Could not change the layout"); }
+  }
 
   async function setKind(which: "singles" | "sealed", on: boolean) {
     // Never let both go off - that is an empty board and always a mistake
@@ -131,6 +150,7 @@ export default function CardBoard({
         <span className="text-dim text-xs">
           <span className="num">{showing.length}</span> of{" "}
           <span className="num">{remaining.length}</span> on screen
+          {hitThreshold > 0 && <> · hits are ${hitThreshold}+</>}
         </span>
       </div>
 
@@ -140,10 +160,11 @@ export default function CardBoard({
         <a className="btn !px-3 !py-1 text-xs" href={url || "#"} target="_blank" rel="noreferrer">Preview</a>
       </div>
       <p className="text-dim text-xs">
-        In OBS: Sources, add a Browser Source, paste the link, set the width and height to your
-        canvas (1920 x 1080 - not smaller, or the art renders soft) and tick Shutdown source when
-        not visible. The background is fully transparent, the tiles grow as cards come off, and a
-        card disappears the moment you mark it hit.
+        In OBS: Sources, add a Browser Source, paste the link and tick Shutdown source when not
+        visible. Size it to your full canvas for the grid, or something like 1920 x 420 for the
+        scrolling banner - the cards scale to whatever height you give it, so do not go small or
+        the art renders soft. The background is fully transparent and a card disappears the moment
+        you mark it hit.
       </p>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -163,6 +184,26 @@ export default function CardBoard({
           {kinds.sealed ? "Including sealed" : "Include sealed"}
           <span className="num ml-1.5 opacity-70">{sealedLeft}</span>
         </button>
+
+        <div className="flex items-center gap-1 rounded-lg border border-edge px-2 py-0.5 text-xs ml-auto">
+          <span className="text-dim">layout</span>
+          <button
+            type="button"
+            className={layout === "grid" ? "text-foil px-1" : "text-dim hover:text-body px-1"}
+            onClick={() => setBoardLayout("grid")}
+            title="Fills the whole canvas and grows the cards as the board empties"
+          >
+            grid
+          </button>
+          <button
+            type="button"
+            className={layout === "banner" ? "text-foil px-1" : "text-dim hover:text-body px-1"}
+            onClick={() => setBoardLayout("banner")}
+            title="One row that scrolls, for a strip along the bottom of the scene. Set the Browser Source to something like 1920 x 420."
+          >
+            scrolling banner
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 text-xs">
