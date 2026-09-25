@@ -24,6 +24,9 @@ type LineT = {
 export default function StreamEditor({ id, isAdmin = false }: { id: string; isAdmin?: boolean }) {
   const [data, setData] = useState<any>(null);
   const [lines, setLines] = useState<LineT[]>([]);
+  // Collapsed by default: most visits to this page are to build or run a show,
+  // not to settle one.
+  const [manageOpen, setManageOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState<any>({});
   const [saved, setSaved] = useState(false);
@@ -43,7 +46,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
   const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
   const [resultsErr, setResultsErr] = useState("");
-  const [setSort, setSetSort] = useState<"board" | "name" | "price">("board");
+  const [setSort, setSetSort] = useState<"board" | "name" | "price" | "hitValue">("board");
   const [pasteText, setPasteText] = useState("");
   const [pasteMsg, setPasteMsg] = useState("");
   const [returnArmed, setReturnArmed] = useState(false);
@@ -51,7 +54,14 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   // one Whatnot upload feeds both the show set and the store sales
   const [whatnotFile, setWhatnotFile] = useState<SharedFile | null>(null);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    try { setManageOpen(localStorage.getItem("llcManageShow") === "1"); } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("llcManageShow", manageOpen ? "1" : "0"); } catch {}
+  }, [manageOpen]);
+
+  const load = useCallback(async () =>{
     const res = await fetch(`/api/streams/${id}`);
     if (!res.ok) {
       setLoadErr(res.status === 403 ? "You do not have access to this stream." : "Stream not found.");
@@ -698,6 +708,33 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         ].filter(Boolean)) as { id: string; name: string }[]}
       />
 
+      {/* Everything that happens after the show, folded away.
+          This page is used in three different moods - building a set, running
+          a show, and settling up afterwards - and only the last one needs the
+          earnings boxes, the Whatnot uploads and the store sales. Left open
+          they push the show set itself below the fold on every visit, so they
+          collapse, and the page remembers which way you left it. */}
+      <section className="card !p-0 overflow-hidden">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between gap-3 px-5 py-3 text-left hover:bg-edge/30"
+          onClick={() => setManageOpen((v) => !v)}
+          aria-expanded={manageOpen}
+        >
+          <span className="label !mb-0">Manage show</span>
+          <span className="flex items-center gap-3">
+            <span className="text-dim text-xs">
+              {manageOpen ? "hide" : "earnings, Whatnot uploads, store sales"}
+            </span>
+            <span className={`text-dim transition-transform ${manageOpen ? "rotate-180" : ""}`} aria-hidden>
+              v
+            </span>
+          </span>
+        </button>
+      </section>
+
+      {manageOpen && (
+        <>
       {/* Post-stream results */}
       <section className="card p-5 space-y-4">
         <h2 className="label">After the stream</h2>
@@ -869,13 +906,16 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         onChange={load}
       />
 
+        </>
+      )}
+
       {/* Show set builder */}
       <section className="card p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="label">Show set</h2>
             <div className="flex gap-1 text-[11px]">
-              {([["board", "Board"], ["name", "A-Z"], ["price", "Price"]] as const).map(([k, label]) => (
+              {([["board", "Slot"], ["name", "A-Z"], ["price", "Price"], ["hitValue", "Hit value"]] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setSetSort(k)}
                   className={`px-2 py-0.5 rounded border ${setSort === k ? "border-foil text-foil" : "border-edge text-dim hover:text-paper"}`}>
                   {label}
@@ -946,9 +986,24 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               </tr>
             </thead>
             <tbody>
-              {(setSort === "board" ? (lines as any[]).filter((l) => !l.isStore) : ([...lines] as any[]).filter((l) => !l.isStore).sort((a, b) =>
-                setSort === "name" ? a.name.localeCompare(b.name) : (b.market || 0) - (a.market || 0)
-              )).map((l) => (
+              {([...lines] as any[]).filter((l) => !l.isStore).sort((a, b) =>
+                setSort === "name"
+                  ? a.name.localeCompare(b.name)
+                  : setSort === "price"
+                  ? (b.market || 0) - (a.market || 0)
+                  // What is still on the table, biggest first: a $30 card with
+                  // two copies left outranks a $40 card that has already been
+                  // hit. Price sorts by the card, this sorts by the prize pool.
+                  : setSort === "hitValue"
+                  ? Math.max((b.qty || 0) - (b.qtyHit || 0), 0) * (b.market || 0) -
+                    Math.max((a.qty || 0) - (a.qtyHit || 0), 0) * (a.market || 0)
+                  // Slot order, so the set always reads the way the binder is
+                  // filed no matter what order the cards were added in. Sealed
+                  // product and unfiled cards have no slot and sort to the end,
+                  // by name, rather than all colliding at zero.
+                  : (a.slot ?? Number.MAX_SAFE_INTEGER) - (b.slot ?? Number.MAX_SAFE_INTEGER)
+                    || a.name.localeCompare(b.name)
+              ).map((l) => (
                 <tr key={l.id} className={l.isGiveaway ? "bg-givvy/5" : ""}>
                   <td className="!font-medium">
                     {l.image && <Thumb src={l.image} size={28} className="mr-2" />}
