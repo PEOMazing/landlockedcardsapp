@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isOverlayKey, newOverlayKey, onBoard } from "../overlay";
+import { boardKinds, isOverlayKey, isSingleLine, newOverlayKey, onBoard } from "../overlay";
 
 const line = (f: Record<string, any>) => ({ fields: { Qty: 1, "Qty Hit": 0, ...f } });
 
@@ -68,5 +68,51 @@ describe("what stays on the board", () => {
 
   it("does not put a line with no quantity on the board", () => {
     assert.equal(onBoard({ fields: {} }), false);
+  });
+});
+
+describe("showing singles, sealed, or both", () => {
+  const single = { fields: { Qty: 1, "Qty Hit": 0, "Single Rec Id": "recAbc123" } };
+  const sealed = { fields: { Qty: 1, "Qty Hit": 0 } };
+
+  it("tells a single card from sealed product by what the line points at", () => {
+    assert.equal(isSingleLine(single), true);
+    assert.equal(isSingleLine(sealed), false);
+    assert.equal(isSingleLine({ fields: { "Single Rec Id": "  " } }), false);
+  });
+
+  it("includes both on a stream nobody has touched the setting on", () => {
+    // The flags are stored inverted for exactly this: every show that existed
+    // before the toggles did still shows everything.
+    assert.deepEqual(boardKinds({ fields: {} }), { singles: true, sealed: true });
+    assert.equal(onBoard(single), true);
+    assert.equal(onBoard(sealed), true);
+  });
+
+  it("reads the stored flags as hide, not show", () => {
+    assert.deepEqual(boardKinds({ fields: { "Board Hide Sealed": true } }), { singles: true, sealed: false });
+    assert.deepEqual(boardKinds({ fields: { "Board Hide Singles": true } }), { singles: false, sealed: true });
+  });
+
+  it("drops sealed product from a singles-only board", () => {
+    const kinds = { singles: true, sealed: false };
+    assert.equal(onBoard(single, kinds), true);
+    assert.equal(onBoard(sealed, kinds), false);
+  });
+
+  it("drops singles from a sealed-only board", () => {
+    const kinds = { singles: false, sealed: true };
+    assert.equal(onBoard(single, kinds), false);
+    assert.equal(onBoard(sealed, kinds), true);
+  });
+
+  it("shows an empty board when both are off rather than falling back to all", () => {
+    const kinds = { singles: false, sealed: false };
+    assert.equal(onBoard(single, kinds), false);
+    assert.equal(onBoard(sealed, kinds), false);
+  });
+
+  it("still drops a hit card whatever the kind filter says", () => {
+    assert.equal(onBoard({ fields: { Qty: 1, "Qty Hit": 1, "Single Rec Id": "recX" } }, { singles: true, sealed: true }), false);
   });
 });
