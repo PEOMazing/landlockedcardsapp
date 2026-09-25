@@ -64,6 +64,20 @@ export type BoardLayout = "grid" | "banner";
 export const boardLayout = (stream: { fields: Record<string, any> }): BoardLayout =>
   stream.fields["Board Banner"] ? "banner" : "grid";
 
+/** How fast the banner scrolls, as a multiple of the default pace.
+ *
+ *  Blank reads as 1, so no stream needed a backfill, and the range is clamped
+ *  rather than trusted: a zero or a negative would stop the banner dead or run
+ *  it backwards, and a typo of 40 would strobe a live audience. */
+export const BOARD_SPEED_MIN = 0.25;
+export const BOARD_SPEED_MAX = 4;
+
+export function boardSpeed(stream: { fields: Record<string, any> }): number {
+  const raw = Number(stream.fields["Board Speed"]);
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  return Math.min(BOARD_SPEED_MAX, Math.max(BOARD_SPEED_MIN, Math.round(raw * 100) / 100));
+}
+
 export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds {
   return {
     singles: !stream.fields["Board Hide Singles"],
