@@ -38,6 +38,15 @@ const CONDITION_MULT: Record<string, number> = { NM: 1, Raw: 1, LP: 0.9, MP: 0.8
 
 export const isRawCondition = (c: string) => CONDITION_MULT[String(c || "Raw")] !== undefined;
 
+/** NM market discounted by a flat guess at what the condition costs. The last
+ *  resort in the pipeline and the only step that does not describe the card we
+ *  actually hold, so it is always returned with its multiplier attached and
+ *  always labelled est. by the caller. */
+export function conditionEstimate(market: number, cond: string): { price: number; mult: number } {
+  const mult = CONDITION_MULT[cond] ?? 1;
+  return { price: Math.round(market * mult * 100) / 100, mult };
+}
+
 // The same set, for building Airtable filter formulas. Derived from
 // CONDITION_MULT so the query and the guard can never disagree about which
 // conditions the pipeline can actually price.
@@ -511,7 +520,7 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
     // condition, so this is a condition-free number times a flat guess. It is
     // a placeholder until the card sells or someone prices it by hand.
     estimated = true;
-    fields["Comp"] = Math.round(card.market * mult * 100) / 100;
+    fields["Comp"] = conditionEstimate(card.market, cond).price;
     fields["Comp Source"] = fallbackCompSource(card.variant || "", mult, cond);
     // No sales means the old sales list is stale and would be read as current.
     fields["Comp Detail"] = "";
