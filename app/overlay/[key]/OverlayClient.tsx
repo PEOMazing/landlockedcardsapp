@@ -20,6 +20,10 @@ type Card = { id: string; image: string; thumb: string; left: number };
 
 const POLL_MS = 3000;
 
+// Banner scroll speed, pixels a second. Slow enough to read a card as it goes
+// past and fast enough that a short board does not look frozen.
+const BANNER_PX_PER_SEC = 70;
+
 // Pokemon card art is 734x1024, near enough to 5:7.
 const CARD_RATIO = 5 / 7;
 
@@ -45,6 +49,7 @@ function bestColumns(n: number, w: number, h: number, gap: number): number {
 
 export default function OverlayClient({ apiKey }: { apiKey: string }) {
   const [cards, setCards] = useState<Card[] | null>(null);
+  const [layout, setLayout] = useState<"grid" | "banner">("grid");
   const [gone, setGone] = useState(false);
   const [size, setSize] = useState({ w: 1920, h: 980 });
   const gridRef = useRef<HTMLDivElement>(null);
@@ -56,6 +61,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
       if (!r.ok) return;
       const d = await r.json();
       setGone(false);
+      setLayout(d.layout === "banner" ? "banner" : "grid");
       setCards(Array.isArray(d.cards) ? d.cards : []);
     } catch {
       // A blip on someone's home wifi should leave the last good board on
@@ -92,6 +98,49 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
   const gap = tiles.length > 24 ? 8 : tiles.length > 8 ? 14 : 22;
   const cols = bestColumns(tiles.length, size.w, size.h, gap);
   const empty = gone || tiles.length === 0;
+
+  // Banner geometry. Tile width follows the strip height, so the whole thing
+  // scales with whatever size the Browser Source is set to - 1920x400 gives a
+  // lower third, 1920x1080 gives very large cards.
+  const bannerTileW = Math.max(1, (size.h - gap * 2) * CARD_RATIO);
+  const runWidth = tiles.length * (bannerTileW + gap);
+  // Nothing to scroll when the whole board already fits. Motion for its own
+  // sake is just something else for a viewer to track.
+  const scrolls = runWidth > size.w;
+  const duration = Math.max(6, runWidth / BANNER_PX_PER_SEC);
+
+  const tile = (c: Card, w?: number) => (
+    <div
+      key={c.id}
+      style={{
+        position: "relative",
+        height: "100%",
+        width: w,
+        aspectRatio: w ? undefined : String(CARD_RATIO),
+        flex: w ? "0 0 auto" : undefined,
+        maxWidth: w ? undefined : "100%",
+        // The card art is the thing; the glow just lifts it off whatever
+        // is behind it in the scene so it does not disappear into a busy
+        // background.
+        filter: "drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 4px 18px rgba(0,0,0,.6))",
+        animation: "llcIn .35s ease-out",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={c.image}
+        alt=""
+        // The big art is a rewrite of the stored URL, so a size this CDN
+        // does not happen to have must fall back rather than leave a hole
+        // on stream. Guarded so a broken thumbnail cannot loop.
+        onError={(e) => {
+          const el = e.currentTarget;
+          if (c.thumb && el.src !== c.thumb) el.src = c.thumb;
+        }}
+        style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "4%" }}
+      />
+    </div>
+  );
 
   return (
     <div
@@ -137,49 +186,48 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
         style={{
           flex: "1 1 auto",
           minHeight: 0,
-          display: "grid",
-          gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gridAutoRows: "1fr",
-          gap,
-          padding: gap,
-          placeItems: "center",
+          ...(layout === "banner"
+            ? { overflow: "hidden", position: "relative" }
+            : {
+                display: "grid",
+                gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                gridAutoRows: "1fr",
+                gap,
+                padding: gap,
+                placeItems: "center",
+              }),
         }}
       >
-        {tiles.map((c) => (
+        {layout === "banner" ? (
+          // Two copies of the run, translated by exactly half. When the first
+          // copy has walked off the left the second is sitting where it
+          // started, so the loop has no seam and no jump.
           <div
-            key={c.id}
             style={{
-              position: "relative",
+              display: "flex",
               height: "100%",
-              aspectRatio: String(CARD_RATIO),
-              maxWidth: "100%",
-              // The card art is the thing; the glow just lifts it off whatever
-              // is behind it in the scene so it does not disappear into a busy
-              // background.
-              filter: "drop-shadow(0 0 10px rgba(0,0,0,.85)) drop-shadow(0 4px 18px rgba(0,0,0,.6))",
-              animation: "llcIn .35s ease-out",
+              width: "max-content",
+              padding: gap,
+              gap,
+              animation: scrolls ? `llcScroll ${duration}s linear infinite` : undefined,
+              justifyContent: scrolls ? undefined : "center",
             }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={c.image}
-              alt=""
-              // The big art is a rewrite of the stored URL, so a size this CDN
-              // does not happen to have must fall back rather than leave a hole
-              // on stream. Guarded so a broken thumbnail cannot loop.
-              onError={(e) => {
-                const el = e.currentTarget;
-                if (c.thumb && el.src !== c.thumb) el.src = c.thumb;
-              }}
-              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "4%" }}
-            />
+            {tiles.map((c) => tile(c, bannerTileW))}
+            {scrolls && tiles.map((c) => tile({ ...c, id: c.id + ":b" }, bannerTileW))}
           </div>
-        ))}
+        ) : (
+          tiles.map((c) => tile(c))
+        )}
       </div>
 
       <style>{`
         html, body { background: transparent !important; margin: 0; overflow: hidden; }
         @keyframes llcIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+        @keyframes llcScroll {
+          from { transform: translateX(0); }
+          to { transform: translateX(-50%); }
+        }
         @keyframes llcFlash {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: .45; transform: scale(.985); }
