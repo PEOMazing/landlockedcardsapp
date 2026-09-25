@@ -5,6 +5,17 @@ import { getSettings } from "@/lib/settings";
 import { toLine, isHitLine } from "@/lib/calc";
 import { syncWheelSinglePrices } from "@/lib/streamSingles";
 
+
+// Put the card's current binder slot at the front of a show-set line, replacing
+// whatever number is already there. Blank slot leaves the line untouched: a
+// sealed product has no pocket, and a card waiting to be filed is better shown
+// with its old number than with none.
+function slotLabel(name: string, slot?: number): string {
+  if (!slot) return name;
+  const tag = `[${String(slot).padStart(4, "0")}]`;
+  return /^\[\d+\]/.test(name) ? name.replace(/^\[\d+\]/, tag) : `${tag} ${name}`;
+}
+
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -33,6 +44,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   // than on an Inventory product. Without this every card on a wheel came back
   // imageless, which is fine for a text list and useless for the OBS board.
   const imageBySingle: Record<string, string> = {};
+  const slotBySingle: Record<string, number> = {};
   const singleIds = Array.from(
     new Set(lineRows.map((l) => String(l.fields["Single Rec Id"] || "")).filter(Boolean)),
   );
@@ -42,6 +54,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     for (const s of singleRows) {
       const url = String(s.fields["Image URL"] || "").trim();
       if (url) imageBySingle[s.id] = url;
+      const slot = Number(s.fields["Slot"]);
+      if (Number.isFinite(slot) && slot > 0) slotBySingle[s.id] = slot;
     }
   }
 
@@ -130,7 +144,17 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       })(),
     },
     lines: lines.map((l, i) => ({
-      id: l.id, name: l.name.replace(/^\d+x\s+/, ""), qty: l.qty, qtyHit: l.qtyHit,
+      id: l.id,
+      // The bracketed number is rewritten from the card's live slot rather than
+      // read from the stored line text. Lines written before the number became
+      // the slot still carry a Card No, and a card that gets refiled moves
+      // pocket - both would otherwise send the packer to the wrong sleeve
+      // forever, since the text is only written once at add time.
+      name: slotLabel(
+        l.name.replace(/^\d+x\s+/, ""),
+        slotBySingle[String(lineRows[i].fields["Single Rec Id"] || "")],
+      ),
+      qty: l.qty, qtyHit: l.qtyHit,
       market: l.market, isGiveaway: l.isGiveaway, isHit: isHitLine(l, settings),
       isStore: !!lineRows[i].fields["Is Store Purchase"],
       soldPrice: lineRows[i].fields["Sold Price"] || 0,
@@ -144,6 +168,14 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
         "",
       // whether the streamer has pulled this card off the OBS board by hand
       offBoard: !!lineRows[i].fields["Off Board"],
+      // Set on a single-card line, blank on sealed. The client has been asking
+      // for this to decide singles-only behaviour and never receiving it, so
+      // every such check has quietly been reading false.
+      singleRecId: String(lineRows[i].fields["Single Rec Id"] || ""),
+      // Binder pocket, which is the number on the sticker and the number the
+      // show set is ordered by. Null on sealed product and on a card not
+      // currently filed in a binder.
+      slot: slotBySingle[String(lineRows[i].fields["Single Rec Id"] || "")] ?? null,
       ...(me.isAdmin ? { buy: l.buy } : {}),
     })),
     config: {
