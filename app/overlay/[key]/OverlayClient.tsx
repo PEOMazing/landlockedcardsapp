@@ -20,9 +20,26 @@ type Card = { id: string; image: string; thumb: string; left: number; shiny?: bo
 
 const POLL_MS = 3000;
 
+// How long each headline holds before the other takes over. Long enough to
+// read twice at a glance, short enough that somebody arriving mid-stream sees
+// both within a few seconds.
+const HEADLINE_MS = 2600;
+
+// Six dry spins is a full blaze. Mirrors HEAT_MAX in lib/overlay, which is
+// where the rule actually lives - this is only a guard on what arrives.
+const HEAT_MAX = 6;
+
 // Banner scroll speed, pixels a second. Slow enough to read a card as it goes
 // past and fast enough that a short board does not look frozen.
 const BANNER_PX_PER_SEC = 70;
+
+// Fixed particle counts. Rendered once and driven entirely by CSS off their
+// index, so a change in heat never remounts them - a remount would restart
+// every animation at the same instant and the fire would visibly hiccup on
+// the spin that lit it.
+const SMOKE = [0, 1, 2, 3, 4, 5];
+const FLAMES = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+const SPARKS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 // Pokemon card art is 734x1024, near enough to 5:7.
 const CARD_RATIO = 5 / 7;
@@ -51,6 +68,11 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [layout, setLayout] = useState<"grid" | "banner">("grid");
   const [speed, setSpeed] = useState(1);
+  // The dry streak the streamer is tallying, and the banner's temperature.
+  const [spins, setSpins] = useState(0);
+  const [heat, setHeat] = useState(0);
+  // Which of the two headlines is up right now.
+  const [alt, setAlt] = useState(false);
   const [gone, setGone] = useState(false);
   const [size, setSize] = useState({ w: 1920, h: 980 });
   const gridRef = useRef<HTMLDivElement>(null);
@@ -64,6 +86,8 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
       setGone(false);
       setLayout(d.layout === "banner" ? "banner" : "grid");
       setSpeed(Number(d.speed) > 0 ? Number(d.speed) : 1);
+      setSpins(Math.max(0, Number(d.spins) || 0));
+      setHeat(Math.max(0, Math.min(HEAT_MAX, Number(d.heat) || 0)));
       setCards(Array.isArray(d.cards) ? d.cards : []);
     } catch {
       // A blip on someone's home wifi should leave the last good board on
@@ -76,6 +100,15 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+
+  // Swap the headline back and forth. Off entirely on a fresh streak: "0 spins
+  // since last hit" is a true sentence that says nothing, and half the banner's
+  // airtime is too expensive to spend on it.
+  useEffect(() => {
+    if (spins <= 0) { setAlt(false); return; }
+    const t = setInterval(() => setAlt((v) => !v), HEADLINE_MS);
+    return () => clearInterval(t);
+  }, [spins]);
 
   // Measured off the grid rather than the window, because the banner takes a
   // slice off the top and tiles sized to the whole viewport would overflow it.
@@ -181,28 +214,43 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
       {/* Nothing at all when the board is empty. A banner over an empty scene
           announcing hits that do not exist is worse than no banner. */}
       {!empty && (
-        <div
-          style={{
-            flex: "0 0 auto",
-            textAlign: "center",
-            padding: "1.4vh 0 0.6vh",
-            fontFamily: '"Space Grotesk", Inter, system-ui, sans-serif',
-            fontWeight: 700,
-            fontSize: "clamp(22px, 5.2vh, 74px)",
-            letterSpacing: ".06em",
-            lineHeight: 1,
-            color: "#FFE9A8",
-            // Heavy outline and glow rather than a panel behind it, so it stays
-            // readable over a bright card or a busy scene without putting an
-            // opaque bar across the shot.
-            textShadow:
-              "0 0 6px rgba(0,0,0,.95), 0 0 18px rgba(0,0,0,.8), 0 3px 0 rgba(0,0,0,.85), 0 0 46px rgba(245,196,81,.55)",
-            WebkitTextStroke: "1px rgba(0,0,0,.55)",
-            animation: "llcFlash 1.15s ease-in-out infinite",
-            whiteSpace: "nowrap",
-          }}
-        >
-          HITS STILL LIVE
+        <div className="llc-headwrap" style={{ ["--h" as any]: heat }}>
+          {/* Everything below is layered around one line of text, back to
+              front: ember glow, smoke, flame tongues, the words, then sparks
+              and lightning over the top. Each layer fades itself in off the
+              same --h, so there is one dial and no stage-by-stage branching. */}
+          <span className="llc-ember" />
+          {heat >= 1 && (
+            <span className="llc-smoke">
+              {SMOKE.map((i) => <i key={i} style={{ ["--i" as any]: i }} />)}
+            </span>
+          )}
+          {heat >= 3 && (
+            <span className="llc-fire">
+              {FLAMES.map((i) => <i key={i} style={{ ["--i" as any]: i }} />)}
+            </span>
+          )}
+
+          <span className="llc-headtext">
+            {spins > 0 && alt
+              ? `${spins} SPIN${spins === 1 ? "" : "S"} SINCE LAST HIT`
+              : "HITS STILL LIVE"}
+          </span>
+
+          {heat >= 2 && (
+            <span className="llc-sparks">
+              {SPARKS.map((i) => <i key={i} style={{ ["--i" as any]: i }} />)}
+            </span>
+          )}
+          {heat >= 4 && (
+            <>
+              <span className="llc-flash" />
+              <svg className="llc-bolt" viewBox="0 0 100 42" preserveAspectRatio="none" aria-hidden>
+                <path d="M15 0 L8 18 L17 18 L5 42 L11 22 L2 22 Z" />
+                <path d="M87 3 L80 20 L89 20 L77 42 L83 25 L74 25 Z" />
+              </svg>
+            </>
+          )}
         </div>
       )}
 
@@ -256,6 +304,188 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
         @keyframes llcFlash {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: .45; transform: scale(.985); }
+        }
+
+        /* ---- the banner, and how it catches fire -----------------------
+           Everything here reads off --h, the dry-spin count clamped to 0-6.
+           Nothing is keyed to a specific stage: each layer sets its own
+           opacity and scale as a function of --h, so the banner ramps
+           continuously instead of jumping between six hand-drawn looks, and
+           there is exactly one number to change to retune the whole thing.
+
+           --h is 0 for most of a good show, and at 0 every one of these
+           resolves to zero opacity or zero amplitude. The calm banner is the
+           same banner, not a different branch. */
+        .llc-headwrap {
+          position: relative;
+          flex: 0 0 auto;
+          padding: 1.4vh 0 0.6vh;
+          text-align: center;
+          isolation: isolate;
+          /* Shake amplitude and lean, both linear in heat. At --h 0 they are
+             0px and 0deg, which makes the shake animation a no-op rather than
+             something that has to be switched off. */
+          --shake: calc(var(--h, 0) * 0.62px);
+          --lean: calc(var(--h, 0) * 0.06deg);
+          animation: llcShake .17s linear infinite;
+        }
+        @keyframes llcShake {
+          0%   { transform: translate(calc(var(--shake) * -1), 0) rotate(calc(var(--lean) * -1)); }
+          25%  { transform: translate(var(--shake), calc(var(--shake) * -.6)) rotate(var(--lean)); }
+          50%  { transform: translate(calc(var(--shake) * -.7), var(--shake)) rotate(0deg); }
+          75%  { transform: translate(calc(var(--shake) * .8), calc(var(--shake) * -.3)) rotate(var(--lean)); }
+          100% { transform: translate(calc(var(--shake) * -1), 0) rotate(calc(var(--lean) * -1)); }
+        }
+
+        .llc-headtext {
+          position: relative;
+          z-index: 3;
+          display: inline-block;
+          font-family: "Space Grotesk", Inter, system-ui, sans-serif;
+          font-weight: 700;
+          font-size: clamp(22px, 5.2vh, 74px);
+          letter-spacing: .06em;
+          line-height: 1;
+          white-space: nowrap;
+          color: #FFE9A8;
+          /* Heavy outline and glow rather than a panel behind it, so it stays
+             readable over a bright card or a busy scene without putting an
+             opaque bar across the shot. The last stop grows with the heat, so
+             the words themselves go from gold to white-hot. */
+          text-shadow:
+            0 0 6px rgba(0,0,0,.95), 0 0 18px rgba(0,0,0,.8),
+            0 3px 0 rgba(0,0,0,.85),
+            0 0 46px rgba(245,196,81,.55),
+            0 0 calc(var(--h, 0) * 11px) rgba(255,110,10,.9);
+          -webkit-text-stroke: 1px rgba(0,0,0,.55);
+          animation: llcFlash 1.15s ease-in-out infinite;
+        }
+
+        /* The heat haze the whole thing sits in. Opacity rather than a colour
+           with a calc alpha, because opacity is the one property that takes a
+           bare calc everywhere without argument. */
+        .llc-ember {
+          position: absolute;
+          inset: -40% -8%;
+          z-index: 0;
+          pointer-events: none;
+          background: radial-gradient(ellipse at 50% 72%,
+            rgba(255,140,25,.8), rgba(255,60,0,.3) 45%, rgba(255,40,0,0) 72%);
+          filter: blur(16px);
+          opacity: calc(var(--h, 0) / 9);
+          animation: llcEmber 1.6s ease-in-out infinite;
+        }
+        @keyframes llcEmber {
+          0%, 100% { transform: scale(1) translateY(0); }
+          50%      { transform: scale(1.09) translateY(-2%); }
+        }
+
+        .llc-smoke, .llc-fire, .llc-sparks { position: absolute; pointer-events: none; }
+
+        /* Smoke is the first sign, and it is grey and slow on purpose: it has
+           to read as "nothing yet" while still telling the room something is
+           building. */
+        .llc-smoke { left: 0; right: 0; bottom: 30%; height: 60%; z-index: 1; }
+        .llc-smoke i {
+          position: absolute;
+          bottom: 0;
+          left: calc(var(--i) * 16% + 8%);
+          width: calc(34px + var(--h, 0) * 4px);
+          aspect-ratio: 1;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(200,200,208,.5), rgba(150,150,160,0) 68%);
+          filter: blur(7px);
+          opacity: 0;
+          animation: llcSmoke 2.8s ease-out infinite;
+          animation-delay: calc(var(--i) * -.47s);
+        }
+        @keyframes llcSmoke {
+          0%   { opacity: 0; transform: translate(0, 20%) scale(.5); }
+          20%  { opacity: .5; }
+          100% { opacity: 0; transform: translate(calc(var(--i) * 3px - 8px), -230%) scale(2); }
+        }
+
+        /* Tongues along the base of the text. They start at a quarter opacity
+           on the third spin and reach full on the sixth, so the fire arrives
+           over three spins rather than switching on. */
+        .llc-fire { left: 0; right: 0; bottom: 2%; height: 92%; z-index: 2; }
+        .llc-fire i {
+          position: absolute;
+          bottom: 0;
+          left: calc(var(--i) * 10.5% + 4%);
+          width: calc(30px + var(--h, 0) * 5px);
+          height: calc(26% + var(--h, 0) * 11%);
+          background: linear-gradient(to top,
+            #fff6c4 0%, #ffd24a 20%, #ff9500 48%, #ff3c00 76%, rgba(255,40,0,0) 100%);
+          border-radius: 50% 50% 46% 46% / 64% 64% 36% 36%;
+          filter: blur(3px);
+          mix-blend-mode: screen;
+          transform-origin: 50% 100%;
+          opacity: calc((var(--h, 0) - 2) / 4);
+          animation: llcFlame .48s ease-in-out infinite alternate;
+          animation-delay: calc(var(--i) * -.093s);
+        }
+        @keyframes llcFlame {
+          from { transform: scaleY(.76) scaleX(1.06) skewX(-5deg); }
+          to   { transform: scaleY(1.26) scaleX(.88) skewX(6deg); }
+        }
+
+        /* Embers thrown off the top. In front of the text, because a spark
+           passing over a letter is what sells the text as the thing burning
+           rather than something sitting in front of a fire. */
+        .llc-sparks { inset: -30% 0 0; z-index: 4; }
+        .llc-sparks i {
+          position: absolute;
+          bottom: 18%;
+          left: calc(var(--i) * 7.8% + 4%);
+          width: 3px; height: 3px;
+          border-radius: 50%;
+          background: #fff3c6;
+          box-shadow: 0 0 7px 1px rgba(255,165,40,.95);
+          opacity: 0;
+          animation: llcSpark 1.5s ease-out infinite;
+          animation-delay: calc(var(--i) * -.124s);
+        }
+        @keyframes llcSpark {
+          0%   { opacity: 0; transform: translate(0, 0) scale(.4); }
+          12%  { opacity: 1; }
+          100% { opacity: 0; transform: translate(calc(var(--i) * 2px - 11px), -300%) scale(.15); }
+        }
+
+        /* Lightning: two struck bolts and a sky flash behind them, on a cycle
+           that is dark for most of its length. A strike that is always
+           happening is a light, not lightning. */
+        .llc-bolt {
+          position: absolute;
+          inset: -55% 0 -10%;
+          width: 100%;
+          height: 165%;
+          z-index: 5;
+          pointer-events: none;
+          fill: #eaf4ff;
+          filter: drop-shadow(0 0 10px rgba(150,205,255,.95)) drop-shadow(0 0 26px rgba(90,170,255,.6));
+          opacity: 0;
+          animation: llcStrike 4.1s linear infinite;
+        }
+        .llc-flash {
+          position: absolute;
+          inset: -60% -20% -20%;
+          z-index: 4;
+          pointer-events: none;
+          background: linear-gradient(180deg,
+            rgba(200,230,255,0) 0%, rgba(215,238,255,.75) 48%, rgba(255,255,255,0) 100%);
+          mix-blend-mode: screen;
+          opacity: 0;
+          animation: llcStrike 4.1s linear infinite;
+        }
+        @keyframes llcStrike {
+          0%, 100%   { opacity: 0; }
+          0.8%       { opacity: .95; }
+          1.9%       { opacity: 0; }
+          3.1%       { opacity: .7; }
+          4.2%       { opacity: 0; }
+          5.0%       { opacity: .4; }
+          6.2%, 99%  { opacity: 0; }
         }
 
         /* ---- foil ----------------------------------------------------- */
@@ -341,9 +571,14 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
         /* OBS respects this, and a banner that stops moving is better than one
            that makes somebody ill. */
         @media (prefers-reduced-motion: reduce) {
-          [style*="llcFlash"] { animation: none !important; }
+          .llc-headtext, .llc-headwrap { animation: none !important; }
           .llc-tilt, .llc-holo, .llc-sparkle, .llc-glare { animation: none !important; }
           .llc-holo, .llc-sparkle, .llc-glare { opacity: .18; }
+          /* The fire is the one thing that has to stay legible without motion,
+             so the flames hold still rather than disappearing - the banner
+             still reads as hot, it just stops flickering. */
+          .llc-ember, .llc-fire i { animation: none !important; }
+          .llc-smoke, .llc-sparks, .llc-bolt, .llc-flash { display: none !important; }
         }
       `}</style>
     </div>
