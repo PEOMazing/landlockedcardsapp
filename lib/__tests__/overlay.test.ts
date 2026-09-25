@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { boardKinds, isOverlayKey, isSingleLine, newOverlayKey, onBoard } from "../overlay";
+import { boardKinds, boardLayout, isOverlayKey, isSingleLine, newOverlayKey, onBoard } from "../overlay";
 
 const line = (f: Record<string, any>) => ({ fields: { Qty: 1, "Qty Hit": 0, ...f } });
 
@@ -114,5 +114,48 @@ describe("showing singles, sealed, or both", () => {
 
   it("still drops a hit card whatever the kind filter says", () => {
     assert.equal(onBoard({ fields: { Qty: 1, "Qty Hit": 1, "Single Rec Id": "recX" } }, { singles: true, sealed: true }), false);
+  });
+});
+
+describe("only hits go on the board", () => {
+  const worth = (n: number) => ({ fields: { Qty: 1, "Qty Hit": 0, "Market Price Snapshot": n } });
+  const both = { singles: true, sealed: true };
+
+  it("keeps a card at or above the threshold", () => {
+    // "Ten dollars or more", so exactly ten counts. The whole app reads the
+    // same setting, and an off-by-a-penny rule here would put the board and
+    // the hit stats out of step where nobody would think to look.
+    assert.equal(onBoard(worth(10), both, 10), true);
+    assert.equal(onBoard(worth(10.01), both, 10), true);
+    assert.equal(onBoard(worth(340), both, 10), true);
+  });
+
+  it("drops a card under it", () => {
+    assert.equal(onBoard(worth(9.99), both, 10), false);
+    assert.equal(onBoard(worth(2), both, 10), false);
+    assert.equal(onBoard(worth(0), both, 10), false);
+  });
+
+  it("treats a line with no price as under the threshold", () => {
+    assert.equal(onBoard({ fields: { Qty: 1, "Qty Hit": 0 } }, both, 10), false);
+  });
+
+  it("shows everything when no threshold is given", () => {
+    // The default has to be permissive: a settings read that failed must not
+    // silently blank the board mid-show.
+    assert.equal(onBoard(worth(0.25)), true);
+    assert.equal(onBoard(worth(0.25), both, 0), true);
+  });
+
+  it("still drops a hit card however valuable it was", () => {
+    assert.equal(onBoard({ fields: { Qty: 1, "Qty Hit": 1, "Market Price Snapshot": 500 } }, both, 10), false);
+  });
+});
+
+describe("board layout", () => {
+  it("is the grid unless the stream says banner", () => {
+    assert.equal(boardLayout({ fields: {} }), "grid");
+    assert.equal(boardLayout({ fields: { "Board Banner": false } }), "grid");
+    assert.equal(boardLayout({ fields: { "Board Banner": true } }), "banner");
   });
 });
