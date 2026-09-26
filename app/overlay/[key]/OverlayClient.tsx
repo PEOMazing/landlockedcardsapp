@@ -68,6 +68,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [layout, setLayout] = useState<"grid" | "banner">("grid");
   const [speed, setSpeed] = useState(1);
+  const [scale, setScale] = useState(1);
   // The dry streak the streamer is tallying, and the banner's temperature.
   const [spins, setSpins] = useState(0);
   const [heat, setHeat] = useState(0);
@@ -86,6 +87,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
       setGone(false);
       setLayout(d.layout === "banner" ? "banner" : "grid");
       setSpeed(Number(d.speed) > 0 ? Number(d.speed) : 1);
+      setScale(Number(d.scale) > 0 ? Number(d.scale) : 1);
       setSpins(Math.max(0, Number(d.spins) || 0));
       setHeat(Math.max(0, Math.min(HEAT_MAX, Number(d.heat) || 0)));
       setCards(Array.isArray(d.cards) ? d.cards : []);
@@ -215,6 +217,18 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
         flexDirection: "column",
         background: "transparent",
         overflow: "hidden",
+        // The board is laid out at the full size of the Browser Source and
+        // then drawn smaller, rather than being laid out small. Two reasons:
+        // the grid's column arithmetic keeps working off real pixels, and one
+        // transform scales the header, the fire and the cards together, so
+        // nothing has to be resized in three places to stay in proportion.
+        //
+        // Anchored to the top, because that is the edge the board is lined up
+        // against in the scene. Shrinking pulls the bottom up and leaves
+        // transparent space there; it does not drift away from where it was
+        // positioned.
+        transform: scale === 1 ? undefined : `scale(${scale})`,
+        transformOrigin: "top center",
       }}
     >
       {/* Nothing at all when the board is empty. A banner over an empty scene
