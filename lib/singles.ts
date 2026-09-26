@@ -62,6 +62,7 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     entryComp: f["Entry Comp"] ?? null,
     printing: f["Printing"] || "",
     notes: f["Notes"] || "",
+    altLink: f["ALT Link"] || "",
     addedBy: f["Added By"] || "",
     dateAdded: f["Date Added"] || "",
     ...(isAdmin ? { buy: f["Buy Price"] ?? 0 } : {}),
