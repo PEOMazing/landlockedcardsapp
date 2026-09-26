@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { T, atList } from "@/lib/airtable";
-import { boardKinds, boardLayout, boardShine, boardSpeed, heatLevel, isShiny, onBoard, spinsSinceHit, streamForOverlayKey } from "@/lib/overlay";
+import { boardKinds, boardLayout, boardScale, boardShine, boardSpeed, heatLevel, isShiny, onBoard, spinsSinceHit, streamForOverlayKey } from "@/lib/overlay";
 import { getSettings } from "@/lib/settings";
 import { bigCardImage } from "@/lib/cardImage";
 
@@ -93,6 +93,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       kinds,
       layout: boardLayout(stream),
       speed: boardSpeed(stream),
+      scale: boardScale(stream),
       shine,
       // The dry streak, and the one number the banner's whole escalation hangs
       // off. Sent together so the page never has to work out the rule itself.
