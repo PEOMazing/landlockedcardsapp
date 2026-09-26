@@ -3,6 +3,7 @@ import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { toSingle } from "@/lib/singles";
 import { clearedSlotFields, reclaimSlot } from "@/lib/slots";
+import { altIdFromUrl, altSoldUrl, isAltShareLink, resolveAltShareLink } from "@/lib/alt";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
@@ -29,6 +30,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (b.condition !== undefined) fields["Condition"] = b.condition;
   if (b.qty !== undefined) fields["Qty"] = Math.max(0, parseInt(b.qty) || 0);
   if (b.notes !== undefined) fields["Notes"] = b.notes;
+  // ALT card page for a slab. Any ALT link works - a share link from the
+  // phone app, a research page, a sold page - and is stored as the sold tab.
+  // Blank clears it so Check price falls back to the ALT search.
+  if (b.altLink !== undefined) {
+    const raw = String(b.altLink || "").trim();
+    if (!raw) fields["ALT Link"] = null;
+    else {
+      const id = altIdFromUrl(raw) || (isAltShareLink(raw) ? await resolveAltShareLink(raw) : null);
+      if (!id) return NextResponse.json({ error: "That does not look like an ALT card link. Open the card on ALT and copy its link." }, { status: 400 });
+      fields["ALT Link"] = altSoldUrl(id);
+    }
+  }
   if (b.location !== undefined) fields["Location"] = String(b.location).trim().toUpperCase();
   if (b.language !== undefined) fields["Language"] = b.language;
   if (b.status !== undefined && ["In Stock", "In Stream", "Sold"].includes(b.status)) {
