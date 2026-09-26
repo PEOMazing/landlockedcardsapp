@@ -132,6 +132,28 @@ export function heatLevel(spins: number): number {
   return Math.min(HEAT_MAX, Math.floor(n));
 }
 
+/** How large the board draws inside its Browser Source.
+ *
+ *  The source has a fixed size in OBS and the board fills it, which means the
+ *  only way to make the cards smaller used to be resizing the source and
+ *  repositioning it - fiddly, and not something to be doing while live. This
+ *  scales the whole board inside the source it already has, anchored to the
+ *  top, so shrinking it clears the platform's own chrome without moving
+ *  anything in OBS.
+ *
+ *  Capped below because a board nobody can read is not a board, and above at
+ *  1 plus a little: past that the content is larger than the source and the
+ *  bottom row gets cut off, which looks like a bug rather than a setting.
+ */
+export const BOARD_SCALE_MIN = 0.25;
+export const BOARD_SCALE_MAX = 1.5;
+
+export function boardScale(stream: { fields: Record<string, any> }): number {
+  const raw = Number(stream.fields["Board Scale"]);
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  return Math.min(BOARD_SCALE_MAX, Math.max(BOARD_SCALE_MIN, Math.round(raw * 100) / 100));
+}
+
 export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds {
   return {
     singles: !stream.fields["Board Hide Singles"],
