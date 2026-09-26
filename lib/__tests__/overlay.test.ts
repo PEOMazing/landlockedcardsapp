@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BOARD_SHINE_MAX, HEAT_MAX, boardKinds, boardLayout, boardShine, boardSpeed, heatLevel, isOverlayKey, isShiny, isSingleLine, newOverlayKey, onBoard, spinsSinceHit } from "../overlay";
+import { BOARD_SCALE_MAX, BOARD_SCALE_MIN, BOARD_SHINE_MAX, HEAT_MAX, boardKinds, boardLayout, boardScale, boardShine, boardSpeed, heatLevel, isOverlayKey, isShiny, isSingleLine, newOverlayKey, onBoard, spinsSinceHit } from "../overlay";
 
 const line = (f: Record<string, any>) => ({ fields: { Qty: 1, "Qty Hit": 0, ...f } });
 
@@ -296,5 +296,33 @@ describe("the dry streak and how hot it makes the banner", () => {
     const stream = { fields: { "Spins Since Hit": 11 } };
     assert.equal(spinsSinceHit(stream), 11);
     assert.equal(heatLevel(spinsSinceHit(stream)), 6);
+  });
+});
+
+describe("how big the board draws", () => {
+  it("fills the source on a stream nobody has resized", () => {
+    assert.equal(boardScale({ fields: {} }), 1);
+    assert.equal(boardScale({ fields: { "Board Scale": null } }), 1);
+  });
+
+  it("reads a size back as set", () => {
+    assert.equal(boardScale({ fields: { "Board Scale": 0.5 } }), 0.5);
+    assert.equal(boardScale({ fields: { "Board Scale": 0.75 } }), 0.75);
+  });
+
+  it("refuses to shrink the board to nothing", () => {
+    // Zero would make the board vanish with no way to tell it apart from a
+    // broken link, which is the worst failure this page has.
+    assert.equal(boardScale({ fields: { "Board Scale": 0 } }), 1);
+    assert.equal(boardScale({ fields: { "Board Scale": -1 } }), 1);
+    assert.equal(boardScale({ fields: { "Board Scale": 0.01 } }), BOARD_SCALE_MIN);
+  });
+
+  it("caps a size that would push the cards out of the source", () => {
+    assert.equal(boardScale({ fields: { "Board Scale": 8 } }), BOARD_SCALE_MAX);
+  });
+
+  it("ignores junk", () => {
+    assert.equal(boardScale({ fields: { "Board Scale": "half" } }), 1);
   });
 });
