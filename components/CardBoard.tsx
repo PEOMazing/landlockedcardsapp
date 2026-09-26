@@ -249,7 +249,8 @@ export default function CardBoard({
         visible. Size it to your full canvas for the grid, or something like 1920 x 420 for the
         scrolling banner - the cards scale to whatever height you give it, so do not go small or
         the art renders soft. Size the source generously and then use the size buttons below to
-        pull the board in, rather than shrinking the source itself. The background is fully transparent and a card disappears the moment
+        pull the board in, rather than shrinking the source itself - those take height off and
+        leave the full width, so the cards get smaller and more of them fit across. The background is fully transparent and a card disappears the moment
         you mark it hit.
       </p>
 
@@ -271,12 +272,14 @@ export default function CardBoard({
           <span className="num ml-1.5 opacity-70">{sealedLeft}</span>
         </button>
 
-        {/* How big the board draws inside the Browser Source. Separate from
-            the source's own size in OBS, so it can be nudged mid-show without
-            touching the scene - which is the whole point, since the platform's
-            own chrome is what it usually needs to duck under. */}
+        {/* How much of the Browser Source's height the board uses. Height
+            only: the width stays full, so the board gets shorter rather than
+            narrower and the cards keep their shape. Separate from the source's
+            own size in OBS, so it can be nudged mid-show without touching the
+            scene - which is the whole point, since the platform's own chrome
+            is what it usually needs to duck under. */}
         <div className="flex items-center gap-1 rounded-lg border border-edge px-2 py-0.5 text-xs">
-          <span className="text-dim">size</span>
+          <span className="text-dim">height</span>
           {[0.4, 0.5, 0.6, 0.75, 0.9, 1].map((v) => (
             <button
               key={v}
