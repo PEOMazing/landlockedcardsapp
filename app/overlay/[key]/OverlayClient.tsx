@@ -138,6 +138,14 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
   // rightly assume one is being hidden from them.
   const liveCount = tiles.length;
 
+  // Worked out here rather than inline, because its length is what decides how
+  // big it can be drawn. "29 HITS LIVE!" and "11 SPINS SINCE LAST HIT" are very
+  // different amounts of text to fit across the same scene.
+  const headline =
+    spins > 0 && alt
+      ? `${spins} SPIN${spins === 1 ? "" : "S"} SINCE LAST HIT`
+      : `${liveCount} HIT${liveCount === 1 ? "" : "S"} LIVE!`;
+
   const gap = tiles.length > 24 ? 8 : tiles.length > 8 ? 14 : 22;
   const cols = bestColumns(tiles.length, size.w, size.h, gap);
   const empty = gone || tiles.length === 0;
@@ -240,7 +248,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
       {/* Nothing at all when the board is empty. A banner over an empty scene
           announcing hits that do not exist is worse than no banner. */}
       {!empty && (
-        <div className="llc-headwrap" style={{ ["--h" as any]: heat }}>
+        <div className="llc-headwrap" style={{ ["--h" as any]: heat, ["--n" as any]: headline.length }}>
           {/* One shrink-wrapped box around the words, so every layer below
               sizes and positions itself against the text rather than against
               the full width of the scene. Sized in em off the headline's own
@@ -263,11 +271,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
               </span>
             )}
 
-            <span className="llc-words">
-              {spins > 0 && alt
-                ? `${spins} SPIN${spins === 1 ? "" : "S"} SINCE LAST HIT`
-                : `${liveCount} HIT${liveCount === 1 ? "" : "S"} LIVE!`}
-            </span>
+            <span className="llc-words">{headline}</span>
 
             {heat >= 2 && (
               <span className="llc-sparks">
@@ -374,15 +378,32 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           100% { transform: translate(calc(var(--shake) * -1), 0) rotate(calc(var(--lean) * -1)); }
         }
 
+        /* Twice the height and about three times the length of where this
+           started, which is what it takes to hold its own against a phone
+           full of chat and the platform's own chrome.
+
+           Two limits, whichever is smaller. The first is height: twice the
+           old rule, still following the board's height setting so it stays in
+           proportion to the cards. The second is a fit against the width,
+           computed from the character count in --n - without it the long
+           headline runs off the side of the scene, and a headline that is
+           half off screen is worse than a smaller one. The short headline is
+           nowhere near that limit, so it gets the full size; the long one
+           gives up a little height to stay whole. */
         .llc-headline {
           position: relative;
           display: inline-block;
           font-family: "Space Grotesk", Inter, system-ui, sans-serif;
-          font-weight: 700;
-          font-size: clamp(15px, calc(var(--s, 1) * 5.2vh), 74px);
-          letter-spacing: .06em;
+          font-weight: 900;
+          font-size: clamp(15px, min(calc(var(--s, 1) * 10.4vh), calc(76.8vw / (var(--n, 14) * 0.8))), 220px);
+          letter-spacing: .16em;
           line-height: 1;
           white-space: nowrap;
+          /* The last of the length. Wide tracking alone gets most of the way
+             and keeps the letters honest; this finishes it. Kept modest so it
+             reads as a wide face rather than as type that has been pulled. */
+          transform: scaleX(1.25);
+          transform-origin: center;
         }
 
         .llc-words {
@@ -398,7 +419,13 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
             0 3px 0 rgba(0,0,0,.85),
             0 0 46px rgba(245,196,81,.55),
             0 0 calc(var(--h, 0) * .16em) rgba(255,110,10,.9);
-          -webkit-text-stroke: 1px rgba(0,0,0,.55);
+          /* paint-order puts the outline behind the fill instead of centred
+             on the glyph edge, so a heavy stroke thickens the letters rather
+             than eating them. This is what actually makes it read bold:
+             Space Grotesk stops at 700, so asking for 900 alone would change
+             nothing. */
+          paint-order: stroke fill;
+          -webkit-text-stroke: .05em rgba(0,0,0,.9);
           animation: llcFlash 1.15s ease-in-out infinite;
         }
 
@@ -437,7 +464,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           position: absolute;
           bottom: 0;
           left: calc(var(--i) * 16% + 8%);
-          width: calc(.3em + var(--h, 0) * .03em);
+          width: calc(.18em + var(--h, 0) * .018em);
           aspect-ratio: 1;
           border-radius: 50%;
           background: radial-gradient(circle, rgba(205,205,213,.5), rgba(150,150,160,0) 68%);
@@ -463,11 +490,11 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           position: absolute;
           bottom: 0;
           left: calc(var(--i) * 11% + 2%);
-          width: calc(.2em + var(--h, 0) * .012em);
+          width: calc(.12em + var(--h, 0) * .007em);
           /* Tips land just over the cap height at full heat. Taller than that
              and they stop licking the letters and become a curtain hanging in
              front of the board. */
-          height: calc(.3em + var(--h, 0) * .12em);
+          height: calc(.22em + var(--h, 0) * .085em);
           background: linear-gradient(to top,
             #fff6c4 0%, #ffd24a 18%, #ff9500 45%, #ff3c00 72%, rgba(255,40,0,0) 100%);
           border-radius: 50% 50% 46% 46% / 66% 66% 34% 34%;
@@ -491,7 +518,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           position: absolute;
           bottom: .15em;
           left: calc(var(--i) * 7.8% + 4%);
-          width: .05em; height: .05em;
+          width: .03em; height: .03em;
           border-radius: 50%;
           background: #fff3c6;
           box-shadow: 0 0 .1em .02em rgba(255,165,40,.95);
