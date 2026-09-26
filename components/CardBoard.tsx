@@ -37,6 +37,7 @@ export default function CardBoard({
   // value rather than a blank, so it round-trips like any other setting.
   const [shine, setShine] = useState(0);
   const [shineDraft, setShineDraft] = useState("");
+  const [scale, setScale] = useState(1);
   // The dry streak on the banner. Held locally and moved optimistically: the
   // board only picks the change up on its next poll, and a button that waits
   // on a round trip before it looks pressed gets pressed twice.
@@ -58,6 +59,7 @@ export default function CardBoard({
         setShine(Number(d.shine));
         setShineDraft(Number(d.shine) > 0 ? String(Number(d.shine)) : "");
       }
+      if (Number(d.scale) > 0) setScale(Number(d.scale));
       if (Number.isFinite(Number(d.spins))) setSpins(Math.max(0, Number(d.spins)));
       if (typeof d.hitThreshold === "number") setHitThreshold(d.hitThreshold);
     } catch {}
@@ -114,6 +116,17 @@ export default function CardBoard({
     } finally {
       setSpinBusy(false);
     }
+  }
+
+  async function setBoardScale(next: number) {
+    const prev = scale;
+    setScale(next);
+    const r = await fetch(`/api/streams/${streamId}/overlay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scale: next }),
+    });
+    if (!r.ok) { setScale(prev); toast("Could not change the size"); }
   }
 
   async function setBoardShine(next: number) {
@@ -235,7 +248,8 @@ export default function CardBoard({
         In OBS: Sources, add a Browser Source, paste the link and tick Shutdown source when not
         visible. Size it to your full canvas for the grid, or something like 1920 x 420 for the
         scrolling banner - the cards scale to whatever height you give it, so do not go small or
-        the art renders soft. The background is fully transparent and a card disappears the moment
+        the art renders soft. Size the source generously and then use the size buttons below to
+        pull the board in, rather than shrinking the source itself. The background is fully transparent and a card disappears the moment
         you mark it hit.
       </p>
 
@@ -256,6 +270,24 @@ export default function CardBoard({
           {kinds.sealed ? "Including sealed" : "Include sealed"}
           <span className="num ml-1.5 opacity-70">{sealedLeft}</span>
         </button>
+
+        {/* How big the board draws inside the Browser Source. Separate from
+            the source's own size in OBS, so it can be nudged mid-show without
+            touching the scene - which is the whole point, since the platform's
+            own chrome is what it usually needs to duck under. */}
+        <div className="flex items-center gap-1 rounded-lg border border-edge px-2 py-0.5 text-xs">
+          <span className="text-dim">size</span>
+          {[0.4, 0.5, 0.6, 0.75, 0.9, 1].map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setBoardScale(v)}
+              className={`num px-1 ${Math.abs(scale - v) < 0.005 ? "text-foil" : "text-dim hover:text-body"}`}
+            >
+              {Math.round(v * 100)}%
+            </button>
+          ))}
+        </div>
 
         <div className="flex items-center gap-1 rounded-lg border border-edge px-2 py-0.5 text-xs ml-auto">
           <span className="text-dim">layout</span>
