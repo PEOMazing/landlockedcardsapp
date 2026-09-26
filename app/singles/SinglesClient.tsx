@@ -1,4 +1,5 @@
 "use client";
+import { altCheckUrl } from "@/lib/alt";
 import QRCode from "qrcode";
 import { formatCardNo, parseCardNo, bucketFor, bucketRange, bucketDrifted } from "@/lib/cardNo";
 import { isThinComp } from "@/lib/salesWindow";
@@ -30,7 +31,7 @@ type SingleT = {
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
   lastSale?: { date: string; price: number } | null;
   image: string; qty: number; status: string; salePrice: number | null; soldDate: string;
-  notes: string; addedBy: string; dateAdded: string; buy?: number;
+  notes: string; addedBy: string; dateAdded: string; buy?: number; altLink?: string;
 };
 
 type SearchCard = {
@@ -482,6 +483,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     else { setErr(d.error || "Update failed"); toast(d.error || "Update failed", "bad"); }
   }
 
+  // Save the slab's ALT card page. Any ALT link works, including the share
+  // link from the phone app; the server turns it into the card's sold tab.
+  async function setAltLink(s: SingleT) {
+    const v = window.prompt(
+      s.altLink ? "ALT link for this slab (clear it to go back to the ALT search)" : "Paste this slab's ALT link (open the card on ALT and copy or share its link)",
+      s.altLink || "",
+    );
+    if (v === null) return;
+    await patch(s.id, { altLink: v.trim() });
+  }
+
   // Open the menu against the button that was clicked, flipping it above when
   // there is more room up than down. The estimate is deliberately generous:
   // being wrong costs a menu that opens upward unnecessarily, while being
@@ -914,7 +926,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               </div>
               <p className="text-dim text-xs mt-1">
                 {GRADED.includes(draft.condition)
-                  ? "Graded card: comp is manual, use the eBay sold link after adding."
+                  ? "Graded card: comp is manual. After adding, use Check price (ALT sold listings) or eBay solds and enter the comp."
                   : "Comp pulls the TCGplayer market price" + (draft.condition !== "NM" ? " with a condition discount" : "") + "."}
               </p>
               <div className="flex gap-1 mt-2 flex-wrap items-center">
@@ -1036,7 +1048,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               <p className="text-dim text-xs">The TCGplayer market price pulls in automatically as the comp.</p>
             )}
             {draft.condition !== "Raw" && (
-              <p className="text-dim text-xs">Graded comps are manual: check eBay sold listings and enter the comp above.</p>
+              <p className="text-dim text-xs">Graded comps are manual: check ALT or eBay sold listings and enter the comp above.</p>
             )}
             <div className="flex items-center gap-3">
               <button
@@ -1346,6 +1358,11 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     {isManager ? <EditCell value={s.comp} onSave={(v) => patch(s.id, { comp: v })} /> : <span className="num text-sm">{s.comp !== null ? $(s.comp) : "-"}</span>}
                     <DeltaHover current={s.comp} entry={s.entryComp} date={s.dateAdded} />
                   </span>
+                  {mode === "graded" && (
+                    <a className="block text-xs text-foil underline" target="_blank" rel="noreferrer" href={altCheckUrl(s)}>
+                      Check price {"\u2197"}
+                    </a>
+                  )}
                 </div>
                 {isAdmin && (
                   <div>
@@ -1372,6 +1389,11 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   <a className="block px-3 py-1.5 text-sm text-body hover:bg-edge/50" target="_blank" rel="noreferrer" href={ebayLink(s)} onClick={() => setMenuFor(null)}>
                     eBay solds {"\u2197"}
                   </a>
+                  {mode === "graded" && isManager && (
+                    <button className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50" onClick={() => { setMenuFor(null); setAltLink(s); }}>
+                      {s.altLink ? "Change ALT link" : "Set ALT link"}
+                    </button>
+                  )}
                   {isAdmin && s.status !== "In Stream" && (
                     <button className="block w-full text-left px-3 py-1.5 text-sm text-bad hover:bg-bad/10" onClick={() => { setMenuFor(null); remove(s.id); }}>
                       Delete card
@@ -1514,6 +1536,15 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                       condition={s.condition}
                     />
                     {s.compDate && <div className="text-dim text-[10px]">{s.compSource} {s.compDate}</div>}
+                    {mode === "graded" && (
+                      <a
+                        className="inline-block mt-0.5 text-xs text-foil underline whitespace-nowrap"
+                        target="_blank" rel="noreferrer" href={altCheckUrl(s)}
+                        title={s.altLink ? "Opens this slab's sold listings on ALT" : "Opens an ALT sold-listings search for this card. Set ALT link in the row menu to jump straight to the slab."}
+                      >
+                        Check price {"\u2197"}
+                      </a>
+                    )}
 
                   </td>
                   <td>
@@ -1637,6 +1668,15 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                         >
                           eBay solds {"\u2197"}
                         </a>
+                        {mode === "graded" && isManager && (
+                          <button
+                            className="block w-full text-left px-3 py-1.5 text-sm text-body hover:bg-edge/50"
+                            onClick={() => { setMenuFor(null); setAltLink(s); }}
+                          >
+                            {s.altLink ? "Change ALT link" : "Set ALT link"}
+                            <span className="block text-dim text-[10px]">{s.altLink ? "Check price opens this slab" : "Check price searches ALT until set"}</span>
+                          </button>
+                        )}
                         {isAdmin && s.status !== "In Stream" && (
                           <button
                             className="block w-full text-left px-3 py-1.5 text-sm text-bad hover:bg-bad/10"
