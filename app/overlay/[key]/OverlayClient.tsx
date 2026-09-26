@@ -212,23 +212,29 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
     <div
       style={{
         position: "fixed",
-        inset: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        // Height only. The board keeps the full width of the Browser Source
+        // and gives back height, which is the axis that was crowding the
+        // scene. A uniform transform would have shrunk the width too and left
+        // a narrow strip floating in the middle of the shot.
+        //
+        // This is a smaller layout box, not a scaled-down picture of a big
+        // one: everything inside measures the box it is actually in, so the
+        // banner still fills the width and simply fits more, smaller cards
+        // across it. Nothing is stretched to fit, so nothing squashes - the
+        // tiles hold 5:7 off their own height and the art is object-fit
+        // contain on top of that, which is two independent guarantees.
+        height: scale === 1 ? "100%" : `${Math.round(scale * 10000) / 100}%`,
         display: "flex",
         flexDirection: "column",
         background: "transparent",
         overflow: "hidden",
-        // The board is laid out at the full size of the Browser Source and
-        // then drawn smaller, rather than being laid out small. Two reasons:
-        // the grid's column arithmetic keeps working off real pixels, and one
-        // transform scales the header, the fire and the cards together, so
-        // nothing has to be resized in three places to stay in proportion.
-        //
-        // Anchored to the top, because that is the edge the board is lined up
-        // against in the scene. Shrinking pulls the bottom up and leaves
-        // transparent space there; it does not drift away from where it was
-        // positioned.
-        transform: scale === 1 ? undefined : `scale(${scale})`,
-        transformOrigin: "top center",
+        // The headline is the one thing that does not size itself off the box,
+        // because it is text. Tying it to the scale keeps it in the same
+        // proportion to the cards it sits above at every size.
+        ["--s" as any]: scale,
       }}
     >
       {/* Nothing at all when the board is empty. A banner over an empty scene
@@ -373,7 +379,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           display: inline-block;
           font-family: "Space Grotesk", Inter, system-ui, sans-serif;
           font-weight: 700;
-          font-size: clamp(22px, 5.2vh, 74px);
+          font-size: clamp(15px, calc(var(--s, 1) * 5.2vh), 74px);
           letter-spacing: .06em;
           line-height: 1;
           white-space: nowrap;
