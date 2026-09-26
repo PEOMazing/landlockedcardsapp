@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { T, atGet, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
-import { BOARD_SHINE_MAX, BOARD_SPEED_MAX, BOARD_SPEED_MIN, boardKinds, boardLayout, boardShine, boardSpeed, ensureOverlayKey, heatLevel, newOverlayKey, spinsSinceHit } from "@/lib/overlay";
+import { BOARD_SCALE_MAX, BOARD_SCALE_MIN, BOARD_SHINE_MAX, BOARD_SPEED_MAX, BOARD_SPEED_MIN, boardKinds, boardLayout, boardScale, boardShine, boardSpeed, ensureOverlayKey, heatLevel, newOverlayKey, spinsSinceHit } from "@/lib/overlay";
 import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +40,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     layout: boardLayout(g.stream),
     speed: boardSpeed(g.stream),
     shine: boardShine(g.stream),
+    scale: boardScale(g.stream),
     spins: spinsSinceHit(g.stream),
     heat: heatLevel(spinsSinceHit(g.stream)),
     hitThreshold: Number(settings?.hit_threshold) || 0,
@@ -54,7 +55,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (b?.rotate) {
     const key = newOverlayKey();
     await atUpdate(T.streams, params.id, { "Overlay Key": key });
-    return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(g.stream), layout: boardLayout(g.stream), speed: boardSpeed(g.stream), shine: boardShine(g.stream), rotated: true });
+    return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(g.stream), layout: boardLayout(g.stream), speed: boardSpeed(g.stream), shine: boardShine(g.stream), scale: boardScale(g.stream), rotated: true });
   }
 
   // Stored inverted - hide rather than show - so a stream nobody has touched
@@ -85,6 +86,16 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
     fields["Board Shine"] = Math.round(n * 100) / 100;
   }
+  if (b?.scale !== undefined) {
+    const n = Number(b.scale);
+    if (!Number.isFinite(n) || n < BOARD_SCALE_MIN || n > BOARD_SCALE_MAX) {
+      return NextResponse.json(
+        { error: `scale has to be between ${BOARD_SCALE_MIN} and ${BOARD_SCALE_MAX}` },
+        { status: 400 },
+      );
+    }
+    fields["Board Scale"] = Math.round(n * 100) / 100;
+  }
   // Two ways to move the dry streak. bumpSpins counts off the spin that just
   // happened and is relative, because the streamer may have the live page and
   // the stream page open at once and an absolute write from a stale tab would
@@ -108,5 +119,5 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
   const updated = await atUpdate(T.streams, params.id, fields);
   const key = await ensureOverlayKey(updated);
-  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated), layout: boardLayout(updated), speed: boardSpeed(updated), shine: boardShine(updated), spins: spinsSinceHit(updated), heat: heatLevel(spinsSinceHit(updated)) });
+  return NextResponse.json({ key, url: urlFor(req, key), kinds: boardKinds(updated), layout: boardLayout(updated), speed: boardSpeed(updated), shine: boardShine(updated), scale: boardScale(updated), spins: spinsSinceHit(updated), heat: heatLevel(spinsSinceHit(updated)) });
 }
