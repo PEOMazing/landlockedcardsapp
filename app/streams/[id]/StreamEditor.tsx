@@ -6,6 +6,7 @@ import CopyShowSet from "@/components/CopyShowSet";
 import Timeclock from "@/components/Timeclock";
 import BreakChecklist from "@/components/BreakChecklist";
 import SinglesPicker from "@/components/SinglesPicker";
+import RollSingles from "@/components/RollSingles";
 import CardBoard from "@/components/CardBoard";
 import Thumb from "@/components/Thumb";
 import { toast } from "@/components/Toaster";
@@ -495,7 +496,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             <span className="text-dim text-sm ml-3">Packaging: {stream.managerName}</span>
           )}
         </div>
-        <CopyShowSet lines={(lines as any[]).filter((l) => !l.isStore).map((l) => ({ qty: l.qty, name: l.name, market: l.market }))} streamTitle={stream.title || "show-set"} />
+        <CopyShowSet lines={(lines as any[]).filter((l) => !l.isStore).map((l) => ({ qty: l.qty, name: l.name, market: l.market, isHit: l.isHit }))} streamTitle={stream.title || "show-set"} />
       </div>
 
       {(stream.status === "Planned" || stream.status === "Live") && !stream.itemsReturned && (
@@ -985,7 +986,12 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         )}
         {!pickingSingles && <ProductPicker onAdd={addLine} busy={busy} />}
         {pickingSingles && (
-          <SinglesPicker streamId={id} onAdded={load} busy={busy} />
+          <>
+            {/* Before picking cards one at a time, the set from the last show
+                that did not sell out is usually most of what belongs here. */}
+            {!stream.itemsReturned && <RollSingles streamId={id} onRolled={load} />}
+            <SinglesPicker streamId={id} onAdded={load} busy={busy} />
+          </>
         )}
         {showPaste && (
           <div className="space-y-2 border border-edge rounded-lg p-3">
