@@ -15,6 +15,21 @@ const $ = (n: number) => `$${(n || 0).toFixed(2)}`;
 type Src = { id: string; title: string; date: string; left: number };
 type Cand = { lineId: string; name: string; market: number; qty: number; can: boolean; why: string };
 
+// Most show titles already open with their own date ("2026-09-20 - 30TH BOX
+// ..."), so printing the date underneath would say it twice. Strip the prefix
+// when it is the date the show is actually on, and leave anything else alone:
+// a title claiming a different date than the date field is worth seeing, not
+// worth hiding.
+function trimTitle(title: string, date: string): string {
+  const t = String(title || "").trim();
+  const m = t.match(/^(\d{4}-\d{2}-\d{2})\s*[-–—:]\s*(\S[\s\S]*)$/);
+  return m && m[1] === String(date || "") ? m[2].trim() : t;
+}
+
+// What to call a show on screen. A show with no title at all still has a date,
+// and a date is enough to pick the right one out of a list of two.
+const srcLabel = (s: Src) => trimTitle(s.title, s.date) || s.date || "untitled show";
+
 export default function RollSingles({ streamId, onRolled }: { streamId: string; onRolled: () => Promise<void> | void }) {
   const [srcs, setSrcs] = useState<Src[] | null>(null);
   const [from, setFrom] = useState("");
@@ -68,6 +83,7 @@ export default function RollSingles({ streamId, onRolled }: { streamId: string; 
   const cannot = (cards || []).filter((c) => !c.can);
   const ticked = can.filter((c) => pick[c.lineId]);
   const value = ticked.reduce((a, c) => a + c.market, 0);
+  const cur = srcs.find((s) => s.id === from) || null;
 
   return (
     <div className="space-y-2 border border-edge rounded-lg p-3">
@@ -88,9 +104,12 @@ export default function RollSingles({ streamId, onRolled }: { streamId: string; 
                 type="button"
                 onClick={() => (from === s.id ? (setFrom(""), setCards(null)) : preview(s.id))}
                 className={`text-xs px-2 py-1 rounded border text-left ${from === s.id ? "border-foil text-foil" : "border-edge text-dim hover:text-body"}`}
+                title={s.title || s.date}
               >
-                <span className="block max-w-[22rem] truncate">{s.title || s.date}</span>
-                <span className="num opacity-70">{s.left} left</span>
+                <span className="block max-w-[22rem] truncate">{srcLabel(s)}</span>
+                {/* Date first, always: a title is what the show was called, the
+                    date is how you tell two of them apart. */}
+                <span className="num opacity-70">{s.date} · {s.left} left</span>
               </button>
             ))}
           </div>
@@ -99,6 +118,12 @@ export default function RollSingles({ streamId, onRolled }: { streamId: string; 
 
           {cards && (
             <>
+              {cur && (
+                <div className="text-xs text-dim truncate">
+                  rolling from <span className="text-body">{srcLabel(cur)}</span>
+                  <span className="num opacity-70"> · {cur.date}</span>
+                </div>
+              )}
               <div className="flex items-center gap-2 text-xs flex-wrap">
                 <span className="text-dim">
                   <span className="num">{ticked.length}</span> of <span className="num">{can.length}</span> ticked
