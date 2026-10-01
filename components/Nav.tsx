@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { SignOutButton, UserButton } from "@clerk/nextjs";
+import { BRAND, streamsEnabled } from "@/lib/appMode";
 
 const I = {
   vendor: <path d="M3 13h4v8H3zM10 9h4v12h-4zM17 3h4v18h-4z" />,
@@ -29,16 +30,20 @@ function Icon({ d }: { d: React.ReactNode }) {
   );
 }
 
-type Item = { href: string; label: string; icon: React.ReactNode; admin?: boolean; manager?: boolean; nonAdmin?: boolean };
+// stream: this link belongs to the streaming half and is not there at all on
+// an inventory-only deployment. Kept as a flag on the item rather than a
+// separate list so a new link declares which product it belongs to in the one
+// place it is already being declared.
+type Item = { href: string; label: string; icon: React.ReactNode; admin?: boolean; manager?: boolean; nonAdmin?: boolean; stream?: boolean };
 type Group = { title: string; items: Item[] };
 
 const GROUPS: Group[] = [
   {
     title: "Dashboards",
     items: [
-      { href: "/vendor", label: "Vendor", icon: I.vendor, admin: true },
+      { href: "/vendor", label: "Vendor", icon: I.vendor, admin: true, stream: true },
       { href: "/collection", label: "Collection", icon: I.collection },
-      { href: "/dashboard", label: "My Streams", icon: I.streams, nonAdmin: true },
+      { href: "/dashboard", label: "My Streams", icon: I.streams, nonAdmin: true, stream: true },
     ],
   },
   {
@@ -49,24 +54,24 @@ const GROUPS: Group[] = [
       { href: "/graded", label: "Graded", icon: I.singles },
       { href: "/show", label: "Card Show", icon: I.show },
       { href: "/quote", label: "Quote", icon: I.pay, manager: true },
-      { href: "/admin/streams", label: "All Streams", icon: I.streams, manager: true },
+      { href: "/admin/streams", label: "All Streams", icon: I.streams, manager: true, stream: true },
     ],
   },
   {
     title: "Stock",
     items: [
       { href: "/admin/inventory", label: "Inventory", icon: I.inventory, manager: true },
-      { href: "/admin/audit", label: "Audit", icon: I.audit, manager: true },
+      { href: "/admin/audit", label: "Audit", icon: I.audit, manager: true, stream: true },
       { href: "/sets", label: "Set Lists", icon: I.sets },
     ],
   },
   {
     title: "Business",
     items: [
-      { href: "/admin", label: "Pay", icon: I.pay, admin: true },
-      { href: "/admin/payroll", label: "Payroll", icon: I.pay, manager: true },
-      { href: "/admin/analytics", label: "Analytics", icon: I.analytics, admin: true },
-      { href: "/admin/insights", label: "Insights", icon: I.insights, admin: true },
+      { href: "/admin", label: "Pay", icon: I.pay, admin: true, stream: true },
+      { href: "/admin/payroll", label: "Payroll", icon: I.pay, manager: true, stream: true },
+      { href: "/admin/analytics", label: "Analytics", icon: I.analytics, admin: true, stream: true },
+      { href: "/admin/insights", label: "Insights", icon: I.insights, admin: true, stream: true },
     ],
   },
 ];
@@ -76,6 +81,7 @@ function NavLinks({ isAdmin, isManager, isCollector = false, pathname, onNavigat
     <div className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
       {GROUPS.map((g) => {
         const items = g.items.filter((i) => {
+          if (i.stream && !streamsEnabled()) return false;
           if (isCollector) return i.href === "/collection" || i.href === "/sets";
           if ((i as any).nonAdmin && isAdmin) return false; // admins do not stream
           return i.admin ? isAdmin : i.manager ? isManager || isAdmin : true;
@@ -113,9 +119,18 @@ export default function Nav({ isAdmin, isManager = false, isCollector = false, n
   const pathname = usePathname() || "/";
   const [open, setOpen] = useState(false);
 
+  // The holo treatment lands on the last word, which is what made "LandLocked
+  // Cards" read right. A one-word brand gets the whole thing rather than
+  // nothing, because a name with no shine next to one that has it looks like
+  // the stylesheet failed rather than like a choice.
+  const brandWords = BRAND.trim().split(/\s+/);
+  const brandLast = brandWords.pop() || BRAND;
+  const brandFirst = brandWords.join(" ");
+
   const brand = (
     <Link href="/" className="font-bold text-[15px] px-2" style={{ fontFamily: "var(--font-display, sans-serif)" }}>
-      LandLocked <span className="holo-text">Cards</span>
+      {brandFirst && <>{brandFirst} </>}
+      <span className="holo-text">{brandLast}</span>
     </Link>
   );
 
