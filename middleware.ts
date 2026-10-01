@@ -1,4 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { isStreamPath, streamsEnabled } from "@/lib/appMode";
 
 // /share/(.*) is the customer-facing stock list. It is deliberately open: the
 // point is a link that works for someone who will never have an account. The
@@ -11,6 +13,15 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)", "/label/(.*)", "/share/(.*)", "/overlay/(.*)", "/api/public/(.*)", "/conditions", "/msrp", "/show"]);
 
 export default clerkMiddleware((auth, req) => {
+  // A deployment running in inventory mode does not have a streaming half, so
+  // those paths are not merely missing from the nav - they are not there. This
+  // runs before the auth check on purpose: whether the route exists is not a
+  // question about who is asking, and answering it first means an unauthorised
+  // visitor gets the same 404 as everyone else rather than a sign-in page that
+  // confirms the route is real.
+  if (!streamsEnabled() && isStreamPath(req.nextUrl.pathname)) {
+    return new NextResponse("Not found", { status: 404 });
+  }
   if (!isPublic(req)) auth().protect();
 });
 
