@@ -61,6 +61,26 @@ export default async function CollectionDashboard() {
     ? held.reduce((a: number, s: any) => a + (s.buy || 0) * (s.qty || 1), 0)
     : null;
 
+  // What the collection has gained since the cards walked in the door.
+  //
+  // Measured against Entry Comp, the card's comp on the day it was added, not
+  // against Buy Price. Buy Price is a flat 80% of today's comp on most of the
+  // table, so "unrealized vs invested" is arithmetic rather than news: it
+  // always comes out at a quarter of whatever the comp happens to be. Entry
+  // Comp is a real historical number that does not move, which makes the
+  // difference an actual measurement of the market moving under the cards.
+  //
+  // Only cards that have an entry comp count, on both sides of the ratio. A
+  // card with no entry baseline contributes nothing to the gain and nothing to
+  // the base either, so the percentage stays honest instead of dividing a real
+  // gain by a total that includes cards it could not have come from.
+  const tracked = (held as any[]).filter((s) => Number(s.entryComp) > 0 && Number(s.comp) > 0);
+  const entryBase = tracked.reduce((a, s) => a + Number(s.entryComp) * (s.qty || 1), 0);
+  const nowValue = tracked.reduce((a, s) => a + Number(s.comp) * (s.qty || 1), 0);
+  const entryGain = nowValue - entryBase;
+  const entryPct = entryBase > 0 ? (entryGain / entryBase) * 100 : 0;
+  const upCount = tracked.filter((s) => Number(s.comp) > Number(s.entryComp)).length;
+
   const topCards = [...held].sort((a: any, b: any) => (b.comp || 0) - (a.comp || 0)).slice(0, 10);
   const recent = [...held]
     .sort((a: any, b: any) => String(b.dateAdded).localeCompare(String(a.dateAdded)))
@@ -95,7 +115,16 @@ export default async function CollectionDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <ValueDelta snaps={snaps} fallback={collectionValue} label="Collection value" sub={collectorMode ? "singles at live market" : `${$0(singlesValue)} singles - ${$0(sealedMarket)} sealed`} />
           <Tile label="Cards" value={String(cards)} sub={`${slabs.reduce((a: number, s: any) => a + (s.qty || 1), 0)} slabs worth ${$0(slabValue)}`} />
-          {!collectorMode && <Tile label="Sealed products" value={String(sealedUnits)} sub="boxes, bundles, ETBs, and more" />}
+          {tracked.length > 0 ? (
+            <Tile
+              label="Since entry"
+              value={`${entryGain >= 0 ? "+" : "-"}${$0(entryGain)}`}
+              sub={`${entryPct >= 0 ? "+" : ""}${entryPct.toFixed(1)}% on ${$0(entryBase)} at entry - ${upCount} of ${tracked.length} up`}
+              tone={entryGain >= 0 ? "text-win" : "text-bad"}
+            />
+          ) : (
+            <Tile label="Since entry" value="-" sub="no card has an entry price recorded yet" />
+          )}
           {invested !== null ? (
             <Tile
               label="Invested"
@@ -107,6 +136,11 @@ export default async function CollectionDashboard() {
             <Tile label="Sets represented" value={String(bySet.size)} sub="across your singles" />
           )}
         </div>
+        {!collectorMode && (
+          <div className="text-dim text-xs -mt-3">
+            {sealedUnits} sealed products on the shelf, worth {$0(sealedMarket)}
+          </div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-4">
           <HeroCard card={topCards[0] || null} />
