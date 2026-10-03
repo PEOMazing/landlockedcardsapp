@@ -101,3 +101,50 @@ describe("taking the card onto the new show", () => {
     assert.equal(claimFields(card({}), B).copy, false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rolling a card that was held out of the previous show's return.
+//
+// Holding a card means the close deliberately left it out of stock. Rollover
+// has to notice, because its "the old show handed this back" shortcut is only
+// true for cards that were not held.
+
+describe("rolling a card held out of a closed show", () => {
+  it("repoints a held whole record, no trip through the shelf", () => {
+    assert.deepEqual(rollDecision(line({ "Hold Out": true }), card(), A, true), { action: "repoint" });
+  });
+
+  it("moves a held copy's line instead of claiming a second copy", () => {
+    // The bug this pins: claiming would take another copy off a record that
+    // never got this one back, leaving the shelf one short and the card on two
+    // sets at once.
+    assert.deepEqual(
+      rollDecision(
+        line({ "Single Copy": true, "Hold Out": true }),
+        card({ Status: "In Stock", "Stream Rec Id": "", Qty: 2 }),
+        A,
+        true,
+      ),
+      { action: "move-copy" },
+    );
+  });
+
+  it("an un-held copy from a closed show still claims off the shelf", () => {
+    assert.equal(
+      rollDecision(line({ "Single Copy": true }), card({ Status: "In Stock", "Stream Rec Id": "", Qty: 2 }), A, true)
+        .action,
+      "claim",
+    );
+  });
+
+  it("a held card that was already hit has nothing to roll", () => {
+    assert.equal(rollDecision(line({ "Qty Hit": 1, "Hold Out": true }), card(), A, true).action, "skip");
+  });
+
+  it("a held card already moved onto another show is left alone", () => {
+    assert.equal(
+      rollDecision(line({ "Hold Out": true }), card({ "Stream Rec Id": B }), A, true).action,
+      "skip",
+    );
+  });
+});

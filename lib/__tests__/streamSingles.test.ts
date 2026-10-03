@@ -172,3 +172,100 @@ describe("claiming a card for a show", () => {
     assert.deepEqual(Object.keys(copy.fields), ["Qty"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Holding a card out of the return
+//
+// The return used to be all or nothing: every unhit card went back in stock.
+// A streamer keeping a stack out for tomorrow night now un-ticks them, and the
+// close has to leave those alone without losing track of them. "Left alone"
+// has to mean exactly one thing: still out of stock, still pointed at this
+// show, so rollover can find it. Anything else strands a card.
+
+describe("holding a card out for the next show", () => {
+  it("an un-ticked unhit card is held rather than shelved", () => {
+    assert.equal(
+      closeActionFor(line({ "Qty Hit": 0, "Hold Out": true }), card(), S, "Surprise Set"),
+      "hold",
+    );
+  });
+
+  it("with no flag the card goes back to stock, exactly as before", () => {
+    assert.equal(closeActionFor(line({ "Qty Hit": 0 }), card(), S, "Surprise Set"), "return");
+  });
+
+  it("a hit card ignores the flag - somebody else owns it now", () => {
+    assert.equal(
+      closeActionFor(line({ "Qty Hit": 1, "Hold Out": true }), card(), S, "Surprise Set"),
+      "sold",
+    );
+  });
+
+  it("on an auction show the flag cannot override a sale", () => {
+    assert.equal(
+      closeActionFor(line({ "Qty Hit": 0, "Hold Out": true }), card(), S, "Single Stream"),
+      "sold",
+    );
+  });
+
+  it("a held copy line keeps its copy off the shelf", () => {
+    assert.equal(
+      closeActionFor(line({ "Qty Hit": 0, "Hold Out": true, "Single Copy": true }), null, S, "Surprise Set"),
+      "copy-hold",
+    );
+  });
+
+  it("an un-held copy line still hands the copy back", () => {
+    assert.equal(
+      closeActionFor(line({ "Qty Hit": 0, "Single Copy": true }), null, S, "Surprise Set"),
+      "copy-return",
+    );
+  });
+
+  it("a card already moved to another show is still none of this show's business", () => {
+    assert.equal(
+      closeActionFor(line({ "Qty Hit": 0, "Hold Out": true }), card({ "Stream Rec Id": OTHER }), S, "Surprise Set"),
+      "skip",
+    );
+  });
+
+  it("a card someone already put back by hand is not dragged out again", () => {
+    assert.equal(
+      closeActionFor(line({ "Qty Hit": 0, "Hold Out": true }), card({ "Status": "In Stock" }), S, "Surprise Set"),
+      "skip",
+    );
+  });
+});
+
+describe("removing a held card's line after the show closed", () => {
+  // The old rule skipped every unhit card here, on the grounds that the close
+  // had already shelved it. A held card is the counterexample: nothing shelved
+  // it, so removing its line has to.
+  it("restores a held card, which the close deliberately left out of stock", () => {
+    assert.equal(
+      releaseActionFor(line({ "Qty Hit": 0, "Hold Out": true }), card(), S, "Surprise Set", true),
+      "restore",
+    );
+  });
+
+  it("gives a held copy back", () => {
+    assert.equal(
+      releaseActionFor(line({ "Qty Hit": 0, "Hold Out": true, "Single Copy": true }), null, S, "Surprise Set", true),
+      "copy-restore",
+    );
+  });
+
+  it("still skips an unhit card that was not held - the close already shelved it", () => {
+    assert.equal(
+      releaseActionFor(line({ "Qty Hit": 0 }), card({ "Status": "In Stock" }), S, "Surprise Set", true),
+      "skip",
+    );
+  });
+
+  it("before the show closes the flag changes nothing - nothing has left yet", () => {
+    assert.equal(
+      releaseActionFor(line({ "Qty Hit": 0, "Hold Out": true }), card(), S, "Surprise Set", false),
+      "restore",
+    );
+  });
+});
