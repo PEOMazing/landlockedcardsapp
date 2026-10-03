@@ -192,6 +192,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
         "",
       // whether the streamer has pulled this card off the OBS board by hand
       offBoard: !!lineRows[i].fields["Off Board"],
+      // Ticked off the return list: this card is not going back in the binder,
+      // it is staying out for an upcoming show. Only ever set on singles.
+      holdOut: !!lineRows[i].fields["Hold Out"],
       // Set on a single-card line, blank on sealed. The client has been asking
       // for this to decide singles-only behaviour and never receiving it, so
       // every such check has quietly been reading false.
