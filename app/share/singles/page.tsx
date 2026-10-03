@@ -13,9 +13,15 @@ export const metadata = {
 //
 // Public on purpose, and narrow on purpose. It reads Airtable on every load so
 // it is never a stale snapshot, but it is built from a deliberate subset of
-// the columns: what the card is, what condition it is in, and what it is
-// worth. Buy price, sale price, notes, binder pocket and anything that belongs
-// to a collector rather than the company never leave the server.
+// the columns: what the card is, what condition it is in, where it sits, and
+// what it is worth. Buy price, sale price, notes and anything that belongs to
+// a collector rather than the company never leave the server.
+//
+// Slot is on the list deliberately, having started off it. It is the big
+// number printed on the sticker and the pocket the card is physically in, so
+// it is what anyone actually pulling an order reads. Treating it as a secret
+// protected nothing: it is already printed on the front of every card in the
+// binder and encoded in the QR that this page links to.
 //
 // In Stock only. A card on a stream or already sold is not something anyone
 // should be asking about.
@@ -25,7 +31,7 @@ export default async function SharePage() {
     "fields[]": [
       "Card Name", "Set Name", "Card Number", "Rarity", "Variant",
       "Condition", "Language", "Printing", "Comp", "Image URL", "Card No",
-      "Order Pending",
+      "Order Pending", "Slot",
     ],
     "sort[0][field]": "Card Name",
     "sort[0][direction]": "asc",
@@ -35,6 +41,10 @@ export default async function SharePage() {
     .map((r) => ({
       id: r.id,
       cardNo: formatCardNo(r.fields["Card No"]),
+      // Plain, not zero-padded: the sticker prints it plain and a card in
+      // pocket 80 reading "0080" here is a second thing to mentally translate
+      // while holding a binder. Blank when the card is not filed in one.
+      slot: Number(r.fields["Slot"]) > 0 ? String(Math.floor(Number(r.fields["Slot"]))) : "",
       name: String(r.fields["Card Name"] || ""),
       setName: String(r.fields["Set Name"] || ""),
       number: String(r.fields["Card Number"] || ""),

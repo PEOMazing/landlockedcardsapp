@@ -5,6 +5,9 @@ import { orderNote, orderTotal, venmoUrl } from "@/lib/venmo";
 export type ShareCard = {
   id: string;
   cardNo: string;
+  // Binder pocket, and the big number on the sticker. What you read to go and
+  // physically find the card. Blank if it is not filed in a binder.
+  slot: string;
   name: string;
   setName: string;
   number: string;
@@ -77,6 +80,11 @@ function Row({ c, inCart, onToggle }: { c: ShareCard; inCart: boolean; onToggle:
       </a>
       <div className="text-right shrink-0">
         <div className="num font-semibold">{c.price === null ? "-" : $(c.price)}</div>
+        {/* Slot leads because it is the one that tells you where the card is.
+            The card number stays underneath it: slots get recycled when a card
+            sells, so the card number is the one that still means something on
+            an order placed last week. */}
+        {c.slot && <div className="num text-xs font-semibold text-foil">Slot {c.slot}</div>}
         <div className="text-dim text-[10px] num">#{c.cardNo}</div>
         <button
           onClick={onToggle}
@@ -138,7 +146,7 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
     if (set) out = out.filter((c) => c.setName === set);
     if (needle) {
       out = out.filter((c) =>
-        `${c.name} ${c.setName} ${c.number} ${c.rarity} ${c.cardNo}`.toLowerCase().includes(needle),
+        `${c.name} ${c.setName} ${c.number} ${c.rarity} ${c.cardNo} ${c.slot}`.toLowerCase().includes(needle),
       );
     }
     const by: Record<Sort, (a: ShareCard, b: ShareCard) => number> = {
@@ -319,7 +327,9 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
                 <div className="space-y-2">
                   {inCart.map((c) => (
                     <div key={c.id} className="flex items-center gap-2 text-sm">
-                      <span className="num text-dim text-xs w-12 shrink-0">#{c.cardNo}</span>
+                      <span className="num text-xs w-14 shrink-0" title={`Card #${c.cardNo}`}>
+                        {c.slot ? <span className="text-foil font-semibold">Slot {c.slot}</span> : <span className="text-dim">#{c.cardNo}</span>}
+                      </span>
                       <span className="min-w-0 flex-1 truncate">{c.name}</span>
                       <span className="num shrink-0">{c.price === null ? "-" : $(c.price)}</span>
                       <button onClick={() => toggle(c.id)} className="text-dim hover:text-bad px-1 shrink-0">
