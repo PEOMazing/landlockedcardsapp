@@ -43,7 +43,7 @@ export function TrendChart({ snaps }: { snaps: Snapshot[] }) {
         <polyline points={pts} fill="none" stroke="url(#trendline)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         <circle cx={x(vals.length - 1)} cy={y(vals[vals.length - 1])} r="4" fill={up ? "#3ECF8E" : "#F0625D"} />
       </svg>
-      <div className="flex justify-between text-dim text-[10px] mt-1">
+      <div className="flex justify-between text-dim t-meta mt-1">
         <span>{snaps[0].date}</span>
         <span>{snaps[snaps.length - 1].date}</span>
       </div>

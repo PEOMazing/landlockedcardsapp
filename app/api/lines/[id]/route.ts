@@ -94,9 +94,15 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   if ("err" in g) return g.err;
   // TRIPWIRE (temporary): record every line deletion with its caller so the
   // phantom mass-delete can be traced. Remove once the culprit is found.
+  //
+  // Recorded as a trace rather than an alert. Removing a line is what editing
+  // a show set IS, so as an alert this put a banner on top of every page for
+  // every team member on every edit, with a separate "done" to click on each.
+  // The forensics are still worth having and still land in the Alerts table;
+  // they just do not interrupt the person doing the work being traced.
   try {
-    const { recordAlert } = await import("@/lib/alerts");
-    await recordAlert("stock", `TRIPWIRE: line deleted - ${g.line.fields["Line"] || params.id}`, {
+    const { recordTrace } = await import("@/lib/alerts");
+    await recordTrace(`TRIPWIRE: line deleted - ${g.line.fields["Line"] || params.id}`, {
       lineId: params.id,
       line: g.line.fields["Line"] || "",
       streamId: g.line.fields["Stream Rec Id"] || "",

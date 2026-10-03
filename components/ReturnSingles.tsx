@@ -144,7 +144,7 @@ export default function ReturnSingles({
                   </span>
                   <span className="num text-xs shrink-0">{$(c.market)}</span>
                   <span
-                    className={`text-[10px] uppercase tracking-wide w-20 text-right shrink-0 ${
+                    className={`t-meta uppercase tracking-wide w-20 text-right shrink-0 ${
                       out ? "text-givvy" : "text-win"
                     }`}
                   >

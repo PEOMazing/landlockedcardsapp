@@ -65,14 +65,14 @@ export default function RefreshProgress({ state }: { state: RefreshState | null 
         </div>
 
         {(state.linked > 0 || state.estimated > 0 || state.skipped > 0) && (
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-dim">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 t-meta text-dim">
             {state.linked > 0 && <span><span className="num text-body">{state.linked}</span> newly linked</span>}
             {state.estimated > 0 && <span><span className="num text-body">{state.estimated}</span> estimated</span>}
             {state.skipped > 0 && <span><span className="num text-body">{state.skipped}</span> skipped</span>}
           </div>
         )}
 
-        <div className="text-dim text-[11px] leading-snug">
+        <div className="text-dim t-meta leading-snug">
           Leave this open. Prices are written as each card finishes, so closing
           the tab stops the run partway rather than undoing it.
         </div>

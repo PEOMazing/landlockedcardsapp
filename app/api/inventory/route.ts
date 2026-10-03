@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atList, atCreate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { clampStock } from "@/lib/stock";
-import { openCommitmentsByProduct } from "@/lib/openStock";
+import { openHoldsByProduct, type ShowHold } from "@/lib/openStock";
 
 export async function GET() {
   const me = await getMe();
@@ -15,12 +15,12 @@ export async function GET() {
   // If the commitment read fails the page still renders: an inventory table
   // with no "on shows" column is the behaviour from last week, and that beats
   // a 500 on the only screen that tells anyone what stock exists.
-  const [rows, onShows] = await Promise.all([
+  const [rows, holds] = await Promise.all([
     atList(T.inventory, {
       filterByFormula: "{Active} = TRUE()",
       "sort[0][field]": "Product Name",
     }),
-    openCommitmentsByProduct().catch(() => new Map<string, number>()),
+    openHoldsByProduct().catch(() => new Map<string, ShowHold[]>()),
   ]);
   const items = rows.map((r) => ({
     id: r.id,
@@ -29,7 +29,11 @@ export async function GET() {
     marketPrice: r.fields["Market Price"] ?? 0,
     qtyOnHand: r.fields["Qty On Hand"] ?? 0,
     // committed to shows that have not been closed out yet
-    qtyOnShows: onShows.get(r.id) || 0,
+    qtyOnShows: (holds.get(r.id) || []).reduce((a, s) => a + s.qty, 0),
+    // Which shows are holding them, so the number can be opened rather than
+    // just read. Omitted entirely when nothing is out, which is most rows:
+    // sending an empty array on 1,200 products would be a kilobyte of nothing.
+    ...(holds.get(r.id)?.length ? { showsOnHold: holds.get(r.id) } : {}),
     tcgUrl: r.fields["TCGplayer URL"] || "",
     imageUrl: r.fields["Image URL"] || "",
     retailPrice: r.fields["Retail Price"] ?? null,

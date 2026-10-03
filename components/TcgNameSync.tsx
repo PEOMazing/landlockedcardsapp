@@ -80,7 +80,7 @@ export default function TcgNameSync({ onDone }: { onDone: () => void | Promise<v
           <div className="card my-8 w-full max-w-3xl space-y-4 p-5">
             <div>
               <div className="label">Names from TCGplayer</div>
-              <h2 className="text-lg font-semibold leading-tight">
+              <h2 className="t-section leading-tight">
                 {busy === "load" ? "Reading names..." : `${rows.length} of ${mappedCount} mapped products differ`}
               </h2>
               <p className="text-dim mt-1 text-xs">

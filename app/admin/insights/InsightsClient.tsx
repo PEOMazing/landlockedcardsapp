@@ -6,30 +6,14 @@ import {
 } from "recharts";
 import { buildWeekPay, buildManagerPay, StreamRow } from "@/lib/calc";
 import type { Settings } from "@/lib/settings";
+import StatTile from "@/components/ui/StatTile";
+import useThemeColors from "@/components/ui/useThemeColors";
 
-const C = {
-  foil: "#FFB94A", win: "#3DDC84", bad: "#F4645C", givvy: "#FF8A3D",
-  dim: "#8B96AC", edge: "#232D42", body: "#E8EDF6", panel: "#161D2C", blue: "#5CA8FF",
-};
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const $0 = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
-function Big({ label, v, win, bad }: { label: string; v: string; win?: boolean; bad?: boolean }) {
-  return (
-    <div className="card p-4">
-      <div className="label">{label}</div>
-      <div className={`text-xl font-bold num ${win ? "text-win" : bad ? "text-bad" : ""}`}>{v}</div>
-    </div>
-  );
-}
-
-const tooltipStyle = {
-  contentStyle: { background: C.panel, border: `1px solid ${C.edge}`, borderRadius: 8, color: C.body },
-  labelStyle: { color: C.dim },
-};
-const axis = { stroke: C.dim, fontSize: 11 } as const;
 
 export default function InsightsClient({
   rows, soldByStream, settings, rateById, overrideById, nameById,
@@ -42,6 +26,15 @@ export default function InsightsClient({
   nameById: Record<string, string>;
 }) {
   const [sel, setSel] = useState<string>("all");
+
+  // Chart chrome and series colours, from the same tokens as the rest of the
+  // app. These used to be nine hex values frozen to the dark theme.
+  const c = useThemeColors();
+  const tooltipStyle = useMemo(() => ({
+    contentStyle: { background: c.panel, border: `1px solid ${c.edge}`, borderRadius: 8, color: c.body },
+    labelStyle: { color: c.dim },
+  }), [c]);
+  const axis = useMemo(() => ({ stroke: c.dim, fontSize: 11 }), [c]);
 
   const streamerOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -190,20 +183,20 @@ export default function InsightsClient({
         <>
           {/* Lifetime numbers for the current view */}
           <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Big label="Total sales (after fees)" v={$0(totals.revenue)} />
-            <Big label="Profit over market" v={$0(totals.marketProfit)} win={totals.marketProfit >= 0} bad={totals.marketProfit < 0} />
+            <StatTile label="Total sales (after fees)" value={$0(totals.revenue)} size="md" />
+            <StatTile label="Profit over market" value={$0(totals.marketProfit)} size="md" tone={totals.marketProfit >= 0 ? "win" : "bad"} />
             {sel === "all" && (
-              <Big label="Company profit" v={$0(totals.companyProfit)} win={totals.companyProfit >= 0} bad={totals.companyProfit < 0} />
+              <StatTile label="Company profit" value={$0(totals.companyProfit)} size="md" tone={totals.companyProfit >= 0 ? "win" : "bad"} />
             )}
-            <Big label="Streamer pay (all-in)" v={$0(totals.streamerPay)} />
-            <Big label="Commission paid" v={$0(totals.commissionPaid)} />
-            <Big label="Hourly paid" v={$0(totals.hourlyPaid)} />
-            <Big label="Tips received" v={$0(totals.tips)} />
-            {totals.overridePay > 0 && <Big label="Manager overrides" v={$0(totals.overridePay)} />}
-            <Big label="Hours worked (stream + pack)" v={(totals.hours + totals.packingHours).toFixed(1)} />
-            <Big label="Effective hourly (pay / hrs)" v={$(totals.effHourly)} />
-            <Big label="Avg spin value" v={$(totals.spinValue)} />
-            <Big label="Avg profit per spin" v={$(totals.profitPerSpin)} />
+            <StatTile label="Streamer pay (all-in)" value={$0(totals.streamerPay)} size="md" />
+            <StatTile label="Commission paid" value={$0(totals.commissionPaid)} size="md" />
+            <StatTile label="Hourly paid" value={$0(totals.hourlyPaid)} size="md" />
+            <StatTile label="Tips received" value={$0(totals.tips)} size="md" />
+            {totals.overridePay > 0 && <StatTile label="Manager overrides" value={$0(totals.overridePay)} size="md" />}
+            <StatTile label="Hours worked (stream + pack)" value={(totals.hours + totals.packingHours).toFixed(1)} size="md" />
+            <StatTile label="Effective hourly (pay / hrs)" value={$(totals.effHourly)} size="md" />
+            <StatTile label="Avg spin value" value={$(totals.spinValue)} size="md" />
+            <StatTile label="Avg profit per spin" value={$(totals.profitPerSpin)} size="md" />
           </section>
 
           {/* Revenue vs profit by week */}
@@ -211,13 +204,13 @@ export default function InsightsClient({
             <h2 className="label mb-4">Revenue and profit by week</h2>
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={weekly}>
-                <CartesianGrid stroke={C.edge} strokeDasharray="3 3" />
+                <CartesianGrid stroke={c.edge} strokeDasharray="3 3" />
                 <XAxis dataKey="label" {...axis} />
                 <YAxis {...axis} tickFormatter={$0} />
                 <Tooltip {...tooltipStyle} formatter={(v: any, n: any) => [$(Number(v)), n]} />
-                <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
-                <Bar dataKey="revenue" name="Sales (after fees)" fill={C.blue} radius={[4, 4, 0, 0]} />
-                <Line dataKey="marketProfit" name="Profit over market" stroke={C.foil} strokeWidth={2} dot />
+                <Legend wrapperStyle={{ fontSize: 12, color: c.dim }} />
+                <Bar dataKey="revenue" name="Sales (after fees)" fill={c.foil} radius={[4, 4, 0, 0]} />
+                <Line dataKey="marketProfit" name="Profit over market" stroke={c.warn} strokeWidth={2} dot />
               </ComposedChart>
             </ResponsiveContainer>
           </section>
@@ -227,15 +220,15 @@ export default function InsightsClient({
             <h2 className="label mb-4">{sel === "all" ? "Where the money goes by week" : "Pay by week"}</h2>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={weekly}>
-                <CartesianGrid stroke={C.edge} strokeDasharray="3 3" />
+                <CartesianGrid stroke={c.edge} strokeDasharray="3 3" />
                 <XAxis dataKey="label" {...axis} />
                 <YAxis {...axis} tickFormatter={$0} />
                 <Tooltip {...tooltipStyle} formatter={(v: any, n: any) => [$(Number(v)), n]} />
-                <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
-                <Bar dataKey="streamerPay" name="Streamer pay" stackId="a" fill={C.foil} />
-                <Bar dataKey="supportPay" name="Support" stackId="a" fill={C.givvy} />
-                <Bar dataKey="overridePay" name="Overrides" stackId="a" fill={C.dim} />
-                {sel === "all" && <Bar dataKey="companyProfit" name="Company profit" stackId="a" fill={C.win} radius={[4, 4, 0, 0]} />}
+                <Legend wrapperStyle={{ fontSize: 12, color: c.dim }} />
+                <Bar dataKey="streamerPay" name="Streamer pay" stackId="a" fill={c.warn} />
+                <Bar dataKey="supportPay" name="Support" stackId="a" fill={c.givvy} />
+                <Bar dataKey="overridePay" name="Overrides" stackId="a" fill={c.dim} />
+                {sel === "all" && <Bar dataKey="companyProfit" name="Company profit" stackId="a" fill={c.win} radius={[4, 4, 0, 0]} />}
               </BarChart>
             </ResponsiveContainer>
           </section>
@@ -245,7 +238,7 @@ export default function InsightsClient({
             <h2 className="label mb-4">Spin economics per stream</h2>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={perStream.filter((p) => p.sold > 0)}>
-                <CartesianGrid stroke={C.edge} strokeDasharray="3 3" />
+                <CartesianGrid stroke={c.edge} strokeDasharray="3 3" />
                 <XAxis dataKey="date" {...axis} />
                 <YAxis {...axis} tickFormatter={money$} />
                 <Tooltip
@@ -253,9 +246,9 @@ export default function InsightsClient({
                   formatter={(v: any, n: any) => [$(Number(v)), n]}
                   labelFormatter={(l: any, payload: any) => payload?.[0]?.payload?.name || l}
                 />
-                <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
-                <Line dataKey="spinValue" name="Avg spin value" stroke={C.blue} strokeWidth={2} dot />
-                <Line dataKey="profitPerSpin" name="Profit per spin" stroke={C.foil} strokeWidth={2} dot />
+                <Legend wrapperStyle={{ fontSize: 12, color: c.dim }} />
+                <Line dataKey="spinValue" name="Avg spin value" stroke={c.foil} strokeWidth={2} dot />
+                <Line dataKey="profitPerSpin" name="Profit per spin" stroke={c.warn} strokeWidth={2} dot />
               </LineChart>
             </ResponsiveContainer>
           </section>
@@ -265,7 +258,7 @@ export default function InsightsClient({
             <h2 className="label mb-4">Hours worked and effective hourly rate by week</h2>
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={weekly}>
-                <CartesianGrid stroke={C.edge} strokeDasharray="3 3" />
+                <CartesianGrid stroke={c.edge} strokeDasharray="3 3" />
                 <XAxis dataKey="label" {...axis} />
                 <YAxis yAxisId="hrs" {...axis} />
                 <YAxis yAxisId="rate" orientation="right" {...axis} tickFormatter={$0} />
@@ -274,10 +267,10 @@ export default function InsightsClient({
                   formatter={(v: any, n: any) =>
                     n === "Effective $/hr" ? [$(Number(v)), n] : [`${Number(v).toFixed(1)} hrs`, n]}
                 />
-                <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
-                <Bar yAxisId="hrs" dataKey="hours" name="Stream hours" stackId="h" fill={C.blue} />
-                <Bar yAxisId="hrs" dataKey="packingHours" name="Packing hours" stackId="h" fill={C.dim} radius={[4, 4, 0, 0]} />
-                <Line yAxisId="rate" dataKey="effHourly" name="Effective $/hr" stroke={C.foil} strokeWidth={2} dot />
+                <Legend wrapperStyle={{ fontSize: 12, color: c.dim }} />
+                <Bar yAxisId="hrs" dataKey="hours" name="Stream hours" stackId="h" fill={c.foil} />
+                <Bar yAxisId="hrs" dataKey="packingHours" name="Packing hours" stackId="h" fill={c.dim} radius={[4, 4, 0, 0]} />
+                <Line yAxisId="rate" dataKey="effHourly" name="Effective $/hr" stroke={c.warn} strokeWidth={2} dot />
               </ComposedChart>
             </ResponsiveContainer>
           </section>
@@ -288,13 +281,13 @@ export default function InsightsClient({
               <h2 className="label mb-4">Totals by streamer</h2>
               <ResponsiveContainer width="100%" height={60 + streamers.length * 48}>
                 <BarChart data={streamers} layout="vertical">
-                  <CartesianGrid stroke={C.edge} strokeDasharray="3 3" />
+                  <CartesianGrid stroke={c.edge} strokeDasharray="3 3" />
                   <XAxis type="number" {...axis} tickFormatter={$0} />
                   <YAxis type="category" dataKey="name" {...axis} width={90} />
                   <Tooltip {...tooltipStyle} formatter={(v: any, n: any) => [$(Number(v)), n]} />
-                  <Legend wrapperStyle={{ fontSize: 12, color: C.dim }} />
-                  <Bar dataKey="pay" name="Total pay" fill={C.foil} radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="profit" name="Profit generated" fill={C.win} radius={[0, 4, 4, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: c.dim }} />
+                  <Bar dataKey="pay" name="Total pay" fill={c.warn} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="profit" name="Profit generated" fill={c.win} radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </section>

@@ -11,6 +11,8 @@ import { toSingle } from "@/lib/singles";
 import { getSnapshots } from "@/lib/priceRefresh";
 import { HeroCard, TopMovers, TrendChart, ValueDelta } from "@/components/PortfolioPulse";
 import { clampStock } from "@/lib/stock";
+import StatTile from "@/components/ui/StatTile";
+import PageHeader from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -18,15 +20,6 @@ const $ = (n: number) =>
   "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const $0 = (n: number) => "$" + Math.round(n || 0).toLocaleString("en-US");
 
-function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
-  return (
-    <div className="card p-4">
-      <div className="label">{label}</div>
-      <div className={`num text-2xl font-bold mt-1 ${tone || ""}`}>{value}</div>
-      {sub && <div className="text-dim text-xs mt-1">{sub}</div>}
-    </div>
-  );
-}
 
 export default async function VendorDashboard() {
   const me = await getMe();
@@ -162,27 +155,24 @@ export default async function VendorDashboard() {
     <>
       <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-6xl mx-auto p-6 space-y-6">
-                <PendingVendors />
-<div className="flex items-baseline justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Vendor dashboard</h1>
-          <span className="text-dim text-sm">The whole operation at a glance</span>
-        </div>
+        <PendingVendors />
+        <PageHeader title="Vendor dashboard" subtitle="The whole operation at a glance" />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <ValueDelta snaps={snaps} fallback={totalMarket} label="Inventory market value" sub={`${$0(sealedMarket)} sealed - ${$0(singlesMarket)} singles`} />
-          <Tile label="Cost basis" value={$0(totalCost)} sub="what you paid for what you hold" />
-          <Tile label="Unrealized est. profit" value={$0(totalMarket - totalCost)} tone={totalMarket - totalCost >= 0 ? "text-win" : "text-bad"} sub="market minus cost, on hand" />
-          <Tile label="Singles sold to date" value={$0(soldRevenue)} sub={`${sold.length} sales - ${$0(soldProfit)} profit`} tone="text-win" />
+          <StatTile label="Cost basis" value={$0(totalCost)} sub="what you paid for what you hold" />
+          <StatTile label="Unrealized est. profit" value={$0(totalMarket - totalCost)} tone={totalMarket - totalCost >= 0 ? "win" : "bad"} sub="market minus cost, on hand" />
+          <StatTile label="Singles sold to date" value={$0(soldRevenue)} sub={`${sold.length} sales - ${$0(soldProfit)} profit`} tone="win" />
         </div>
 
         {/* the two halves of the inventory, each on its own */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Tile
+          <StatTile
             label="Sealed inventory market value"
             value={$0(sealedMarket)}
             sub={`${sealedUnits.toLocaleString("en-US")} units - paid ${$0(sealedCost)} - est. profit ${$0(sealedMarket - sealedCost)}${totalMarket ? ` - ${Math.round((sealedMarket / totalMarket) * 100)}% of total` : ""}`}
           />
-          <Tile
+          <StatTile
             label="Singles inventory market value"
             value={$0(singlesMarket)}
             sub={`${singlesUnits.toLocaleString("en-US")} cards - paid ${$0(singlesCost)} - est. profit ${$0(singlesMarket - singlesCost)}${totalMarket ? ` - ${Math.round((singlesMarket / totalMarket) * 100)}% of total` : ""}`}
@@ -190,10 +180,10 @@ export default async function VendorDashboard() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Tile label="Streams - 30 day revenue" value={$0(streamRevenue)} sub={`${recent.length} completed streams`} />
-          <Tile label="Streams - 30 day profit" value={$0(streamProfit30)} tone={streamProfit30 >= 0 ? "text-win" : "text-bad"} sub="sales minus hits delivered, giveaways, packing, tips, promo" />
-          <Tile label="Labor owed this week" value={$0(laborThisWeek)} sub="streamer + manager pay, live" />
-          <Tile label="Sealed on hand" value={String(sealedUnits)} sub={`${singlesUnits} singles in stock`} />
+          <StatTile label="Streams - 30 day revenue" value={$0(streamRevenue)} sub={`${recent.length} completed streams`} />
+          <StatTile label="Streams - 30 day profit" value={$0(streamProfit30)} tone={streamProfit30 >= 0 ? "win" : "bad"} sub="sales minus hits delivered, giveaways, packing, tips, promo" />
+          <StatTile label="Labor owed this week" value={$0(laborThisWeek)} sub="streamer + manager pay, live" />
+          <StatTile label="Sealed on hand" value={String(sealedUnits)} sub={`${singlesUnits} singles in stock`} />
         </div>
 
         {alerts.length > 0 && (
@@ -201,7 +191,7 @@ export default async function VendorDashboard() {
             <div className="label mb-2">Needs attention</div>
             <div className="flex flex-wrap gap-2">
               {alerts.map((a) => (
-                <Link key={a.text} href={a.href} className="text-amber-400 text-xs border border-amber-400/30 bg-amber-400/5 rounded-full px-3 py-1.5 hover:bg-amber-400/10">
+                <Link key={a.text} href={a.href} className="text-warn text-xs border border-warn/30 bg-warn/5 rounded-full px-3 py-1.5 hover:bg-warn/10">
                   {a.text}
                 </Link>
               ))}
@@ -223,7 +213,7 @@ export default async function VendorDashboard() {
             <div className="flex items-end gap-2 h-36">
               {weeks.map((w) => (
                 <div key={w.start} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="num text-[10px] text-dim">{w.total > 0 ? $0(w.total) : ""}</div>
+                  <div className="num t-meta text-dim">{w.total > 0 ? $0(w.total) : ""}</div>
                   <div
                     className="w-full rounded-t"
                     style={{
@@ -231,7 +221,7 @@ export default async function VendorDashboard() {
                       background: w.total > 0 ? "linear-gradient(180deg, #7aa2ff, #58e6d9)" : "#262B38",
                     }}
                   />
-                  <div className="text-dim text-[10px]">{w.start.slice(5)}</div>
+                  <div className="text-dim t-meta">{w.start.slice(5)}</div>
                 </div>
               ))}
             </div>

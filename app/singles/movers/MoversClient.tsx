@@ -121,7 +121,7 @@ export default function MoversClient() {
     <main className="md:pl-56">
       <div className="max-w-5xl mx-auto p-5 space-y-5">
         <header>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="t-page">
             Movers
           </h1>
           <p className="text-dim text-sm mt-1">

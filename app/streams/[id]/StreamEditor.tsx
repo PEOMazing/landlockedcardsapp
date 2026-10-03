@@ -14,6 +14,8 @@ import { toast } from "@/components/Toaster";
 import StoreSales from "@/components/StoreSales";
 import WhatnotSync, { type SharedFile } from "@/components/WhatnotSync";
 import { splitByKind } from "@/lib/calc";
+import StatTile from "@/components/ui/StatTile";
+import TableEmpty from "@/components/ui/TableEmpty";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -500,7 +502,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               <button className="btn-ghost !py-1.5 text-sm" onClick={() => setEditingMeta(false)}>Cancel</button>
             </div>
           ) : (
-            <h1 className="text-2xl font-bold mt-1" style={{ fontFamily: "var(--font-display)" }}>
+            <h1 className="t-page mt-1">
               {stream.title}
               {canManage && (
                 <button
@@ -549,9 +551,21 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               <button
                 className="btn-win !py-1.5 disabled:opacity-40"
                 disabled={busy}
+                // The most time-critical tap in the app: they are already live
+                // on Whatnot when they press it. It had no failure branch at
+                // all, so a dropped request looked exactly like a button that
+                // does nothing, with no way to tell whether the clock started.
                 onClick={async () => {
-                  const r = await fetch(`/api/streams/${id}/live`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start" }) });
-                  if (r.ok) window.location.href = `/streams/${id}/live`;
+                  setBusy(true);
+                  try {
+                    const r = await fetch(`/api/streams/${id}/live`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start" }) });
+                    if (r.ok) { window.location.href = `/streams/${id}/live`; return; }
+                    const d = await r.json().catch(() => ({}));
+                    toast(d.error || "Could not start the stream - tap again", "bad");
+                  } catch {
+                    toast("Could not start the stream - check your signal and tap again", "bad");
+                  }
+                  setBusy(false);
                 }}
               >
                 Start stream
@@ -731,7 +745,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               </div>
             )}
             {m.unpricedQty > 0 && (
-              <div className="text-xs text-amber-400 text-right">
+              <div className="text-xs text-warn text-right">
                 {m.unpricedQty} items in this set have no price - set value and break even are understated. Set a per-item price on those lines in the set builder.
               </div>
             )}
@@ -741,17 +755,17 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               const under = resultsEntered && spotsSoldNum > 0 && afterFeesNum / spotsSoldNum < primary;
               return (
                 <>
-                  <div className={`text-xs num text-right ${under ? "text-amber-400 font-semibold" : "text-dim"}`}>
+                  <div className={`text-xs num text-right ${under ? "text-warn font-semibold" : "text-dim"}`}>
                     break even: {$(primary)} per spin ({m.cfg.breakevenMult}x average spin {costBE === null ? "value" : "cost"})
                     {under && " - current avg is under it"}
                   </div>
                   {costBE === null && (data?.config?.costMissingQty ?? 0) > 0 && (
-                    <div className="text-amber-400/80 text-[10px] text-right">
+                    <div className="text-warn/80 t-meta text-right">
                       market basis for now - {data.config.costMissingQty} items are missing a buy cost, so the true 1.5x cost basis cannot be computed yet
                     </div>
                   )}
                   {costBE !== null && (
-                    <div className="text-dim text-[10px] num text-right">
+                    <div className="text-dim t-meta num text-right">
                       on market value instead: {$(m.breakEven)} per spin
                     </div>
                   )}
@@ -1018,7 +1032,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h2 className="label">Show set</h2>
-            <div className="flex gap-1 text-[11px]">
+            <div className="flex gap-1 t-meta">
               {([["board", "Slot"], ["name", "A-Z"], ["price", "Price"], ["hitValue", "Hit value"]] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setSetSort(k)}
                   className={`px-2 py-0.5 rounded border ${setSort === k ? "border-foil text-foil" : "border-edge text-dim hover:text-paper"}`}>
@@ -1264,18 +1278,29 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                     </td>
                   )}
                   <td className="text-right">
-                    <button className="text-bad text-xs hover:underline" onClick={() => removeLine(l.id)}>remove</button>
+                    <button
+                      className="text-bad t-meta hover:underline"
+                      // The same word, in the same column, confirmed on a closed
+                      // stream and did not on an open one. An open show set is the
+                      // thing someone is actively building, so this is the version
+                      // that gets mis-tapped.
+                      onClick={() => {
+                        if (confirm(`Remove ${l.name} from this show set? The quantity goes back to inventory.`)) removeLine(l.id);
+                      }}
+                    >
+                      remove
+                    </button>
                   </td>
                 </tr>
               ))}
               {lines.length === 0 && (
-                <tr><td colSpan={8} className="text-dim">
+                <TableEmpty>
                   {stream.streamType === "Single Stream"
                     ? "Search the singles inventory above to add auction cards - each starts at $1 on Whatnot"
                     : mixedSet
                       ? "Search sealed or singles above to build the wheel - unhit singles go back to stock when the show closes"
                       : "Search the inventory above to build this stream's show set"}
-                </td></tr>
+                </TableEmpty>
               )}
             </tbody>
           </table>
@@ -1289,36 +1314,25 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
 
       {/* Spot economics */}
       <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Spots (excl. giveaways)" value={String(m.spots)} />
-        <Stat label="Giveaways" value={`${m.givvyQty} / ${$(m.givvyValue)}`} accent="givvy" />
-        <Stat label="Total product value" value={$(m.totalValue)} />
-        <Stat label="Value per spot" value={m.spots ? $(m.valuePerSpot) : "-"} />
-        <Stat label="Break even per spin" value={m.spots ? $(data?.config?.costBreakEvenPerSpot ?? m.breakEven) : "-"} accent="win" warn={m.unpricedQty > 0 ? `${m.unpricedQty} unpriced items understate this` : (data?.config?.costBreakEvenPerSpot ?? null) === null && (data?.config?.costMissingQty ?? 0) > 0 ? `market basis - ${data.config.costMissingQty} items missing buy cost` : undefined} />
-        <Stat label={`Hit pool (> $${m.cfg.hitThreshold})`} value={`${m.hitPoolQty} items / ${$(m.hitPoolValue)}`} accent="foil" />
-        <Stat label="Hit odds per spot" value={m.spots ? (m.hitOddsPerSpot * 100).toFixed(1) + "%" : "-"} accent="foil" />
+        <StatTile label="Spots (excl. giveaways)" value={String(m.spots)} size="md" />
+        <StatTile label="Giveaways" value={`${m.givvyQty} / ${$(m.givvyValue)}`} tone="givvy" size="md" />
+        <StatTile label="Total product value" value={$(m.totalValue)} size="md" />
+        <StatTile label="Value per spot" value={m.spots ? $(m.valuePerSpot) : "-"} size="md" />
+        <StatTile label="Break even per spin" value={m.spots ? $(data?.config?.costBreakEvenPerSpot ?? m.breakEven) : "-"} tone="win" size="md" note={m.unpricedQty > 0 ? `${m.unpricedQty} unpriced items understate this` : (data?.config?.costBreakEvenPerSpot ?? null) === null && (data?.config?.costMissingQty ?? 0) > 0 ? `market basis - ${data.config.costMissingQty} items missing buy cost` : undefined} />
+        <StatTile label={`Hit pool (> $${m.cfg.hitThreshold})`} value={`${m.hitPoolQty} items / ${$(m.hitPoolValue)}`} tone="foil" size="md" />
+        <StatTile label="Hit odds per spot" value={m.spots ? (m.hitOddsPerSpot * 100).toFixed(1) + "%" : "-"} tone="foil" size="md" />
         {m.expectedHits !== null ? (
-          <Stat
+          <StatTile
             label={`Expected hits (history: ${(m.cfg.histDeliveryRate * 100).toFixed(0)}% of pool goes)`}
             value={`~${m.expectedHits} of ${m.hitPoolQty}`}
-            accent="foil"
+            tone="foil" size="md"
           />
         ) : (
-          <Stat label="Pool delivered" value={m.hitPoolQty > 0 ? ((m.hitsDelivered / m.hitPoolQty) * 100).toFixed(0) + "%" : "-"} accent="win" />
+          <StatTile label="Pool delivered" value={m.hitPoolQty > 0 ? ((m.hitsDelivered / m.hitPoolQty) * 100).toFixed(0) + "%" : "-"} tone="win" size="md" />
         )}
       </section>
 
     </main>
-  );
-}
-
-function Stat({ label, value, accent, warn }: { label: string; value: string; accent?: "win" | "givvy" | "foil"; warn?: string }) {
-  const color = accent === "win" ? "text-win" : accent === "givvy" ? "text-givvy" : accent === "foil" ? "text-foil" : "text-body";
-  return (
-    <div className="card p-4">
-      <div className="label">{label}</div>
-      <div className={`text-lg font-bold num mt-1 ${color}`}>{value}</div>
-      {warn && <div className="text-amber-400 text-[10px] mt-1">{warn}</div>}
-    </div>
   );
 }
 

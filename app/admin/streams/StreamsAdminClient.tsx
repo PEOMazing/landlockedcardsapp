@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import TableEmpty from "@/components/ui/TableEmpty";
 
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -156,7 +157,7 @@ export default function StreamsAdminClient({
               </tr>
             ))}
             {streams.length === 0 && (
-              <tr><td colSpan={13} className="text-dim">No streams yet</td></tr>
+              <TableEmpty>No streams yet</TableEmpty>
             )}
           </tbody>
         </table>

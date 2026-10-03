@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import Toaster from "@/components/Toaster";
-import StaleBuildGuard from "@/components/StaleBuildGuard";
+import { THEME_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "LandLocked Cards - Stream Ops",
@@ -12,8 +12,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider appearance={{ variables: { colorPrimary: "#7AA2FF" } }}>
-      <html lang="en">
+      {/* suppressHydrationWarning because the pre-paint script writes
+          data-theme onto this element before React sees it, which is the
+          whole point: the correct theme is painted on the first frame. */}
+      <html lang="en" suppressHydrationWarning>
         <head>
+          {/* First thing in the document, synchronous and inline. Anything
+              deferred paints the default theme and then corrects it, which is
+              the flash the blueprint rules out. */}
+          <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
           <link
@@ -21,14 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             rel="stylesheet"
           />
         </head>
-        <body>
-          {children}
-          <Toaster />
-          {/* Watches for the app running against a build that no longer exists,
-              which is what a deploy or a rollback does to a page somebody
-              already has open. Renders nothing. */}
-          <StaleBuildGuard />
-        </body>
+        <body>{children}<Toaster /></body>
       </html>
     </ClerkProvider>
   );

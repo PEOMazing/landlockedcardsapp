@@ -30,7 +30,7 @@ export default function PendingVendors() {
   if (!pending || pending.length === 0) return null;
 
   return (
-    <section className="card p-5 border-amber-400/40">
+    <section className="card p-5 border-warn/40">
       <div className="label mb-3">Vendor applications - {pending.length} pending</div>
       <div className="space-y-3">
         {pending.map((p) => (

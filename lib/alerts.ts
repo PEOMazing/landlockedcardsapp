@@ -14,6 +14,32 @@ export async function recordAlert(type: "price" | "stock" | "rename", title: str
   });
 }
 
+/** Write the same row, but never show it to anyone.
+ *
+ *  For instrumentation: something worth being able to look up later that
+ *  nobody has to act on now. It lands in the Alerts table exactly like an
+ *  alert and is filterable there, but it is created already acknowledged, so
+ *  the banner never carries it.
+ *
+ *  This exists because the line-deletion tripwire did not have it. Editing a
+ *  show set deletes lines, which is the most ordinary thing anyone does on
+ *  that screen, and every one of those put a card on top of every page for
+ *  every team member until somebody clicked done on it. Fifteen on screen at
+ *  once is not a diagnostic, it is a thing people learn to scroll past - and
+ *  the real price alert underneath goes with it.
+ *
+ *  A trace is not an alert. Keeping them in one table is fine. Keeping them in
+ *  one feed is not. */
+export async function recordTrace(title: string, payload: unknown) {
+  await atCreate(T.alerts, {
+    "Title": title.slice(0, 120),
+    "Type": "stock",
+    "Payload": JSON.stringify(payload).slice(0, 90000),
+    "Created": new Date().toISOString().slice(0, 10),
+    "Acknowledged": true,
+  });
+}
+
 // Raise an alert at most once a day for a given key.
 //
 // Anything checked on a short loop needs this. The rolling reprice runs 96

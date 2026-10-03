@@ -219,7 +219,7 @@ export default async function PayrollPage() {
       <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-4xl mx-auto p-6 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="t-page">
             Payroll{!canMarkPaid && <span className="text-dim text-sm font-normal ml-3">view only</span>}
           </h1>
           <p className="text-dim text-sm mt-1">
@@ -257,7 +257,7 @@ export default async function PayrollPage() {
                 </div>
                 {payees.sort((a, b) => b.amount - a.amount).map((p, i) => (
                   <details key={i} className="border-t border-edge group">
-                    <summary className="grid grid-cols-[1fr_auto] sm:grid-cols-[160px_90px_1fr_110px] gap-x-3 py-2 cursor-pointer list-none items-baseline hover:bg-white/[0.02]">
+                    <summary className="grid grid-cols-[1fr_auto] sm:grid-cols-[160px_90px_1fr_110px] gap-x-3 py-2 cursor-pointer list-none items-baseline hover:bg-edge/40">
                       <span className="font-medium"><span className="text-dim text-xs mr-1.5 inline-block transition-transform group-open:rotate-90">&#9656;</span>{p.name}</span>
                       <span className="text-dim hidden sm:block">{p.role}</span>
                       <span className="text-dim text-xs hidden sm:block">{p.detail}</span>

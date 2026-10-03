@@ -105,15 +105,15 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
                 <li>Put your personal code in the subject line</li>
               </ol>
               <button className="w-full text-left font-mono text-sm border border-edge rounded-lg px-3 py-2 hover:border-foil" onClick={() => copy("import@cardquarters.com")}>
-                import@cardquarters.com <span className="text-dim text-[10px] float-right mt-0.5">tap to copy</span>
+                import@cardquarters.com <span className="text-dim t-meta float-right mt-0.5">tap to copy</span>
               </button>
               <p className="text-dim text-xs">
                 Your code links the email to your account - the import will not run without it:
               </p>
               <button className="w-full text-left font-mono text-sm border border-edge rounded-lg px-3 py-2 hover:border-foil" onClick={() => code && copy(code.code)}>
-                {code?.code || "..."} <span className="text-dim text-[10px] float-right mt-0.5">tap to copy</span>
+                {code?.code || "..."} <span className="text-dim t-meta float-right mt-0.5">tap to copy</span>
               </button>
-              <p className="text-dim text-[11px]">Subject example: &quot;My portfolio {"{"}code{"}"}&quot; - anywhere in the subject works. Cards appear in your collection within a couple of minutes.</p>
+              <p className="text-dim t-meta">Subject example: &quot;My portfolio {"{"}code{"}"}&quot; - anywhere in the subject works. Cards appear in your collection within a couple of minutes.</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="h-px bg-edge flex-1" />
@@ -123,7 +123,7 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
             <button className="btn-ghost w-full" onClick={() => { setShowStart(false); fileRef.current?.click(); }}>
               Upload a CSV instead
             </button>
-            <p className="text-dim text-[11px] text-center">
+            <p className="text-dim t-meta text-center">
               Collectr and TCGplayer exports both work. TCGplayer prices are per condition,
               so each row lands with its own comp.
             </p>

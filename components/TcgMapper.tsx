@@ -119,7 +119,7 @@ export default function TcgMapper({
           <div className="card w-full max-w-lg space-y-4 p-5">
             <div>
               <div className="label">Map to TCGplayer</div>
-              <h2 className="text-lg font-semibold leading-tight">{name}</h2>
+              <h2 className="t-section leading-tight">{name}</h2>
             </div>
 
             <div>
@@ -133,7 +133,7 @@ export default function TcgMapper({
                 onChange={(e) => { setUrl(e.target.value); setMatch(null); setError(""); }}
                 onKeyDown={(e) => { if (e.key === "Enter" && url.trim()) lookup(); }}
               />
-              <p className="text-dim mt-1 text-[11px]">
+              <p className="text-dim mt-1 t-meta">
                 Open the product on TCGplayer and copy the address bar. Tracking junk on the end is fine, it gets trimmed.
               </p>
             </div>

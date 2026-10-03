@@ -12,9 +12,9 @@ export default function NewStream() {
   const [streamers, setStreamers] = useState<{ id: string; name: string }[]>([]);
   const [streamerId, setStreamerId] = useState("");
   const [streamType, setStreamType] = useState("Surprise Set");
-  // After a stream is created we hold on the page long enough to remind the
-  // streamer that the name has to match Whatnot, or the export check can't
-  // pair the two up.
+  // Set only when the stream was created without a name, which is the one
+  // case worth stopping for: the Whatnot export pairs the two by title, so an
+  // unnamed stream silently fails that check later.
   const [created, setCreated] = useState<{ id: string; title: string } | null>(null);
 
   const TYPE_HELP: Record<string, string> = {
@@ -42,14 +42,17 @@ export default function NewStream() {
     });
     const data = await res.json();
     if (!res.ok) { setErr(data.error || "Could not create stream"); setBusy(false); return; }
-    setCreated({ id: data.id, title: title.trim() });
+    // A named stream needs nothing more said: go and build the set. Only a
+    // blank one stops here, and the modal below is what stops it.
+    if (title.trim()) { router.push(`/streams/${data.id}`); return; }
+    setCreated({ id: data.id, title: "" });
     setBusy(false);
   }
 
   return (
     <main className="max-w-md mx-auto p-6 space-y-5">
       <Link href="/dashboard" className="text-dim text-sm hover:text-body">&larr; Back</Link>
-      <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>New stream</h1>
+      <h1 className="t-page">New stream</h1>
       <div className="card p-5 space-y-4">
         <div>
           <label className="label">Stream date</label>
@@ -99,28 +102,26 @@ export default function NewStream() {
         </button>
       </div>
 
-      {created && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      {/* This modal used to block the path after EVERY successful create,
+          including the ordinary case where the title was pasted correctly. A
+          warning that fires on success is dismissed reflexively by week two,
+          and then the one case it exists for - a blank title - gets dismissed
+          unread along with everything else.
+          So it only stands in the way when there is actually something wrong.
+          A good title goes straight to the show set, with the reminder carried
+          as a quiet line there rather than a door to open. */}
+      {created && !created.title && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-s4" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-black/70" />
-          <div className="relative card p-6 max-w-sm w-full space-y-4 border-amber-400/60">
-            <div className="text-lg font-bold text-amber-400">Heads up: match the Whatnot name</div>
-            <p className="text-sm">
-              Your stream was created. The stream name in the app must match the Whatnot show name
-              exactly, or the Whatnot export check will not line up with this stream.
+          <div className="relative card p-6 max-w-sm w-full space-y-s4 border-warn/60">
+            <div className="t-section text-warn">This stream has no name</div>
+            <p className="t-body">
+              It was created, but with only your name on it. The name here has to match the Whatnot
+              show title exactly or the Whatnot export will not line up with this stream.
             </p>
-            {created.title ? (
-              <p className="text-sm">
-                App name: <span className="font-semibold">{created.title}</span>
-                <br />
-                <span className="text-dim text-xs">Double check it against the title on Whatnot. Same words, same spelling.</span>
-              </p>
-            ) : (
-              <p className="text-sm text-bad">
-                You left the title blank, so this stream only has your name on it. Rename it to the Whatnot show title.
-              </p>
-            )}
+            <p className="t-secondary text-dim">You can rename it at the top of the show page.</p>
             <button className="btn-foil w-full justify-center" onClick={() => router.push(`/streams/${created.id}`)}>
-              Got it, build the show set
+              Name it now
             </button>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { SignOutButton, UserButton } from "@clerk/nextjs";
 import { BRAND, streamsEnabled } from "@/lib/appMode";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const I = {
   vendor: <path d="M3 13h4v8H3zM10 9h4v12h-4zM17 3h4v18h-4z" />,
@@ -128,14 +129,21 @@ export default function Nav({ isAdmin, isManager = false, isCollector = false, n
   const brandFirst = brandWords.join(" ");
 
   const brand = (
-    <Link href="/" className="font-bold text-[15px] px-2" style={{ fontFamily: "var(--font-display, sans-serif)" }}>
+    <Link href="/" className="t-brand px-2">
       {brandFirst && <>{brandFirst} </>}
       <span className="holo-text">{brandLast}</span>
     </Link>
   );
 
   const footer = (
-    <div className="border-t border-edge px-4 py-3 flex items-center gap-3">
+    <>
+    {/* Theme sits above the account row rather than in it: it is a setting
+        someone changes once, not an action they take, so it should not
+        compete with Sign out for the same glance. */}
+    <div className="border-t border-edge px-4 pt-3">
+      <ThemeToggle />
+    </div>
+    <div className="px-4 py-3 flex items-center gap-3">
       <UserButton afterSignOutUrl="/sign-in" />
       <span className="min-w-0">
         {name && <span className="block text-sm text-dim truncate">{name}</span>}
@@ -149,6 +157,7 @@ export default function Nav({ isAdmin, isManager = false, isCollector = false, n
         </Link>
       )}
     </div>
+    </>
   );
 
   return (

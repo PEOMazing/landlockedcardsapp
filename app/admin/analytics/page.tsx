@@ -4,6 +4,8 @@ import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
 import { buildWeekPay, buildManagerPay, buildPersonHours, money, StreamRow, toLine, isHitLine } from "@/lib/calc";
+import TableEmpty from "@/components/ui/TableEmpty";
+import StatTile from "@/components/ui/StatTile";
 
 export const dynamic = "force-dynamic";
 
@@ -208,23 +210,23 @@ export default async function AnalyticsPage() {
     <>
       <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-6xl mx-auto p-6 space-y-8">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+        <h1 className="t-page">
           Analytics and P&amp;L
         </h1>
 
         <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Big label="Revenue (after fees)" v={money(tot.revenue)} />
-          <Big label="Total wages paid" v={money(totalWages)} />
-          <Big label="Hours streamed" v={tot.hours.toFixed(1)} />
-          <Big label="Company net" v={money(companyNet)} win={companyNet >= 0} bad={companyNet < 0} />
-          <Big label="Product cost" v={money(tot.cost)} />
-          <Big label="Wage % of revenue" v={pct(totalWages, tot.revenue)} />
-          <Big label="Packing hours" v={tot.packingHours.toFixed(1)} />
-          <Big label="Revenue per streamed hr" v={tot.hours > 0 ? money(tot.revenue / tot.hours) : "-"} />
-          <Big label="Spots sold" v={String(tot.spots)} />
-          <Big label="Streams completed" v={String(pnl.length)} />
-          <Big label="Avg revenue per stream" v={pnl.length ? money(tot.revenue / pnl.length) : "-"} />
-          <Big label="Company net per streamed hr" v={tot.hours > 0 ? money(companyNet / tot.hours) : "-"} />
+          <StatTile label="Revenue (after fees)" value={money(tot.revenue)} size="md" />
+          <StatTile label="Total wages paid" value={money(totalWages)} size="md" />
+          <StatTile label="Hours streamed" value={tot.hours.toFixed(1)} size="md" />
+          <StatTile label="Company net" value={money(companyNet)} size="md" tone={companyNet >= 0 ? "win" : "bad"} />
+          <StatTile label="Product cost" value={money(tot.cost)} size="md" />
+          <StatTile label="Wage % of revenue" value={pct(totalWages, tot.revenue)} size="md" />
+          <StatTile label="Packing hours" value={tot.packingHours.toFixed(1)} size="md" />
+          <StatTile label="Revenue per streamed hr" value={tot.hours > 0 ? money(tot.revenue / tot.hours) : "-"} size="md" />
+          <StatTile label="Spots sold" value={String(tot.spots)} size="md" />
+          <StatTile label="Streams completed" value={String(pnl.length)} size="md" />
+          <StatTile label="Avg revenue per stream" value={pnl.length ? money(tot.revenue / pnl.length) : "-"} size="md" />
+          <StatTile label="Company net per streamed hr" value={tot.hours > 0 ? money(companyNet / tot.hours) : "-"} size="md" />
         </section>
 
         <section className="card p-5">
@@ -269,11 +271,11 @@ export default async function AnalyticsPage() {
         <section>
           <h2 className="label mb-2">Hit tracking - items over ${settings.hit_threshold}</h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-            <Big label="Hit pool run (items)" v={String(hitPoolQty)} />
-            <Big label="Hits delivered" v={String(hitsDelivered)} />
-            <Big label="Pool delivered rate" v={hitPoolQty > 0 ? ((hitsDelivered / hitPoolQty) * 100).toFixed(0) + "%" : "-"} />
-            <Big label="Spins sold (lifetime)" v={String(tot.sold)} />
-            <Big label="Hit rate per spin sold" v={tot.sold > 0 ? ((hitsDelivered / tot.sold) * 100).toFixed(1) + "%" : "-"} />
+            <StatTile label="Hit pool run (items)" value={String(hitPoolQty)} size="md" />
+            <StatTile label="Hits delivered" value={String(hitsDelivered)} size="md" />
+            <StatTile label="Pool delivered rate" value={hitPoolQty > 0 ? ((hitsDelivered / hitPoolQty) * 100).toFixed(0) + "%" : "-"} size="md" />
+            <StatTile label="Spins sold (lifetime)" value={String(tot.sold)} size="md" />
+            <StatTile label="Hit rate per spin sold" value={tot.sold > 0 ? ((hitsDelivered / tot.sold) * 100).toFixed(1) + "%" : "-"} size="md" />
           </div>
           <p className="text-dim text-xs mb-4">
             Pool delivered rate is the forecasting number: put 40 hits in a show and history says that
@@ -303,7 +305,7 @@ export default async function AnalyticsPage() {
                     <td>{money(p.hitValue)}</td>
                   </tr>
                 ))}
-                {products.length === 0 && <tr><td colSpan={7} className="text-dim">No product data yet</td></tr>}
+                {products.length === 0 && <TableEmpty>No product data yet</TableEmpty>}
               </tbody>
             </table>
           </div>
@@ -344,7 +346,7 @@ export default async function AnalyticsPage() {
                     <td>{r.hours > 0 ? money(r.revPerHour) : "-"}</td>
                   </tr>
                 ))}
-                {pnl.length === 0 && <tr><td colSpan={15} className="text-dim">No completed streams yet</td></tr>}
+                {pnl.length === 0 && <TableEmpty>No completed streams yet</TableEmpty>}
               </tbody>
             </table>
           </div>
@@ -356,15 +358,6 @@ export default async function AnalyticsPage() {
         </section>
       </main>
     </>
-  );
-}
-
-function Big({ label, v, win, bad }: { label: string; v: string; win?: boolean; bad?: boolean }) {
-  return (
-    <div className="card p-4">
-      <div className="label">{label}</div>
-      <div className={`text-xl font-bold num mt-1 ${win ? "text-win" : ""} ${bad ? "text-bad" : ""}`}>{v}</div>
-    </div>
   );
 }
 

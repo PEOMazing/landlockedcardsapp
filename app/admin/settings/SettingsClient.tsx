@@ -81,7 +81,7 @@ export default function SettingsClient() {
 
   return (
     <main className="max-w-3xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Pay settings</h1>
+      <h1 className="t-page">Pay settings</h1>
       <div className="card divide-y divide-edge">
         {FIELDS.map((f) => (
           <div key={f.key} className="p-4 flex items-center justify-between gap-4">
@@ -109,7 +109,7 @@ export default function SettingsClient() {
         since pay is always computed live from stream data.
       </p>
 
-      <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Streamer profiles</h1>
+      <h1 className="t-page">Streamer profiles</h1>
       <p className="text-dim text-sm">
         Add a profile with the person&apos;s email and they are connected automatically the first time they sign in
         with it. No further linking needed.

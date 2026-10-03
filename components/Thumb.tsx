@@ -39,7 +39,7 @@ export default function Thumb({
         loading="lazy"
         width={size}
         height={size}
-        className={`object-contain rounded-sm bg-white/5 inline-block align-middle ${className}`}
+        className={`object-contain rounded-sm bg-edge/50 inline-block align-middle ${className}`}
         style={{ width: size, height: size }}
         onMouseEnter={(e) => setPos({ x: e.clientX, y: e.clientY })}
         onMouseMove={(e) => setPos({ x: e.clientX, y: e.clientY })}
@@ -49,7 +49,7 @@ export default function Thumb({
         <img
           src={big}
           alt=""
-          className="fixed z-50 pointer-events-none rounded-lg border border-edge bg-panel shadow-2xl p-2"
+          className="fixed z-50 pointer-events-none rounded-lg border border-edge bg-panel lifted p-2"
           style={{ ...style, width: previewW, maxHeight: 320, objectFit: "contain" }}
         />
       )}

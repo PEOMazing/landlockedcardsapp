@@ -8,6 +8,13 @@ const $note = "text-dim text-sm leading-relaxed";
 function CardArt({ grade }: { grade: string }) {
   // A stylized card with wear drawn per grade. Not a photo - a diagram of
   // exactly where to look.
+  //
+  // These hex values are deliberately not tokens, and should stay that way.
+  // This is a drawing of a physical object, the same as a photograph would be:
+  // the card body is dark because card backs are dark, and the whitening reads
+  // as whitening because it is pale against that. Theming it would invert a
+  // diagram whose whole meaning is which bits are lighter than the card. The
+  // palette is internally consistent and correct on either canvas.
   const edge = "#8b93a7";
   const wear = "#f4f5f7";
   const crease = "#fbbf24";
@@ -98,7 +105,7 @@ export default function ConditionsPage() {
   return (
     <main className="max-w-4xl mx-auto p-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Card condition guide</h1>
+        <h1 className="t-page">Card condition guide</h1>
         <p className={$note + " mt-1 max-w-2xl"}>
           Every card is graded to this standard, and every comp is a Near Mint baseline adjusted for the condition on the label. The illustrations show where wear appears - corners, edges, surface, structure - as it accumulates from grade to grade.
         </p>
@@ -108,7 +115,7 @@ export default function ConditionsPage() {
           <section key={g.code} className="card p-5 flex gap-5 items-start flex-wrap sm:flex-nowrap">
             <CardArt grade={g.code} />
             <div className="min-w-0">
-              <h2 className="text-lg font-bold">
+              <h2 className="t-section">
                 {g.name} <span className="text-foil">({g.code})</span>
               </h2>
               <p className="font-medium mt-0.5">{g.summary}</p>

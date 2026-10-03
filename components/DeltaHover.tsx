@@ -33,12 +33,12 @@ export default function DeltaHover({
 
   return (
     <span onMouseEnter={open} onMouseLeave={close} className="relative inline-block">
-      <span className={`text-[10px] cursor-help ${up ? "text-win" : "text-bad"}`}>
+      <span className={`t-meta cursor-help ${up ? "text-win" : "text-bad"}`}>
         {up ? "\u25B2" : "\u25BC"}
       </span>
       {pos && (
         <span
-          className="fixed z-50 block rounded-lg border border-edge bg-panel shadow-2xl px-3 py-2 whitespace-nowrap"
+          className="fixed z-50 block rounded-lg border border-edge bg-panel lifted px-3 py-2 whitespace-nowrap"
           style={{
             left: Math.min(pos.x + 10, (typeof window !== "undefined" ? window.innerWidth : 1200) - 240),
             top: Math.max(8, pos.y - 44),
