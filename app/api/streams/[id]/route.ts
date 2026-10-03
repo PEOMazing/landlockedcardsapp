@@ -29,6 +29,29 @@ async function histStreams(): Promise<any[]> {
   return rows;
 }
 
+// The same treatment for the product lookup, which was the one whole-table read
+// on this route that the cache above missed.
+//
+// Three fields are read off it: Category, TCGplayer URL, Image URL. It was
+// pulling every column of every product to build three lookup maps. Airtable
+// pages at 100 records, so on 1,200 products that is twelve sequential round
+// trips, and this route runs on every qty button press on the show page.
+//
+// A minute is the right window. These three fields change when somebody maps a
+// product or edits a category, which is not something that happens mid-show,
+// and the cost of being a minute stale is a thumbnail or a category label
+// lagging behind an edit made in another tab.
+const PRODUCT_TTL = 60 * 1000;
+const PRODUCT_FIELDS = ["Category", "TCGplayer URL", "Image URL"];
+let productCache: { at: number; rows: any[] } | undefined;
+
+async function productLookupRows(): Promise<any[]> {
+  if (productCache && Date.now() - productCache.at < PRODUCT_TTL) return productCache.rows;
+  const rows = await atList(T.inventory, { "fields[]": PRODUCT_FIELDS });
+  productCache = { at: Date.now(), rows };
+  return rows;
+}
+
 
 // Put the card's current binder slot at the front of a show-set line, replacing
 // whatever number is already there. Blank slot leaves the line untouched: a
@@ -54,7 +77,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     getSettings(),
     isComplete ? Promise.resolve([]) : histLines(),
     isComplete ? Promise.resolve([]) : histStreams(),
-    atList(T.inventory),
+    productLookupRows(),
   ]);
   const categoryByProduct: Record<string, string> = {};
   const tcgByProduct: Record<string, string> = {};

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // A hook after an early return takes the whole page down.
@@ -37,8 +37,20 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const HOOK = /^\s{2}(?:const|let|var)?\s*[\w{[\], :]*=?\s*(use[A-Z]\w*)\s*\(/;
-const BARE_HOOK = /^\s{2}(use[A-Z]\w*)\s*\(/;
+// The hook name is followed by `(`, or by `<` when the call carries an explicit
+// type argument.
+//
+// That second case is not a detail. The first version of this file required a
+// `(` immediately after the name, so it silently skipped every
+// `useState<LineT[]>([])` and `useRef<Record<string, X>>({})` in the codebase,
+// which in a TypeScript app is most of them. It then passed, cleanly, on a
+// `useRef` sitting below an early return in this very component: the same bug
+// it was written to catch, in a shape it could not see.
+//
+// A guard that reports green on the bug it exists for is worse than nothing,
+// because it is also the reason nobody looks.
+const HOOK = /^\s{2}(?:const|let|var)?\s*[\w{[\], :]*=?\s*(use[A-Z]\w*)\s*[<(]/;
+const BARE_HOOK = /^\s{2}(use[A-Z]\w*)\s*[<(]/;
 // A return at the component's own indent level. Returns nested inside a
 // callback, a map or an if-block are indented further and cannot skip a hook
 // in the component body.
@@ -98,10 +110,42 @@ describe("the check itself works", () => {
 }
 `;
     const f = "/tmp/__hookorder_bad.tsx";
-    require("node:fs").writeFileSync(f, bad);
+    writeFileSync(f, bad);
     const hits = findHooksAfterReturn(f);
     assert.equal(hits.length, 1);
     assert.equal(hits[0].hook, "useMemo");
+  });
+
+  it("catches a hook that carries an explicit type argument", () => {
+    // The shape that got through. `useRef<T>(...)` and `useState<T>(...)` are
+    // how most hooks are written in this codebase, and the original pattern
+    // required a bare `(` after the name, so none of them were ever examined.
+    const bad = `export default function C() {
+  const [data, setData] = useState<any>(null);
+  if (!data) return <p>Loading</p>;
+  const chain = useRef<Record<string, Promise<unknown>>>({});
+  return <p>{String(chain)}</p>;
+}
+`;
+    const f = "/tmp/__hookorder_generic.tsx";
+    writeFileSync(f, bad);
+    const hits = findHooksAfterReturn(f);
+    assert.equal(hits.length, 1, "a generic hook call below an early return must be caught");
+    assert.equal(hits[0].hook, "useRef");
+  });
+
+  it("does not mistake a less-than comparison for a type argument", () => {
+    // The cost of accepting `<` after the name. An argument that opens with a
+    // comparison must not read as a generic, or the guard starts crying wolf.
+    const ok = `export default function C() {
+  if (!ready) return null;
+  const n = compute(a < b ? 1 : 2);
+  return <p>{n}</p>;
+}
+`;
+    const f = "/tmp/__hookorder_lt.tsx";
+    writeFileSync(f, ok);
+    assert.deepEqual(findHooksAfterReturn(f), []);
   });
 
   it("does not flag a return nested inside a callback", () => {
@@ -116,7 +160,7 @@ describe("the check itself works", () => {
 }
 `;
     const f = "/tmp/__hookorder_ok.tsx";
-    require("node:fs").writeFileSync(f, ok);
+    writeFileSync(f, ok);
     assert.deepEqual(findHooksAfterReturn(f), []);
   });
 });

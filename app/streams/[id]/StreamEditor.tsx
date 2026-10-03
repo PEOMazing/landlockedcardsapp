@@ -29,6 +29,11 @@ type LineT = {
 export default function StreamEditor({ id, isAdmin = false }: { id: string; isAdmin?: boolean }) {
   const [data, setData] = useState<any>(null);
   const [lines, setLines] = useState<LineT[]>([]);
+  // Per-line promise chain for quantity edits. Declared up here with the other
+  // hooks, above the `if (!data) return` below, because a hook called after an
+  // early return changes the hook order between renders and React throws #310.
+  // That is not hypothetical: it is what took the stream page down earlier.
+  const qtyChain = useRef<Record<string, Promise<unknown>>>({});
   // Collapsed by default: most visits to this page are to build or run a show,
   // not to settle one.
   const [manageOpen, setManageOpen] = useState(false);
@@ -357,6 +362,54 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ qtyHit: clamped }),
     });
+  }
+
+  // Quantity on a show-set line.
+  //
+  // This used to disable the whole toolbar, PATCH, and then re-read the entire
+  // stream: the show set, the settings, the delivery-rate history and every
+  // product in the base. Building a wheel is dozens of these in a row, so the
+  // one control you press most was the slowest thing on the page.
+  //
+  // Optimistic like setHit above, with two differences, both because this one
+  // moves physical stock rather than a counter:
+  //
+  // The server can legitimately refuse. It rejects going below the hits already
+  // recorded, and it rejects pulling more than is on the shelf, and the message
+  // it returns names the product and the shortfall. So the failure path puts
+  // the old number back and shows what the server said, rather than leaving a
+  // quantity on screen that nothing in the building agrees with.
+  //
+  // Requests are chained per line. The route reads the current qty to work out
+  // the inventory delta, so two taps arriving out of order would restock the
+  // wrong amount. Chaining keeps a fast double-tap correct without blocking the
+  // button, which is the entire point of the change.
+  function adjustQty(line: LineT, delta: number) {
+    const from = line.qty;
+    const to = from + delta;
+    if (to < Math.max(1, line.qtyHit || 0)) return;
+    setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, qty: to } : l)));
+
+    const prior = qtyChain.current[line.id] ?? Promise.resolve();
+    const next = prior
+      .catch(() => {})
+      .then(async () => {
+        const r = await fetch(`/api/lines/${line.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ qty: to }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, qty: from } : l)));
+          toast(d.error || "Could not change the quantity", "bad");
+        }
+      })
+      .catch(() => {
+        setLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, qty: from } : l)));
+        toast("Could not reach the server - the quantity was put back", "bad");
+      });
+    qtyChain.current[line.id] = next;
   }
 
   // sale price on an auctioned single: marks the card Sold and counts the hit
@@ -1139,28 +1192,17 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                       <span className="inline-flex items-center gap-1">
                         <button
                           className="w-5 h-5 rounded border border-edge text-dim hover:text-body leading-none disabled:opacity-30"
-                          disabled={busy || l.qty <= Math.max(1, l.qtyHit || 0)}
+                          disabled={l.qty <= Math.max(1, l.qtyHit || 0)}
                           title="One fewer - the unit goes back to inventory"
-                          onClick={async () => {
-                            setBusy(true);
-                            const r = await fetch(`/api/lines/${l.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty: l.qty - 1 }) });
-                            if (!r.ok) toast((await r.json().catch(() => ({}))).error || "Could not adjust");
-                            await load(); setBusy(false);
-                          }}
+                          onClick={() => adjustQty(l, -1)}
                         >
                           -
                         </button>
                         <span className="num min-w-[2ch] text-center">{l.qty}</span>
                         <button
                           className="w-5 h-5 rounded border border-edge text-dim hover:text-body leading-none disabled:opacity-30"
-                          disabled={busy}
                           title="One more - pulled from inventory"
-                          onClick={async () => {
-                            setBusy(true);
-                            const r = await fetch(`/api/lines/${l.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty: l.qty + 1 }) });
-                            if (!r.ok) toast((await r.json().catch(() => ({}))).error || "Could not adjust", "bad");
-                            await load(); setBusy(false);
-                          }}
+                          onClick={() => adjustQty(l, 1)}
                         >
                           +
                         </button>
