@@ -314,11 +314,17 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const d = await res.json();
     if (!res.ok) { setPasteMsg(d.error || "Bulk add failed"); toast(d.error || "Bulk add failed", "bad"); }
     else {
-      let msg = `Added ${d.added.length} items`;
-      if (d.created.length) msg += ` - created ${d.created.length} new products (set their prices!)`;
-      if (d.skipped.length) msg += ` - skipped (no match): ${d.skipped.join(", ")}`;
+      // `failed` is the honest half of a bulk add. The route checks the whole
+      // paste before writing anything, so a line that fails here failed on the
+      // way to Airtable, and the old message would have counted it as added.
+      const failed: string[] = d.failed || [];
+      let msg = `Added ${d.added.length} item${d.added.length === 1 ? "" : "s"}`;
+      if (failed.length) msg += ` - ${failed.length} did not save: ${failed.join(", ")}. Paste just those again.`;
       setPasteMsg(msg);
-      setPasteText("");
+      if (failed.length) toast(`${failed.length} of ${d.added.length + failed.length} lines did not save`, "bad");
+      // Only clear the box on a clean run. Clearing it after a partial failure
+      // throws away the one copy of the list that says what still needs adding.
+      if (!failed.length) setPasteText("");
     }
     await load();
     setBusy(false);

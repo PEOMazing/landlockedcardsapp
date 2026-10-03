@@ -36,6 +36,73 @@ export function indexByName(records: AtRecord[]): Map<string, AtRecord> {
   return map;
 }
 
+// Looking a pasted line up against inventory.
+//
+// The old matcher answered with a product or with null, and null meant two very
+// different things that need opposite responses:
+//
+//   nothing in inventory is called that        -> add the product, or fix the typo
+//   several products could be called that      -> say which one you meant
+//
+// Both came back as "not in inventory", and that message is actively harmful on
+// the second one. It tells you to create a product you already own, which is
+// exactly how a second copy at $0 market gets made, which is the thing the
+// alias system at the top of this file exists to prevent. The user does the
+// damage, following instructions the app gave them.
+//
+// So the result says which case it is, and carries the candidates when it is
+// the ambiguous one.
+
+export type NameMatch =
+  | { kind: "exact"; product: AtRecord }
+  | { kind: "unique"; product: AtRecord }
+  | { kind: "ambiguous"; candidates: AtRecord[] }
+  | { kind: "none" };
+
+// How long a name has to be before substring containment is evidence of
+// anything. Without this, a product genuinely named "Tin" or "ETB" matches
+// every pasted line that happens to contain those letters, and the paste picks
+// up the wrong product silently, which is worse than failing.
+//
+// Six is above the common short-word traps (tin, etb, pack, box, lot) and below
+// the shortest real product names, which run to multiple words.
+export const MIN_FUZZY_LEN = 6;
+
+const key = (s: unknown) => String(s || "").trim().toLowerCase();
+
+export function matchProduct(name: string, inventory: AtRecord[]): NameMatch {
+  const n = key(name);
+  if (!n) return { kind: "none" };
+
+  // An exact hit on any alias wins outright, and a current name beats a former
+  // one when both records answer to the same string.
+  const exact = inventory.filter((r) => productAliases(r).some((a) => key(a) === n));
+  if (exact.length > 0) {
+    const current = exact.find((r) => key(r.fields["Product Name"]) === n);
+    return { kind: "exact", product: current ?? exact[0] };
+  }
+
+  const hits: AtRecord[] = [];
+  for (const r of inventory) {
+    for (const a of productAliases(r)) {
+      const p = key(a);
+      if (!p) continue;
+      const pastedContainsProduct = p.length >= MIN_FUZZY_LEN && n.includes(p);
+      const productContainsPasted = n.length >= MIN_FUZZY_LEN && p.includes(n);
+      if (pastedContainsProduct || productContainsPasted) { hits.push(r); break; }
+    }
+  }
+
+  if (hits.length === 1) return { kind: "unique", product: hits[0] };
+  if (hits.length > 1) return { kind: "ambiguous", candidates: hits };
+  return { kind: "none" };
+}
+
+/** The product a match landed on, or null when it did not land on one. */
+export function matchedProduct(m: NameMatch): AtRecord | null {
+  return m.kind === "exact" || m.kind === "unique" ? m.product : null;
+}
+
 // Fields that rename a mapped product to its real TCGplayer name, keeping the
 // name it had so nothing that looks products up by name breaks. Returns null
 // when there is nothing to do, so callers can merge it into an update blindly.
