@@ -223,6 +223,25 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     };
   }, [lines, data]);
 
+  // Singles that could still come back: the ones the return list asks about.
+  //
+  // These live up here, above the early returns below, and they have to. A
+  // hook that sits after `if (!data) return` runs on the second render and not
+  // the first, React counts a different number of hooks than last time, and
+  // the whole page dies with error #310 before it paints. That is exactly what
+  // took the stream page down: the first render has no data yet, so it bailed
+  // out early, and the moment the fetch landed these two appeared out of
+  // nowhere. Both only read state declared at the top, so there is no reason
+  // for them to be anywhere else.
+  const returnableSingles = useMemo(
+    () => lines.filter((l) => !!l.singleRecId && Math.max(l.qty - l.qtyHit, 0) > 0),
+    [lines],
+  );
+  const heldCount = useMemo(
+    () => returnableSingles.filter((l) => holdOut.has(l.id)).length,
+    [returnableSingles, holdOut],
+  );
+
   if (loadErr) {
     return (
       <main className="max-w-2xl mx-auto p-6">
@@ -348,16 +367,6 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       body: JSON.stringify({ salePrice: sale }),
     });
   }
-
-  // Singles that could still come back: the ones the return list asks about.
-  const returnableSingles = useMemo(
-    () => lines.filter((l) => !!l.singleRecId && Math.max(l.qty - l.qtyHit, 0) > 0),
-    [lines],
-  );
-  const heldCount = useMemo(
-    () => returnableSingles.filter((l) => holdOut.has(l.id)).length,
-    [returnableSingles, holdOut],
-  );
 
   async function returnItems() {
     setBusy(true); setReturnMsg("");
