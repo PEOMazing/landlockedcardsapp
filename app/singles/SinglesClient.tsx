@@ -11,6 +11,7 @@ import DeltaHover from "@/components/DeltaHover";
 import { toast } from "@/components/Toaster";
 import Thumb from "@/components/Thumb";
 import CollectrImport from "@/components/CollectrImport";
+import RefreshProgress, { RefreshState } from "@/components/RefreshProgress";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
@@ -241,6 +242,8 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   // multi-select for bulk actions
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Non-null only while a price refresh is in flight; drives the modal.
+  const [refresh, setRefresh] = useState<RefreshState | null>(null);
   const lastClicked = useRef<number | null>(null);
   const selSet = useMemo(() => new Set(selected), [selected]);
 
@@ -619,12 +622,14 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     let done = 0, linkedTotal = 0, skippedTotal = 0, estTotal = 0;
     const reasons: { id: string; reason: string }[] = [];
     const review: { name: string; condition: string; before: number | null; after: number }[] = [];
+    // The modal opens before the first request goes out, so the click has a
+    // visible consequence even while the first batch is still in flight.
+    setRefresh({ total: ids.length, done: 0, linked: 0, estimated: 0, skipped: 0 });
     try {
       // The route caps each call so a long batch cannot be killed mid-write.
       // Loop until it reports nothing remaining.
       let queue = [...ids];
       while (queue.length > 0) {
-        toast(`Refreshing prices... ${done}/${ids.length}`);
         const r = await fetch("/api/singles/comps", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -638,6 +643,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
         estTotal += d.estimated || 0;
         if (Array.isArray(d.reasons)) reasons.push(...d.reasons);
         if (Array.isArray(d.review)) review.push(...d.review);
+        setRefresh({
+          total: ids.length,
+          done,
+          linked: linkedTotal,
+          estimated: estTotal,
+          skipped: skippedTotal,
+          // The batch cap means this lands in steps rather than per card, so
+          // say which chunk just finished rather than implying live per-card
+          // progress the server does not actually stream.
+          current: d.remaining ? `${d.remaining} still to price` : "",
+        });
         if (!d.remaining) break;
         queue = queue.slice(queue.length - d.remaining);
       }
@@ -663,6 +679,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
       await load();
     } finally {
       setBulkBusy(false);
+      setRefresh(null);
     }
   }
 
@@ -868,6 +885,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
+      <RefreshProgress state={refresh} />
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
           Singles <span className="text-foil">inventory</span>
