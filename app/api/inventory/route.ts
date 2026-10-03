@@ -2,20 +2,34 @@ import { NextResponse } from "next/server";
 import { atList, atCreate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { clampStock } from "@/lib/stock";
+import { openCommitmentsByProduct } from "@/lib/openStock";
 
 export async function GET() {
   const me = await getMe();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const rows = await atList(T.inventory, {
-    filterByFormula: "{Active} = TRUE()",
-    "sort[0][field]": "Product Name",
-  });
+  // Two numbers, not one. Qty On Hand has always been the storage room; what
+  // was missing is the units standing on an open show, which are still owned
+  // and are what makes a shelf count of 0 look like "we are out of these" when
+  // there are six of them on a wheel tonight.
+  //
+  // If the commitment read fails the page still renders: an inventory table
+  // with no "on shows" column is the behaviour from last week, and that beats
+  // a 500 on the only screen that tells anyone what stock exists.
+  const [rows, onShows] = await Promise.all([
+    atList(T.inventory, {
+      filterByFormula: "{Active} = TRUE()",
+      "sort[0][field]": "Product Name",
+    }),
+    openCommitmentsByProduct().catch(() => new Map<string, number>()),
+  ]);
   const items = rows.map((r) => ({
     id: r.id,
     name: r.fields["Product Name"],
     category: r.fields["Category"] || "",
     marketPrice: r.fields["Market Price"] ?? 0,
     qtyOnHand: r.fields["Qty On Hand"] ?? 0,
+    // committed to shows that have not been closed out yet
+    qtyOnShows: onShows.get(r.id) || 0,
     tcgUrl: r.fields["TCGplayer URL"] || "",
     imageUrl: r.fields["Image URL"] || "",
     retailPrice: r.fields["Retail Price"] ?? null,
