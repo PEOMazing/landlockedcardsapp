@@ -116,11 +116,41 @@ export default function ErrorScreen({
             Go home
           </a>
         </div>
-        {error?.digest && (
-          <p style={{ color: DIM, fontSize: "11px", marginTop: "20px", marginBottom: 0 }}>
-            Reference {error.digest}
-          </p>
-        )}
+        {/* What actually went wrong, one tap away.
+            Nobody standing at a wheel wants to read a stack trace, so it is
+            folded shut. But the alternative is a screenshot that says nothing
+            and a diagnosis by guesswork, which has already cost a show once.
+            Folded open it is a copyable fault, and that is the difference
+            between fixing this in a minute and fixing it in an hour. */}
+        <details style={{ marginTop: "20px" }}>
+          <summary style={{ color: DIM, fontSize: "11px", cursor: "pointer" }}>
+            What went wrong{error?.digest ? ` (ref ${error.digest})` : ""}
+          </summary>
+          <pre
+            style={{
+              color: DIM,
+              fontSize: "10px",
+              lineHeight: 1.5,
+              marginTop: "8px",
+              marginBottom: 0,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              maxHeight: "11rem",
+              overflow: "auto",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            }}
+          >
+            {[
+              `${error?.name || "Error"}: ${error?.message || "(no message)"}`,
+              String(error?.stack || "")
+                .split("\n")
+                .slice(1, 6)
+                .join("\n"),
+            ]
+              .filter(Boolean)
+              .join("\n")}
+          </pre>
+        </details>
       </div>
     </div>
   );
