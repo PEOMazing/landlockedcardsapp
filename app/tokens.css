@@ -1,0 +1,154 @@
+/* Design tokens.
+ *
+ * Ported from the PEOLens master product blueprint, which this app now shares:
+ * ultra-clean Apple-tech aesthetic, razor-sharp 1px borders instead of heavy
+ * drop shadows, compact sans with tight tracking so dense data scans easily,
+ * and flawless zero-flicker light and dark modes.
+ *
+ * What is NOT ported is the palette. PEOLens is restrained corporate navy
+ * because it sells to PEO brokers. The rolling foil gradient here is the
+ * LandLocked identity and it earns its place on a card-breaking product, so
+ * the accent stays and only the canvas discipline comes across.
+ *
+ * Colours are raw RGB channels, not hex. Tailwind composes them as
+ * rgb(var(--c-x) / <alpha-value>), which is what keeps the ~200 existing
+ * opacity modifiers in this codebase working (bg-foil/15, border-edge/60).
+ * Switching to hex here would silently break every one of them.
+ */
+
+:root {
+  /* Spacing. Six steps, nothing between them. The audit found 99 inline
+     arbitrary pixel values across the app; this is what replaces them. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --s-8: 32px;
+
+  /* Radius. Two values. The app had six in use (lg, full, md, xl, sm, t),
+     which is five more than a consistent surface needs plus the pill. */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-pill: 9999px;
+
+  /* One shadow level, and it is for lifted overlays only: menus, modals,
+     toasts. Cards use a 1px border. That is the blueprint's central rule and
+     the single biggest reason PEOLens reads as premium rather than templated. */
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 12px 32px rgb(0 0 0 / 0.14);
+
+  /* Type scale. Five steps, each with its own line height, so a page title and
+     a meta label can never accidentally be the same size. */
+  --t-page: 1.5rem;      /* page title */
+  --t-page-lh: 1.2;
+  --t-section: 1.125rem; /* section title */
+  --t-section-lh: 1.3;
+  --t-body: 0.875rem;    /* body and table cells */
+  --t-body-lh: 1.45;
+  --t-secondary: 0.8125rem;
+  --t-secondary-lh: 1.4;
+  --t-meta: 0.6875rem;   /* uppercase labels, timestamps */
+  --t-meta-lh: 1.3;
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+ * Dark, the default. Canvas and card values come straight from the blueprint:
+ * deep slate #09090B with slightly lifted cards #161B26. The app previously
+ * ran #0D0F14 / #14171F, close in character but off the shared standard.
+ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --c-ink: 9 9 11;        /* #09090B canvas */
+  --c-panel: 22 27 38;    /* #161B26 cards */
+  --c-edge: 38 43 56;     /* #262B38 hairlines */
+  --c-body: 244 245 247;  /* #F4F5F7 text */
+  --c-dim: 139 147 167;   /* #8B93A7 secondary text */
+
+  --c-foil: 122 162 255;  /* #7AA2FF accent */
+  --c-win: 62 207 142;    /* #3ECF8E */
+  --c-givvy: 192 132 252; /* #C084FC */
+  --c-warn: 232 179 65;   /* #E8B341 */
+  --c-bad: 240 98 93;     /* #F0625D */
+
+  /* row hover, deliberately a token so tables stop hardcoding an rgba() */
+  --c-hover: 38 43 56;
+  --hover-a: 0.35;
+}
+
+/* ---------------------------------------------------------------------------
+ * Light. Off-white canvas #F8F9FA, pure white cards #FFFFFF, per blueprint.
+ *
+ * The accents are NOT the dark-mode values. #7AA2FF on white is roughly 2.2:1
+ * and unreadable as text; every accent here is re-picked to clear 4.5:1 on
+ * white while keeping the same hue, so a status colour means the same thing in
+ * both themes without either theme being the ugly one.
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --c-ink: 248 249 250;   /* #F8F9FA canvas */
+  --c-panel: 255 255 255; /* #FFFFFF cards */
+  --c-edge: 226 228 232;  /* #E2E4E8 hairlines */
+  --c-body: 24 24 27;     /* #18181B text */
+  --c-dim: 99 107 124;    /* #636B7C secondary text, 4.9:1 on white */
+
+  --c-foil: 46 94 212;    /* #2E5ED4, 5.3:1 on white */
+  --c-win: 13 125 87;     /* #0D7D57, 4.6:1 */
+  --c-givvy: 134 54 199;  /* #8636C7, 5.6:1 */
+  --c-warn: 150 90 10;    /* #965A0A, 5.2:1 */
+  --c-bad: 199 42 42;     /* #C72A2A, 5.0:1 */
+
+  --c-hover: 99 107 124;
+  --hover-a: 0.07;
+
+  /* Shadows have to be softer on a light canvas or every overlay looks dirty. */
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.05), 0 12px 28px rgb(16 24 40 / 0.08);
+}
+
+/* ---------------------------------------------------------------------------
+ * Type scale utilities. Deliberately plain class names rather than Tailwind
+ * plugin work, so a screen can be moved onto the scale one line at a time.
+ */
+.t-page {
+  font-size: var(--t-page);
+  line-height: var(--t-page-lh);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+}
+.t-section {
+  font-size: var(--t-section);
+  line-height: var(--t-section-lh);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.t-body {
+  font-size: var(--t-body);
+  line-height: var(--t-body-lh);
+}
+.t-secondary {
+  font-size: var(--t-secondary);
+  line-height: var(--t-secondary-lh);
+}
+.t-meta {
+  font-size: var(--t-meta);
+  line-height: var(--t-meta-lh);
+}
+
+/* Dense numeric data: tabular figures and tight tracking, which is the
+ * blueprint's stated reason for the typeface choice. A show set, a price grid
+ * and a payroll table are all this. */
+.dense {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* The one lifted surface. Anything using this is an overlay, never a card. */
+.lifted {
+  box-shadow: var(--shadow);
+}

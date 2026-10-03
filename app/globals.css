@@ -2,39 +2,90 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-body { background: #0D0F14; color: #F4F5F7; }
+/* Tokens first: every rule below reads from them. */
+@import "./tokens.css";
 
-.card { @apply bg-panel border border-edge rounded-xl; }
-.label { @apply text-[11px] uppercase tracking-[0.14em] text-dim font-semibold; }
-.input {
-  @apply w-full bg-ink border border-edge rounded-lg px-3 py-2 text-body text-sm
-  focus:outline-none focus:border-foil/60 placeholder:text-dim/60;
+/* No hardcoded canvas. Both themes resolve through the same two variables,
+ * which is what makes the theme switch a one-attribute change with nothing
+ * left behind to flash the old colour. */
+body {
+  background: rgb(var(--c-ink));
+  color: rgb(var(--c-body));
+  font-family: var(--font-body);
 }
-.btn { @apply inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors; }
+
+/* ---------------------------------------------------------------------------
+ * Surfaces
+ *
+ * A card is a 1px border and nothing else. The blueprint is explicit that
+ * razor-sharp hairlines replace heavy drop shadows, and it is the single
+ * change that stops a dense data app looking templated. The one shadow level
+ * in tokens.css is for overlays (.lifted), never for these.
+ */
+.card {
+  @apply bg-panel border border-edge rounded-xl;
+}
+
+.label {
+  font-size: var(--t-meta);
+  line-height: var(--t-meta-lh);
+  @apply uppercase tracking-[0.14em] text-dim font-semibold;
+}
+
+.input {
+  @apply w-full bg-ink border border-edge rounded-lg text-body
+  focus:outline-none focus:border-foil/60 placeholder:text-dim/60;
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--t-body);
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons. One primary per section is a UX rule, not a CSS one, but the
+ * styling makes the hierarchy obvious: foil is primary, ghost is secondary,
+ * win is the confirm step of a destructive-adjacent action.
+ */
+.btn {
+  @apply inline-flex items-center gap-2 rounded-lg font-semibold transition-colors;
+  padding: var(--s-2) var(--s-4);
+  font-size: var(--t-body);
+  letter-spacing: -0.01em;
+}
 .btn-foil {
-  @apply btn text-ink;
+  @apply btn;
+  color: #09090B; /* fixed: the foil gradient is the same in both themes */
   background: linear-gradient(120deg, #58e6d9, #7aa2ff, #c084fc);
   background-size: 200% 200%;
-  transition: background-position .4s ease;
+  transition: background-position 0.4s ease;
 }
 .btn-foil:hover { background-position: 100% 50%; }
 .btn-ghost { @apply btn border border-edge text-body hover:border-foil/50; }
 .btn-win { @apply btn bg-win/15 text-win border border-win/40 hover:bg-win/25; }
+
+/* ---------------------------------------------------------------------------
+ * Tables. The densest thing in the app, so this is where tight tracking and
+ * tabular figures matter most: a show set, a price grid and a payroll run are
+ * all scanned down a column rather than read.
+ */
 .num { font-variant-numeric: tabular-nums; }
-th { @apply label text-left py-2 px-3 border-b border-edge; }
-td { @apply py-2.5 px-3 border-b border-edge/60 text-sm num align-middle; }
-tbody tr { @apply transition-colors; }
-tbody tr:hover { background: rgba(38, 43, 56, 0.35); }
 
-:root {
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+th {
+  @apply label text-left border-b border-edge;
+  padding: var(--s-2) var(--s-3);
 }
-body { font-family: var(--font-body); }
+td {
+  @apply border-b border-edge/60 num align-middle;
+  padding: 10px var(--s-3);
+  font-size: var(--t-body);
+  letter-spacing: -0.01em;
+}
+tbody tr { @apply transition-colors; }
+tbody tr:hover { background: rgb(var(--c-hover) / var(--hover-a)); }
 
-
-/* CardQuarters holo identity: rolling foil gradient for brand moments */
+/* ---------------------------------------------------------------------------
+ * LandLocked holo identity: the rolling foil gradient for brand moments.
+ * Kept deliberately. This is the part of the look that is ours rather than
+ * borrowed, and the gradient reads correctly on both canvases.
+ */
 .holo-text {
   background: linear-gradient(120deg, #58e6d9, #7aa2ff, #c084fc, #f472b6, #7aa2ff, #58e6d9);
   background-size: 300% 300%;
@@ -49,6 +100,11 @@ body { font-family: var(--font-body); }
   100% { background-position: 0% 50%; }
 }
 
+/* On a light canvas the lighter stops in the gradient wash out, so the same
+ * mark gets slightly deeper stops rather than a different identity. */
+:root[data-theme="light"] .holo-text {
+  background-image: linear-gradient(120deg, #119e92, #2e5ed4, #8636c7, #c7297f, #2e5ed4, #119e92);
+}
 
 /* content sits beside the fixed sidebar on desktop */
 @media (min-width: 768px) {
@@ -57,4 +113,15 @@ body { font-family: var(--font-body); }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Theme changes should not animate. Without this every colour transition on
+ * the page fires at once on switch, which reads as a smear rather than a
+ * change of theme. */
+:root[data-theme-switching] * {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .holo-text { animation: none; }
 }
