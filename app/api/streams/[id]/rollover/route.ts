@@ -141,6 +141,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         const c = claimFields(card, params.id);
         await atUpdate(T.singles, sid, c.fields);
         copy = c.copy;
+        // Put the new quantity back on the cached card before the next line.
+        //
+        // `cards` is fetched once, above the loop. Two lines of the same card,
+        // which is what a show with two copies of a single looks like, both
+        // read the original Qty and both wrote Qty - 1, so the record gave up
+        // one copy while two moved to the new show. That is a card that exists
+        // in the binder count and nowhere on a shelf.
+        //
+        // It also decides the claim type: at Qty 2 the second line should flip
+        // the record to In Stream rather than decrement again, and off a stale
+        // read it never did, leaving the card In Stock for a third show to
+        // claim.
+        if (card) Object.assign(card.fields, c.fields);
       } // move-copy touches no card: the copy is the line
 
       await atCreate(T.lines, {

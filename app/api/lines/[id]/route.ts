@@ -21,15 +21,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if ("err" in g) return g.err;
   const b = await req.json();
   const returned = !!g.stream.fields["Items Returned"];
-  // TEMPORARY inventory-rebuild window (expires 2026-07-20 23:00 Denver time):
-  // Gabe is redoing inventory by hand, so admin line removals on closed streams
-  // skip stock restoration and alerts entirely - pure bookkeeping deletes.
-  // After expiry this block is inert and the hit-portion-restore rule resumes.
-  const rebuildWindow = g.me.isAdmin && Date.now() < Date.parse("2026-07-21T05:00:00Z");
-  if (returned && rebuildWindow) {
-    await atDelete(T.lines, params.id);
-    return NextResponse.json({ ok: true, restored: 0, rebuildWindow: true });
-  }
   const fields: Record<string, any> = {};
   // Store sale quantities are tied to what came off the shelf; they are
   // entered and finished from the Store sales section, not edited here.
@@ -113,19 +104,26 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     });
   } catch {}
   const returned = !!g.stream.fields["Items Returned"];
-  // Before a return: removing a line restores its full quantity (nothing left
-  // the building yet). After a return: the unhit portion already went back, so
-  // removing the line restores only the hit portion - inventory nets out as if
-  // the line never existed. Post-return removal is a history correction, so it
-  // is manager-gated.
+  // What comes back is what is physically still here, which is never the hit
+  // units: those were ripped on stream and mailed to whoever won them.
+  //
+  //   before the return   the unhit remainder is still in the box   qty - hit
+  //   after the return    the remainder already went back           hit
+  //   store line          only the hit units ever left the shelf    hit
+  //
+  // The first case used to restore the full qty, on the reasoning that nothing
+  // had left the building yet. That holds right up until the first spin lands.
+  // Delete a 40-pack line mid-show with 12 already hit and the shelf gained 12
+  // packs that were in the post. It now matches what the return route does
+  // with the same line, which is the behaviour that was always correct.
+  //
+  // Post-return removal is a history correction, so it is manager-gated.
   if (returned && !g.me.isManager && !g.me.isAdmin) {
     return NextResponse.json({ error: "items were returned - only managers can remove lines from a closed stream" }, { status: 403 });
   }
   const qty = g.line.fields["Qty"] || 0;
   const hit = g.line.fields["Qty Hit"] || 0;
-  // A store line only ever took its Qty Hit off the shelf (a sale waiting on
-  // inventory took nothing), so that is all that goes back.
-  const restore = g.line.fields["Is Store Purchase"] ? hit : returned ? hit : qty;
+  const restore = g.line.fields["Is Store Purchase"] || returned ? hit : Math.max(qty - hit, 0);
   const productId = g.line.fields["Product"]?.[0];
   if (productId && restore > 0) {
     const product = await atGet(T.inventory, productId);

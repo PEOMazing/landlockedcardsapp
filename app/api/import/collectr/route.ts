@@ -60,6 +60,14 @@ export async function POST(req: Request) {
         }
         if (!(hit.fields["Market Price"] > 0) && row.market && row.market > 0) fields["Market Price"] = row.market;
         await atUpdate(T.inventory, hit.id, fields);
+        // Keep the cached record in step with what was just written, so two
+        // rows that resolve to the same product add up instead of the second
+        // overwriting the first. A Collectr export naming a product by its
+        // current name on one line and a former name on another does exactly
+        // that, and indexByName points both at the same record.
+        hit.fields["Qty On Hand"] = fields["Qty On Hand"];
+        if (fields["Buy Price"] !== undefined) hit.fields["Buy Price"] = fields["Buy Price"];
+        if (fields["Market Price"] !== undefined) hit.fields["Market Price"] = fields["Market Price"];
         if (row.buy && row.buy > 0) {
           await atCreate(T.purchases, {
             "Product Name": name, "Product Rec Id": hit.id, "Qty": addQty,

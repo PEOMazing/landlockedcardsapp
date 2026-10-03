@@ -41,6 +41,18 @@ export async function importPortfolio(opts: {
             : row.buy;
         }
         await atUpdate(T.inventory, hit.id, fields);
+        // Write the new values back onto the cached record before the next row.
+        //
+        // indexByName maps every alias to the same record object, so two rows
+        // landing on one product is ordinary, not exotic: a file that uses the
+        // current name on one line and a former name on another does it. Both
+        // rows used to read the original quantity, so the second write
+        // overwrote the first and the units from one of them vanished. The
+        // weighted buy price was computed from the stale base too, so it ended
+        // up reflecting neither lot, and every margin built on that product
+        // was wrong afterwards.
+        hit.fields["Qty On Hand"] = fields["Qty On Hand"];
+        if (fields["Buy Price"] !== undefined) hit.fields["Buy Price"] = fields["Buy Price"];
         sealedMerged++;
       } else {
         const create: Record<string, any> = {

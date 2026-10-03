@@ -234,32 +234,73 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   function toggleSelectAll(ids: string[]) {
     setSelected((prev) => (prev.size === ids.length ? new Set() : new Set(ids)));
   }
-  async function bulkPatch(body: Record<string, any>, label: string) {
+  // Both of these report what actually happened, not what was asked for.
+  //
+  // They used to count `selected.size` and announce that as the result without
+  // reading a single response. That is not a race that occasionally misleads:
+  // this page is open to managers, and DELETE /api/inventory/[id] is admin
+  // only, so for a manager every request was a 403 and the toast said "20
+  // products deleted" over a table that still had all twenty rows in it.
+  //
+  // A toast that contradicts the screen underneath it teaches people to
+  // distrust the screen, because the toast is the thing that sounds official.
+  async function runBulk(
+    label: string,
+    ids: string[],
+    send: (id: string) => Promise<Response>,
+    verb: string,
+  ) {
     setBulkBusy(label);
-    for (const id of Array.from(selected)) {
-      await fetch(`/api/inventory/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+    let ok = 0;
+    const failed: string[] = [];
+    try {
+      for (const id of ids) {
+        try {
+          const r = await send(id);
+          if (r.ok) ok++;
+          else failed.push(items.find((i) => i.id === id)?.name || id);
+        } catch {
+          failed.push(items.find((i) => i.id === id)?.name || id);
+        }
+      }
+    } finally {
+      // finally, so a thrown request cannot leave the button stuck on
+      // "Working..." with the selection still held and nothing said.
+      setBulkBusy("");
     }
-    setBulkBusy("");
-    const n = selected.size;
     setSelected(new Set());
     await load();
-    toast(`${n} product${n === 1 ? "" : "s"} updated`);
+    if (failed.length === 0) {
+      toast(`${ok} product${ok === 1 ? "" : "s"} ${verb}`);
+    } else {
+      const named = failed.slice(0, 3).join(", ");
+      const more = failed.length > 3 ? ` and ${failed.length - 3} more` : "";
+      toast(`${ok} of ${ids.length} ${verb}. Not ${verb}: ${named}${more}`, "bad");
+    }
   }
+
+  async function bulkPatch(body: Record<string, any>, label: string) {
+    await runBulk(
+      label,
+      Array.from(selected),
+      (id) =>
+        fetch(`/api/inventory/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      "updated",
+    );
+  }
+
   async function bulkDelete() {
     if (!confirm(`Delete ${selected.size} products from inventory? Purchase history rows are kept for the record, but the products and their quantities are gone for good.`)) return;
-    setBulkBusy("delete");
-    for (const id of Array.from(selected)) {
-      await fetch(`/api/inventory/${id}`, { method: "DELETE" });
-    }
-    setBulkBusy("");
-    const n = selected.size;
-    setSelected(new Set());
-    await load();
-    toast(`${n} product${n === 1 ? "" : "s"} deleted`);
+    await runBulk(
+      "delete",
+      Array.from(selected),
+      (id) => fetch(`/api/inventory/${id}`, { method: "DELETE" }),
+      "deleted",
+    );
   }
 
   const [lotsFor, setLotsFor] = useState<string | null>(null);
@@ -560,13 +601,18 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
               </button>
             </span>
             <button className="text-dim hover:text-body t-meta ml-auto" onClick={() => setSelected(new Set())}>clear</button>
-            <button
-              className="text-bad hover:underline t-meta disabled:opacity-40"
-              disabled={!!bulkBusy}
-              onClick={bulkDelete}
-            >
-              {bulkBusy === "delete" ? "Deleting..." : `Delete ${selected.size}`}
-            </button>
+            {/* Admin only, because the route is. This page is open to managers,
+                so without the gate the button is visible to someone the server
+                will refuse, which is a worse experience than not offering it. */}
+            {isAdmin && (
+              <button
+                className="text-bad hover:underline t-meta disabled:opacity-40"
+                disabled={!!bulkBusy}
+                onClick={bulkDelete}
+              >
+                {bulkBusy === "delete" ? "Deleting..." : `Delete ${selected.size}`}
+              </button>
+            )}
           </div>
         )}
 
