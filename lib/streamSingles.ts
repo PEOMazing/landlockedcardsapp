@@ -29,7 +29,15 @@ import { clearedSlotFields, reclaimSlot } from "./slots";
 type Line = { fields: Record<string, any> };
 type Card = { fields: Record<string, any> } | null;
 
-export type CloseAction = "sold" | "return" | "copy-sold" | "copy-return" | "skip";
+// "hold" is a card the streamer ticked off the return list at close: it is not
+// going back in the binder, it is staying out for an upcoming show. Nothing
+// happens to it, which is the whole point - it keeps Status "In Stream" on this
+// show, so rollover's repoint branch can move it straight onto the next set
+// without a round trip through the shelf and back off it again.
+//
+// It still counts as owned, because the collection counts every card that is
+// not Sold. So holding a card changes where it is, never how much there is.
+export type CloseAction = "sold" | "return" | "hold" | "copy-sold" | "copy-return" | "copy-hold" | "skip";
 export type ReleaseAction = "restore" | "copy-restore" | "skip";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -45,23 +53,39 @@ export function soldAtClose(line: Line, streamType: string): boolean {
   return !hitsDecideSingles(streamType) || (Number(line.fields["Qty Hit"]) || 0) > 0;
 }
 
+/** Is this line flagged to stay out rather than come back at close?
+ *
+ *  Only ever consulted for a card that did NOT sell. A hit card is gone, and
+ *  "keep it out of stock" is not a coherent thing to ask of a card somebody
+ *  else now owns, so the flag is ignored there rather than treated as a
+ *  conflict. */
+export function heldOut(line: Line): boolean {
+  return !!line.fields["Hold Out"];
+}
+
 export function closeActionFor(line: Line, card: Card, streamId: string, streamType: string): CloseAction {
   const sold = soldAtClose(line, streamType);
+  const hold = !sold && heldOut(line);
   // a copy was already taken off Qty when it went on; the record never moved
-  if (line.fields["Single Copy"]) return sold ? "copy-sold" : "copy-return";
+  if (line.fields["Single Copy"]) return sold ? "copy-sold" : hold ? "copy-hold" : "copy-return";
   // only touch a card still sitting on this show - anything else was moved or
   // corrected by hand since, and that decision stands
   if (!card) return "skip";
   if (String(card.fields["Stream Rec Id"] || "") !== streamId) return "skip";
   if (card.fields["Status"] !== "In Stream") return "skip";
-  return sold ? "sold" : "return";
+  return sold ? "sold" : hold ? "hold" : "return";
 }
 
 // Taking a single's line off a show puts the card back as if it never went on.
 // Before the show closes nothing has left the building, so the card always
 // comes back. After it closes this is a history correction, and only a card
-// that left at close has anything to undo - an unhit card was already put back
-// by the close itself.
+// that has not already been put back has anything to undo.
+//
+// Two kinds have not: a card that sold, and a card held out of the return. The
+// held one matters because the old rule assumed every unhit card was back on
+// the shelf by now, which stopped being true the moment the return list got
+// tick boxes. Without this a held card whose line is then removed would be
+// stranded In Stream on a closed show with nothing left pointing at it.
 export function releaseActionFor(
   line: Line,
   card: Card,
@@ -69,7 +93,7 @@ export function releaseActionFor(
   streamType: string,
   streamClosed: boolean,
 ): ReleaseAction {
-  if (streamClosed && !soldAtClose(line, streamType)) return "skip";
+  if (streamClosed && !soldAtClose(line, streamType) && !heldOut(line)) return "skip";
   if (line.fields["Single Copy"]) return "copy-restore";
   if (!card) return "skip";
   // moved to another show or corrected by hand since - leave it alone
@@ -181,8 +205,8 @@ export async function syncWheelSinglePrices(lines: Line[] & { id?: string }[], s
 export async function settleStreamSingles(
   streamId: string,
   streamType: string,
-): Promise<{ sold: number; returned: number; legacy: number }> {
-  const out = { sold: 0, returned: 0, legacy: 0 };
+): Promise<{ sold: number; returned: number; held: number; legacy: number }> {
+  const out = { sold: 0, returned: 0, held: 0, legacy: 0 };
   if (!isRecId(streamId)) return out;
 
   const lines = await atList(T.lines, { filterByFormula: `{Stream Rec Id} = '${streamId}'` });
@@ -217,6 +241,12 @@ export async function settleStreamSingles(
         out.returned++;
       } else if (act === "copy-sold") {
         out.sold++;
+      } else if (act === "hold" || act === "copy-hold") {
+        // Deliberately nothing. The card stays exactly as it is: out of stock,
+        // still pointed at this show, ready for rollover to repoint it. The
+        // straggler sweep below would otherwise mark it Sold, so it has to be
+        // counted as handled, which the loop already did above.
+        out.held++;
       }
     } catch {
       // the card was deleted since it went on the show - nothing to put back
