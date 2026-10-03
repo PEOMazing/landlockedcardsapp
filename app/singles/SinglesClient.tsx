@@ -252,6 +252,20 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   }
   useEffect(() => { load(); }, []);
 
+  // ?card=0631 puts that number in the table filter.
+  //
+  // The command palette links here with the card it found. Without this the
+  // link lands on an unfiltered list of 890 and the card you just picked by
+  // name is somewhere in it, which makes finding it by search and then not
+  // being shown it the most annoying possible outcome.
+  //
+  // Read off location rather than through useSearchParams, which would pull a
+  // Suspense boundary into a page that does not otherwise need one.
+  useEffect(() => {
+    const card = new URLSearchParams(window.location.search).get("card");
+    if (card) setTableQ(card);
+  }, []);
+
   // live card search against pokemontcg.io
   useEffect(() => {
     if (picked || manual) return;

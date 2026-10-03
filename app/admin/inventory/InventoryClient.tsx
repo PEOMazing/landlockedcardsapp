@@ -125,6 +125,13 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // ?q=Product+Name puts that product in the filter box, so a link from the
+  // command palette lands on the product rather than on all 162 of them.
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("q");
+    if (fromUrl) setQ(fromUrl);
+  }, []);
+
   // Which products' holds the panel is showing. null is closed. Holding the
   // list rather than a product id lets the same panel serve the header tile
   // (everything out) and one row (one product) without two code paths.
