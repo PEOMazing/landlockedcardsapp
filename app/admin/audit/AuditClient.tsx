@@ -6,6 +6,8 @@ import {
   type AuditLine, type AuditSingle, type AuditStream, type HitRow,
 } from "@/lib/audit";
 import { readWhatnotCsv, splitGiveaways, checkAgainstSet, showsIn, suggestShow, localDate, type CheckRow, type Product } from "@/lib/whatnotCsv";
+import StatTile from "@/components/ui/StatTile";
+import PageHeader from "@/components/ui/PageHeader";
 
 export type AuditProduct = { id: string; name: string; aliases: string[]; onHand: number; active: boolean };
 type Stream = AuditStream & { giveaways: number; singlesGiveaways: number };
@@ -18,15 +20,6 @@ const niceDate = (d: string) => {
   return new Date(y, (m || 1) - 1, day || 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
 
-function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
-  return (
-    <div className="card p-4">
-      <div className="label">{label}</div>
-      <div className={`num text-2xl font-bold mt-1 ${tone || ""}`}>{value}</div>
-      {sub && <div className="text-dim text-xs mt-1">{sub}</div>}
-    </div>
-  );
-}
 
 const KIND: Record<HitRow["kind"], string> = { sealed: "Sealed", single: "Single", store: "Store sale", giveaway: "Giveaway" };
 
@@ -53,17 +46,20 @@ export default function AuditClient({
 
   return (
     <div className="space-y-5">
-      <div className="flex items-baseline justify-between flex-wrap gap-3 print:hidden">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Audit</h1>
-        <div className="inline-flex rounded-lg border border-edge overflow-hidden text-sm">
-          {([["stream", "Stream report"], ["product", "Product history"]] as const).map(([k, label]) => (
-            <button key={k} type="button" onClick={() => setTab(k)} aria-pressed={tab === k}
-              className={`px-3 py-1.5 ${tab === k ? "bg-foil/15 text-foil font-semibold" : "text-dim hover:text-body"}`}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Audit"
+        className="print:hidden"
+        actions={
+          <div className="inline-flex rounded-lg border border-edge overflow-hidden t-body">
+            {([["stream", "Stream report"], ["product", "Product history"]] as const).map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setTab(k)} aria-pressed={tab === k}
+                className={`px-s3 py-1.5 ${tab === k ? "bg-foil/15 text-foil font-semibold" : "text-dim hover:text-body"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {tab === "stream" ? (
         <StreamTab streams={streams} lines={lines} products={products} singles={singles} streamId={streamId} setStreamId={setStreamId} />
@@ -138,7 +134,7 @@ function StreamTab({
         <div id="audit-print" className="space-y-5">
           <div className="flex items-baseline justify-between flex-wrap gap-2">
             <div>
-              <h2 className="text-xl font-bold">{stream.title || "Untitled stream"}</h2>
+              <h2 className="t-section">{stream.title || "Untitled stream"}</h2>
               <div className="text-dim text-sm">
                 {niceDate(stream.date)} - {stream.streamer || "No streamer"} - {stream.type} - {stream.status}
                 {stream.returned ? " - items returned" : ""}
@@ -148,10 +144,10 @@ function StreamTab({
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Tile label="Items hit" value={String(t.itemsHit)} sub={`${t.sealedHit} sealed - ${t.singlesHit} singles`} />
-            <Tile label="Hit value" value={$(t.hitValue)} sub="at market on the set, store sales at sold price" tone="text-foil" />
-            <Tile label="Cost of hits" value={$(t.hitCost)} sub="what was paid for what went out" />
-            <Tile label="Came back" value={String(t.notHit)} sub={`of ${t.onSet} on the set${t.storeCount ? ` - ${t.storeCount} store sales` : ""}`} />
+            <StatTile label="Items hit" value={String(t.itemsHit)} sub={`${t.sealedHit} sealed - ${t.singlesHit} singles`} />
+            <StatTile label="Hit value" value={$(t.hitValue)} sub="at market on the set, store sales at sold price" tone="foil" />
+            <StatTile label="Cost of hits" value={$(t.hitCost)} sub="what was paid for what went out" />
+            <StatTile label="Came back" value={String(t.notHit)} sub={`of ${t.onSet} on the set${t.storeCount ? ` - ${t.storeCount} store sales` : ""}`} />
           </div>
 
           <section className="card overflow-x-auto">
@@ -227,7 +223,7 @@ function StreamTab({
 
 const STATUS: Record<CheckRow["status"], { label: string; cls: string }> = {
   "not-on-set": { label: "Not on the set", cls: "text-bad border-bad/40 bg-bad/5" },
-  "count-off": { label: "Count differs", cls: "text-amber-400 border-amber-400/40 bg-amber-400/5" },
+  "count-off": { label: "Count differs", cls: "text-warn border-warn/40 bg-warn/5" },
   "no-match": { label: "No product match", cls: "text-dim border-edge" },
   ok: { label: "Matches", cls: "text-win border-win/40 bg-win/5" },
 };
@@ -316,13 +312,13 @@ function WhatnotCheck({ stream, streamLines, products }: { stream: Stream; strea
             </label>
           )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Tile label="Paid orders" value={String(result.g.paid.reduce((a, s) => a + s.qty, 0))} sub={`${$(result.g.gross)} before fees${result.parsed.skipped ? ` - ${result.parsed.skipped} cancelled or failed skipped` : ""}`} />
-            <Tile label="Not on the set" value={String(result.check.counts["not-on-set"])}
-              tone={result.check.counts["not-on-set"] ? "text-bad" : "text-win"} sub="products sold that were never added" />
-            <Tile label="Free packs" value={String(result.g.freePacks)} sub={`stream records ${stream.giveaways} giveaways`}
-              tone={result.g.freePacks !== stream.giveaways ? "text-amber-400" : ""} />
-            <Tile label="Free singles" value={String(result.g.freeSingles)} sub={`stream records ${stream.singlesGiveaways} singles giveaways`}
-              tone={result.g.freeSingles !== stream.singlesGiveaways ? "text-amber-400" : ""} />
+            <StatTile label="Paid orders" value={String(result.g.paid.reduce((a, s) => a + s.qty, 0))} sub={`${$(result.g.gross)} before fees${result.parsed.skipped ? ` - ${result.parsed.skipped} cancelled or failed skipped` : ""}`} />
+            <StatTile label="Not on the set" value={String(result.check.counts["not-on-set"])}
+              tone={result.check.counts["not-on-set"] ? "bad" : "win"} sub="products sold that were never added" />
+            <StatTile label="Free packs" value={String(result.g.freePacks)} sub={`stream records ${stream.giveaways} giveaways`}
+              tone={result.g.freePacks !== stream.giveaways ? "warn" : "body"} />
+            <StatTile label="Free singles" value={String(result.g.freeSingles)} sub={`stream records ${stream.singlesGiveaways} singles giveaways`}
+              tone={result.g.freeSingles !== stream.singlesGiveaways ? "warn" : "body"} />
           </div>
 
           <div className="overflow-x-auto">
@@ -334,14 +330,14 @@ function WhatnotCheck({ stream, streamLines, products }: { stream: Stream; strea
                 {result.check.rows.filter((r) => showOk || r.status !== "ok").map((r) => (
                   <tr key={r.key}>
                     <td>
-                      <span className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold ${STATUS[r.status].cls}`}>
+                      <span className={`inline-block whitespace-nowrap rounded-full border px-2 py-0.5 t-meta font-semibold ${STATUS[r.status].cls}`}>
                         {STATUS[r.status].label}
                       </span>
                     </td>
                     <td>
                       <div className="!font-medium">{r.product ? nameOf[r.product.id] || r.product.name : r.titles[0]}</div>
-                      {r.product && <div className="text-dim text-[11px] truncate max-w-md">{r.titles[0]}</div>}
-                      {!r.product && r.titles.length > 1 && <div className="text-dim text-[11px]">+{r.titles.length - 1} similar listings</div>}
+                      {r.product && <div className="text-dim t-meta truncate max-w-md">{r.titles[0]}</div>}
+                      {!r.product && r.titles.length > 1 && <div className="text-dim t-meta">+{r.titles.length - 1} similar listings</div>}
                     </td>
                     <td className="num font-semibold">{r.sold}</td>
                     <td className="num">{r.product ? r.onSet : ""}</td>
@@ -435,17 +431,17 @@ function ProductTab({
 
       {picked && (
         <div className="grid md:grid-cols-3 gap-3">
-          <Tile label="App says on hand" value={String(Math.max(0, onHand))} sub={picked.name} />
+          <StatTile label="App says on hand" value={String(Math.max(0, onHand))} sub={picked.name} />
           <div className="card p-4">
             <div className="label">Shelf count</div>
             <input className="input mt-1 num" inputMode="numeric" placeholder="What is actually on the shelf?"
               value={counted} onChange={(e) => setCounted(e.target.value.replace(/[^0-9]/g, ""))} />
             <div className="text-dim text-xs mt-1">Count it and type the number to check.</div>
           </div>
-          <Tile
+          <StatTile
             label="Difference"
             value={gap === null ? "-" : gap === 0 ? "Matches" : gap > 0 ? `${gap} missing` : `${-gap} extra`}
-            tone={gap === null ? "" : gap === 0 ? "text-win" : gap > 0 ? "text-bad" : "text-amber-400"}
+            tone={gap === null ? "body" : gap === 0 ? "win" : gap > 0 ? "bad" : "warn"}
             sub={gap && gap > 0 ? "left without being on a set or a store sale" : gap && gap < 0 ? "more on the shelf than the app knows about" : undefined}
           />
         </div>
@@ -471,7 +467,7 @@ function ProductTab({
                     <td className="whitespace-nowrap">{niceDate(r.date)}</td>
                     <td>
                       <div className="!font-medium">{r.title || "Untitled"}</div>
-                      {!picked && <div className="text-dim text-[11px]">{r.names.join(", ")}</div>}
+                      {!picked && <div className="text-dim t-meta">{r.names.join(", ")}</div>}
                     </td>
                     <td>{r.streamer}</td>
                     <td className="text-dim text-xs">{r.status}{r.returned ? ", returned" : ""}</td>

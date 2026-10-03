@@ -156,8 +156,8 @@ export default function WhatnotSync({
           )}
 
           {plan.over.length > 0 && (
-            <div className="rounded-lg border border-amber-400/60 bg-amber-400/10 p-3 text-sm space-y-1">
-              <div className="font-semibold text-amber-400">{"⚠"} More hit than was on the set</div>
+            <div className="rounded-lg border border-warn/60 bg-warn/10 p-3 text-sm space-y-1">
+              <div className="font-semibold text-warn">{"⚠"} More hit than was on the set</div>
               {plan.over.map((o) => (
                 <div key={o.name} className="text-xs">{o.name}: {o.sold} spins, only {o.onSet} on the set. Raise the quantity on the set, then upload again.</div>
               ))}

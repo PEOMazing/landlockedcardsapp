@@ -27,6 +27,10 @@ export type OpenLine = {
   returned: boolean;
   /** Store purchases were bought off the shelf, never committed to a wheel. */
   isStore?: boolean;
+  /** Which show is holding these units. Optional, because the totals never
+   *  needed it and the callers that only want a number should not have to
+   *  supply it. */
+  streamId?: string;
 };
 
 export type StockSplit = { onHand: number; onShows: number; total: number };
@@ -51,14 +55,41 @@ export function committed(lines: OpenLine[]): number {
   return out;
 }
 
-/** Group committed units by product, for a whole-table view in one pass. */
-export function committedByProduct(lines: OpenLine[]): Map<string, number> {
-  const out = new Map<string, number>();
+/** Committed units broken down by product and then by the show holding them.
+ *
+ *  product id -> stream id -> units of that product still on that show.
+ *
+ *  This is the one place the rule lives. `committedByProduct` sums this rather
+ *  than repeating the filter, so the number on a row and the list behind it can
+ *  never disagree: if the table says 9 are out, the panel shows 9. Two
+ *  implementations of "which units count" would eventually drift, and a count
+ *  you cannot reconcile with its own detail is worse than no count at all.
+ *
+ *  Lines with no stream id land under "" rather than being dropped. A unit that
+ *  is demonstrably off the shelf should never vanish from the total because its
+ *  provenance is incomplete. */
+export function committedHoldsByProduct(lines: OpenLine[]): Map<string, Map<string, number>> {
+  const out = new Map<string, Map<string, number>>();
   for (const l of lines || []) {
     const id = String(l.productId || "");
     if (!id || l.returned || l.isStore) continue;
     const left = n(l.qty) - n(l.qtyHit);
-    if (left > 0) out.set(id, (out.get(id) || 0) + left);
+    if (left <= 0) continue;
+    const sid = String(l.streamId || "");
+    let byStream = out.get(id);
+    if (!byStream) out.set(id, (byStream = new Map()));
+    byStream.set(sid, (byStream.get(sid) || 0) + left);
+  }
+  return out;
+}
+
+/** Group committed units by product, for a whole-table view in one pass. */
+export function committedByProduct(lines: OpenLine[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const [id, byStream] of committedHoldsByProduct(lines)) {
+    let total = 0;
+    for (const qty of byStream.values()) total += qty;
+    out.set(id, total);
   }
   return out;
 }

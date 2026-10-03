@@ -4,6 +4,7 @@ import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
 import { buildWeekPay, buildManagerPay, buildPersonHours, money, StreamRow, toLine } from "@/lib/calc";
+import StatTile from "@/components/ui/StatTile";
 
 export const dynamic = "force-dynamic";
 
@@ -100,15 +101,15 @@ export default async function AdminDashboard() {
     <>
       <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-6xl mx-auto p-6 space-y-8">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display, sans-serif)" }}>Pay dashboard</h1>
+        <h1 className="t-page">Pay dashboard</h1>
 
         <section className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <Big label="Profit over market" v={money(life.profit)} />
-          <Big label="Profit over buy" v={money(life.buyProfit)} />
-          <Big label="Streamer pay" v={money(life.pay)} />
-          <Big label="Manager overrides" v={money(totalOverrides)} />
-          <Big label="Stream support" v={money(life.support)} />
-          <Big label="Company profit" v={money(life.company)} win />
+          <StatTile label="Profit over market" value={money(life.profit)} size="md" />
+          <StatTile label="Profit over buy" value={money(life.buyProfit)} size="md" />
+          <StatTile label="Streamer pay" value={money(life.pay)} size="md" />
+          <StatTile label="Manager overrides" value={money(totalOverrides)} size="md" />
+          <StatTile label="Stream support" value={money(life.support)} size="md" />
+          <StatTile label="Company profit" value={money(life.company)} size="md" tone="win" />
         </section>
 
         {[...byWeek.entries()].map(([ws, group]) => (
@@ -174,14 +175,5 @@ export default async function AdminDashboard() {
         )}
       </main>
     </>
-  );
-}
-
-function Big({ label, v, win }: { label: string; v: string; win?: boolean }) {
-  return (
-    <div className="card p-4">
-      <div className="label">{label}</div>
-      <div className={`text-xl font-bold num mt-1 ${win ? "text-win" : ""}`}>{v}</div>
-    </div>
   );
 }

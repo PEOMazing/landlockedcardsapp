@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { formatCardNo, parseCardNo, bucketFor, bucketRange, bucketDrifted } from "@/lib/cardNo";
 import { isThinComp } from "@/lib/salesWindow";
 import { priceBound, inPriceRange, rangeBackwards } from "@/lib/priceRange";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
 import EditCell from "@/components/EditCell";
 import DeltaHover from "@/components/DeltaHover";
@@ -12,6 +12,9 @@ import { toast } from "@/components/Toaster";
 import Thumb from "@/components/Thumb";
 import CollectrImport from "@/components/CollectrImport";
 import RefreshProgress, { RefreshState } from "@/components/RefreshProgress";
+import SortableTh from "@/components/ui/SortableTh";
+import TableEmpty from "@/components/ui/TableEmpty";
+import PageHeader from "@/components/ui/PageHeader";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
@@ -108,9 +111,9 @@ function PriceContext({
   const gap = comparable ? (comp! - market!) / market! : 0;
   const under = comparable && gap <= -0.2; // comp well under the cheapest listing
   return (
-    <div className="text-[10px] text-dim flex items-center gap-2 flex-wrap">
+    <div className="t-meta text-dim flex items-center gap-2 flex-wrap">
       {market !== null && (
-        <span title={marketBasis || "lowest live TCGplayer listing"} className={under ? "text-amber-400" : ""}>
+        <span title={marketBasis || "lowest live TCGplayer listing"} className={under ? "text-warn" : ""}>
           {blind ? "mkt" : `TCG low ${condition}`} <span className="num">{$(market)}</span>
           {blind && <span className="opacity-60"> any cond.</span>}
           {under && <span className="ml-1">(comp {Math.round(gap * 100)}%)</span>}
@@ -180,35 +183,13 @@ function PricingHealth({ isManager }: { isManager: boolean }) {
           <div key={i} className="text-givvy mt-1">{p}</div>
         ))}
       </div>
-      <button className="btn-ghost !py-1 text-[11px] shrink-0" onClick={() => check(true)} disabled={checking}>
+      <button className="btn-ghost !py-1 t-meta shrink-0" onClick={() => check(true)} disabled={checking}>
         {checking ? "Checking..." : "Re-check"}
       </button>
     </div>
   );
 }
 
-function Th({ label, k, sortKey, sortDir, onSort }: { label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void }) {
-  const active = sortKey === k;
-  return (
-    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
-      <button
-        type="button"
-        onClick={() => onSort(k)}
-        className={`inline-flex items-center gap-1 whitespace-nowrap transition-colors hover:text-body ${active ? "text-foil" : ""}`}
-      >
-        {label}
-        {active ? (
-          <span className="text-[8px] leading-none">{sortDir === "asc" ? "▲" : "▼"}</span>
-        ) : (
-          <span className="text-[8px] leading-none opacity-30 flex flex-col">
-            <span>{"▲"}</span>
-            <span>{"▼"}</span>
-          </span>
-        )}
-      </button>
-    </th>
-  );
-}
 
 export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { isAdmin: boolean; isManager: boolean; mode?: "raw" | "graded" }) {
   const [singles, setSingles] = useState<SingleT[]>([]);
@@ -330,10 +311,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
       body: JSON.stringify(body),
     });
     const d = await r.json();
-    if (!r.ok) setErr(d.error || "Could not add card");
-    else {
+    if (!r.ok) {
+      setErr(d.error || "Could not add card");
+      toast(d.error || "Could not add the card - your entries are still here", "bad");
+    } else {
+      // Entering a stack of cards is the longest sitting-down job in this app,
+      // and the only sign a card had landed was the form going blank - which
+      // is also what a failure looked like. Name it, and carry the condition
+      // over: a box of cards graded by hand is nearly always a run of the same
+      // condition, and re-picking LP two hundred times is two hundred clicks
+      // nobody should spend.
+      toast(`${d.name || draft.name.trim() || "Card"} added`);
       setPicked(null); setManual(false); setQ(""); setResults([]);
-      setDraft({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "", language: draft.language });
+      setDraft({ name: "", setName: "", number: "", condition: draft.condition, qty: "1", buyPrice: "", comp: "", notes: "", printing: "", language: draft.language });
       await load();
     }
     setBusy("");
@@ -745,6 +735,29 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     [singles]
   );
 
+  // Which filters are actually narrowing the list, so an empty table can say
+  // why it is empty instead of claiming there are no cards. The old message
+  // was "No cards here yet - add one above", shown identically whether the
+  // inventory was genuinely empty or a search had matched none of 800 cards
+  // behind four toggles scattered across a 20-control toolbar.
+  const activeFilters = useMemo(() => {
+    const on: { label: string; clear: () => void }[] = [];
+    if (statusFilter !== "All") on.push({ label: statusFilter, clear: () => setStatusFilter("All") });
+    if (tableQ.trim()) on.push({ label: `search "${tableQ.trim()}"`, clear: () => setTableQ("") });
+    if (setFilter !== "All") on.push({ label: setFilter, clear: () => setSetFilter("All") });
+    if (minP || maxP) on.push({ label: "price range", clear: () => { setMinP(""); setMaxP(""); } });
+    if (needsResticker) on.push({ label: "needs re-sticker", clear: () => setNeedsResticker(false) });
+    if (neverPrinted) on.push({ label: "never printed", clear: () => setNeverPrinted(false) });
+    if (thinData) on.push({ label: "thin data", clear: () => setThinData(false) });
+    return on;
+  }, [statusFilter, tableQ, setFilter, minP, maxP, needsResticker, neverPrinted, thinData]);
+
+  const clearFilters = useCallback(() => {
+    setStatusFilter("All"); setTableQ(""); setSetFilter("All");
+    setMinP(""); setMaxP("");
+    setNeedsResticker(false); setNeverPrinted(false); setThinData(false);
+  }, []);
+
   const shown = useMemo(() => {
     let list = statusFilter === "All" ? singles : singles.filter((s) => s.status === statusFilter);
     // cards whose comp crossed a band since their sticker printed: they are
@@ -886,15 +899,15 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-6">
       <RefreshProgress state={refresh} />
-      <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
-          Singles <span className="text-foil">inventory</span>
-        </h1>
-        <div className="flex gap-6 text-sm">
-          <span className="text-dim">In stock value <span className="text-foil font-bold num">{$(stockValue)}</span></span>
-          <span className="text-dim">Sold to date <span className="text-win font-bold num">{$(soldTotal)}</span></span>
-        </div>
-      </div>
+      <PageHeader
+        title={<>Singles <span className="text-foil">inventory</span></>}
+        actions={
+          <>
+            <span className="text-dim t-body">In stock value <span className="text-foil font-bold num">{$(stockValue)}</span></span>
+            <span className="text-dim t-body">Sold to date <span className="text-win font-bold num">{$(soldTotal)}</span></span>
+          </>
+        }
+      />
 
       {needsSetup && (
         <div className="card p-5 border-foil/40 space-y-2">
@@ -948,11 +961,11 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   : "Comp pulls the TCGplayer market price" + (draft.condition !== "NM" ? " with a condition discount" : "") + "."}
               </p>
               <div className="flex gap-1 mt-2 flex-wrap items-center">
-                <span className="label !text-[10px]">Language</span>
+                <span className="label !t-meta">Language</span>
                 {["English", "Japanese", "Chinese", "Korean", "Spanish", "Other"].map((lg) => (
                   <button
                     key={lg}
-                    className={`rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${
+                    className={`rounded-lg border px-2 py-0.5 t-meta font-semibold ${
                       draft.language === lg ? "border-givvy text-givvy bg-givvy/10" : "border-edge text-dim hover:text-body"
                     }`}
                     onClick={() => setDraft({ ...draft, language: lg })}
@@ -1023,7 +1036,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 <select className="input mt-1" value={draft.condition} onChange={(e) => setDraft({ ...draft, condition: e.target.value })}>
                   {(mode === "graded" ? CONDITIONS.filter((c) => GRADED.includes(c)) : CONDITIONS.filter((c) => !GRADED.includes(c))).map((c) => <option key={c}>{c}</option>)}
                 </select>
-              <a href="/conditions" target="_blank" className="text-dim text-[11px] hover:text-foil block mt-0.5">condition guide</a>
+              <a href="/conditions" target="_blank" className="text-dim t-meta hover:text-foil block mt-0.5">condition guide</a>
               </div>
               <div>
                 <label className="label">Printing</label>
@@ -1062,11 +1075,20 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 <input className="input mt-1" value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
               </div>
             </div>
-            {picked && draft.condition === "Raw" && (
-              <p className="text-dim text-xs">The TCGplayer market price pulls in automatically as the comp.</p>
-            )}
-            {draft.condition !== "Raw" && (
-              <p className="text-dim text-xs">Graded comps are manual: check ALT or eBay sold listings and enter the comp above.</p>
+            {/* These two lines used to test `condition === "Raw"`, and "Raw" is
+                not in CONDITIONS, so the first never rendered and the second
+                always did. Every person adding a Near Mint raw card was told
+                to go and look up a comp on eBay by hand, next to a field that
+                was not on screen, contradicting the correct line above the
+                picker. The real split is graded against everything else. */}
+            {GRADED.includes(draft.condition) ? (
+              <p className="text-dim t-meta">
+                Graded comps are manual: check ALT or eBay sold listings and enter the comp above.
+              </p>
+            ) : (
+              <p className="text-dim t-meta">
+                The TCGplayer market price pulls in automatically as the comp. Nothing else to fill in.
+              </p>
             )}
             <div className="flex items-center gap-3">
               <button
@@ -1076,11 +1098,24 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               >
                 {busy === "add" ? "Adding..." : "Add to singles inventory"}
               </button>
-              {err && <span className="text-bad text-sm">{err}</span>}
             </div>
           </div>
         )}
       </section>
+
+      {/* Fourteen things in this file write to `err`, and it was rendered in
+          exactly one place: inside the add-card panel, which only exists while
+          a card is picked. So a bulk price refresh naming the cards that need
+          checking by hand, a half-finished delete and a failed split all wrote
+          their explanation to a node that was not on the page. Here it is
+          always on the page, and it can be dismissed. */}
+      {err && (
+        <div className="card p-s4 border-bad/50 flex items-start gap-s3">
+          <span className="text-bad">{"⚠"}</span>
+          <p className="flex-1 min-w-0 t-body whitespace-pre-wrap">{err}</p>
+          <button className="text-dim hover:text-body t-meta" onClick={() => setErr("")}>dismiss</button>
+        </div>
+      )}
 
       {/* Inventory table */}
       <section className="card p-5 space-y-3">
@@ -1214,7 +1249,21 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               <button
                 className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
                 disabled={bulkBusy}
-                onClick={() => refreshComps(shown.map((s) => s.id))}
+                // Every other multi-record action on this page confirms with a
+                // count. This one did not, and it is the one with physical
+                // consequences: a reprice moves price buckets, and a moved
+                // bucket means pulling the card, moving the box and reprinting
+                // the sticker. One stray click could put hundreds of cards in
+                // that queue.
+                onClick={() => {
+                  if (
+                    !confirm(
+                      `Re-pull comps for ${shown.length} card${shown.length === 1 ? "" : "s"}?\n\n` +
+                        "Prices that have moved enough to change a price box will put those cards in the re-sticker queue, which is physical work. Card numbers and printed QR codes are not affected.",
+                    )
+                  ) return;
+                  refreshComps(shown.map((s) => s.id));
+                }}
                 title="Re-pull comps and market prices for every card shown. Card numbers and printed QR codes are not affected."
               >
                 {bulkBusy ? "Refreshing..." : `Refresh prices (${shown.length})`}
@@ -1230,9 +1279,9 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             <div className="label">Cards shown</div>
             <div className="num text-lg font-bold">{totals.cards}</div>
             {rangeBackwards(lo, hi) ? (
-              <div className="text-bad text-[11px] mt-0.5">Min is above max, so nothing can match</div>
+              <div className="text-bad t-meta mt-0.5">Min is above max, so nothing can match</div>
             ) : priceOn && noCompHidden > 0 ? (
-              <div className="text-dim text-[11px] mt-0.5">{noCompHidden} with no comp not counted</div>
+              <div className="text-dim t-meta mt-0.5">{noCompHidden} with no comp not counted</div>
             ) : null}
           </div>
           {isAdmin && (
@@ -1253,7 +1302,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
           )}
         </div>
         {isAdmin && selStats.rows > 0 && (
-          <div className="sticky top-2 z-30 flex items-center gap-3 flex-wrap rounded-lg border border-foil/40 bg-panel/95 backdrop-blur px-4 py-2.5 shadow-2xl">
+          <div className="sticky top-2 z-30 flex items-center gap-3 flex-wrap rounded-lg border border-foil/40 bg-panel/95 backdrop-blur px-4 py-2.5 lifted">
             <span className="text-sm font-semibold">
               {selStats.rows} selected
               <span className="text-dim font-normal">
@@ -1327,13 +1376,13 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 )}
                 {s.image && <Thumb src={s.image} size={48} className="self-start" />}
                 {s.cardNo ? (
-                  <span className="num text-[10px] font-bold text-foil border border-foil/40 rounded px-1 py-px self-start" title="Card number - printed on the sticker and shown on the stream line">
+                  <span className="num t-meta font-bold text-foil border border-foil/40 rounded px-1 py-px self-start" title="Card number - printed on the sticker and shown on the stream line">
                     {formatCardNo(s.cardNo)}
                   </span>
                 ) : null}
                 {bucketFor(s.comp) ? (
                   <span
-                    className={`text-[10px] font-bold rounded px-1 py-px self-start ${
+                    className={`t-meta font-bold rounded px-1 py-px self-start ${
                       bucketDrifted(s.comp, s.printedBucket || "")
                         ? "text-givvy border border-givvy/60 bg-givvy/10"
                         : "text-dim border border-edge"
@@ -1348,17 +1397,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     {bucketDrifted(s.comp, s.printedBucket || "") ? ` was ${s.printedBucket}` : ""}
                   </span>
                 ) : null}
-                {s.location && <span className="text-[10px] text-dim border border-edge rounded px-1 py-px self-start">{s.location}</span>}
+                {s.location && <span className="t-meta text-dim border border-edge rounded px-1 py-px self-start">{s.location}</span>}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold leading-tight">{s.name}</div>
                   <div className="text-dim text-xs">
                     {s.setName}{s.number ? ` #${s.number}` : ""}
-                    {s.printing && <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>}
-                    {s.language && s.language !== "English" && <span className="ml-1.5 text-[10px] text-givvy border border-givvy/40 rounded px-1 py-px">{s.language === "Japanese" ? "JP" : s.language === "Chinese" ? "CN" : s.language === "Korean" ? "KR" : s.language === "Spanish" ? "ES" : s.language}</span>}
+                    {s.printing && <span className="ml-1.5 t-meta text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>}
+                    {s.language && s.language !== "English" && <span className="ml-1.5 t-meta text-givvy border border-givvy/40 rounded px-1 py-px">{s.language === "Japanese" ? "JP" : s.language === "Chinese" ? "CN" : s.language === "Korean" ? "KR" : s.language === "Spanish" ? "ES" : s.language}</span>}
                   </div>
                   <div className="flex gap-1.5 mt-1 flex-wrap">
-                    <span className="text-[10px] border border-edge rounded-full px-2 py-0.5 text-dim">{s.condition}</span>
-                    <span className={`text-[10px] border rounded-full px-2 py-0.5 ${s.status === "Sold" ? "border-win/50 text-win" : s.status === "In Stream" ? "border-givvy/50 text-givvy" : "border-edge text-dim"}`}>{s.status}</span>
+                    <span className="t-meta border border-edge rounded-full px-2 py-0.5 text-dim">{s.condition}</span>
+                    <span className={`t-meta border rounded-full px-2 py-0.5 ${s.status === "Sold" ? "border-win/50 text-win" : s.status === "In Stream" ? "border-givvy/50 text-givvy" : "border-edge text-dim"}`}>{s.status}</span>
                   </div>
                 </div>
                 <button
@@ -1421,7 +1470,18 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               )}
             </div>
           ))}
-          {shown.length === 0 && <div className="text-dim text-sm">No cards match</div>}
+          {shown.length === 0 && (
+            <div className="text-dim t-body space-y-s2">
+              <p>
+                {activeFilters.length === 0
+                  ? "No cards here yet - add one using the search at the top of the page"
+                  : `No cards match ${activeFilters.map((f) => f.label).join(" + ")}`}
+              </p>
+              {activeFilters.length > 0 && (
+                <button className="text-foil hover:underline" onClick={clearFilters}>clear filters</button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto hidden md:block">
@@ -1440,15 +1500,15 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     />
                   </th>
                 )}
-                <Th label="No" k="cardNo" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
-                <Th label="Card" k="name" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
-                <Th label="Condition" k="condition" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
-                <Th label="Qty" k="qty" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
-                <Th label="Loc" k="location" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
-                {isAdmin && <Th label="Buy" k="buy" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />}
-                <Th label="Comp" k="comp" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
-                <Th label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
-                <Th label="Sale" k="salePrice" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <SortableTh label="No" k="cardNo" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <SortableTh label="Card" k="name" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <SortableTh label="Condition" k="condition" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <SortableTh label="Qty" k="qty" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <SortableTh label="Loc" k="location" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                {isAdmin && <SortableTh label="Buy" k="buy" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />}
+                <SortableTh label="Comp" k="comp" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <SortableTh label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
+                <SortableTh label="Sale" k="salePrice" sortKey={sortKey} sortDir={sortDir} onSort={sortByCol} />
                 <th></th>
               </tr>
             </thead>
@@ -1472,7 +1532,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     </div>
                     {bucketFor(s.comp) ? (
                       <div
-                        className={`text-[10px] font-bold leading-tight ${
+                        className={`t-meta font-bold leading-tight ${
                           bucketDrifted(s.comp, s.printedBucket || "") ? "text-givvy" : "text-dim"
                         }`}
                         title={
@@ -1494,10 +1554,10 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                         <span className="block text-dim text-xs font-normal">
                           {s.setName}{s.number ? ` #${s.number}` : ""}{s.rarity ? ` - ${s.rarity}` : ""}
                           {s.printing && (
-                            <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>
+                            <span className="ml-1.5 t-meta text-foil border border-foil/40 rounded px-1 py-px">{s.printing}</span>
                           )}
                           {s.language && s.language !== "English" && (
-                            <span className="ml-1.5 text-[10px] text-givvy border border-givvy/40 rounded px-1 py-px">{s.language === "Japanese" ? "JP" : s.language === "Chinese" ? "CN" : s.language === "Korean" ? "KR" : s.language === "Spanish" ? "ES" : s.language}</span>
+                            <span className="ml-1.5 t-meta text-givvy border border-givvy/40 rounded px-1 py-px">{s.language === "Japanese" ? "JP" : s.language === "Chinese" ? "CN" : s.language === "Korean" ? "KR" : s.language === "Spanish" ? "ES" : s.language}</span>
                           )}
                         </span>
                       </span>
@@ -1524,7 +1584,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                       {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
                       {!s.compDetail && s.comp !== null && s.compSource.includes("est.") && (
                         <span
-                          className="text-amber-400 text-xs cursor-help whitespace-nowrap underline decoration-dotted"
+                          className="text-warn text-xs cursor-help whitespace-nowrap underline decoration-dotted"
                           title={`${s.compSource} - no recent sales in this condition, comp is a discount off NM market. Verify before pricing.`}
                         >
                           est.
@@ -1553,7 +1613,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                       comp={s.comp}
                       condition={s.condition}
                     />
-                    {s.compDate && <div className="text-dim text-[10px]">{s.compSource} {s.compDate}</div>}
+                    {s.compDate && <div className="text-dim t-meta">{s.compSource} {s.compDate}</div>}
                     {mode === "graded" && (
                       <a
                         className="inline-block mt-0.5 text-xs text-foil underline whitespace-nowrap"
@@ -1591,7 +1651,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                       <span className="num">{s.salePrice ? $(s.salePrice) : "-"}</span>
                     )}
                     {s.status === "Sold" && s.soldDate && (
-                      <div className="text-dim text-[10px]">{s.soldDate}</div>
+                      <div className="text-dim t-meta">{s.soldDate}</div>
                     )}
                   </td>
                   <td className="text-right whitespace-nowrap relative">
@@ -1605,7 +1665,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     {menuFor === s.id && (
                       <div
                         data-row-menu
-                        className="fixed z-50 w-44 rounded-lg border border-edge bg-panel shadow-2xl py-1 text-left max-h-[80vh] overflow-y-auto"
+                        className="fixed z-50 w-44 rounded-lg border border-edge bg-panel lifted py-1 text-left max-h-[80vh] overflow-y-auto"
                         style={{
                           left: menuPos ? menuPos.left : undefined,
                           top: menuPos ? menuPos.top : undefined,
@@ -1629,13 +1689,13 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                             than on the cell so it cannot be nudged by a stray
                             click while scrolling a 250-row table. */}
                         <div className="px-3 pt-1.5 pb-1">
-                          <div className="label !text-[10px] mb-1">Condition</div>
+                          <div className="label !t-meta mb-1">Condition</div>
                           <div className="flex flex-wrap gap-1">
                             {RAW_CONDITIONS.map((c) => (
                               <button
                                 key={c}
                                 disabled={busy === s.id}
-                                className={`num text-[11px] rounded px-1.5 py-0.5 border disabled:opacity-40 ${
+                                className={`num t-meta rounded px-1.5 py-0.5 border disabled:opacity-40 ${
                                   s.condition === c
                                     ? "border-foil text-foil bg-foil/10"
                                     : "border-edge text-dim hover:text-body hover:border-foil/50"
@@ -1655,7 +1715,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                             onClick={() => { setMenuFor(null); splitCard(s); }}
                           >
                             Split into {s.qty} cards
-                            <span className="block text-dim text-[10px]">one sticker each</span>
+                            <span className="block text-dim t-meta">one sticker each</span>
                           </button>
                         )}
                         <button
@@ -1692,7 +1752,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                             onClick={() => { setMenuFor(null); setAltLink(s); }}
                           >
                             {s.altLink ? "Change ALT link" : "Set ALT link"}
-                            <span className="block text-dim text-[10px]">{s.altLink ? "Check price opens this slab" : "Check price searches ALT until set"}</span>
+                            <span className="block text-dim t-meta">{s.altLink ? "Check price opens this slab" : "Check price searches ALT until set"}</span>
                           </button>
                         )}
                         {isAdmin && s.status !== "In Stream" && (
@@ -1709,7 +1769,19 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 </tr>
               ))}
               {shown.length === 0 && (
-                <tr><td colSpan={isAdmin ? 11 : 9} className="text-dim">No cards here yet - add one above</td></tr>
+                <TableEmpty>
+                  {activeFilters.length === 0 ? (
+                    "No cards here yet - add one using the search at the top of the page"
+                  ) : (
+                    <span className="inline-flex items-center gap-s3 flex-wrap">
+                      <span>
+                        No cards match {activeFilters.map((f) => f.label).join(" + ")}
+                        {singles.length > 0 && ` - you have ${singles.length} in total`}
+                      </span>
+                      <button className="text-foil hover:underline" onClick={clearFilters}>clear filters</button>
+                    </span>
+                  )}
+                </TableEmpty>
               )}
             </tbody>
           </table>
@@ -1731,6 +1803,9 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             <h3 className="font-bold">{qrFor.name.replace(/\s*-\s*[\w]+\/[\w]+\s*$/, "")}</h3>
             <p className="text-dim text-xs">{qrFor.setName} #{qrFor.number} - {qrFor.condition}{qrFor.location ? ` - ${qrFor.location}` : ""}</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
+            {/* bg-white is correct here and must not become a token. A QR code
+                needs a white quiet zone to scan; a themed background would
+                make this unreadable to a phone camera in dark mode. */}
             <img src={qrData} alt="QR code" className="mx-auto rounded bg-white p-2" style={{ width: 280, height: 280 }} />
             <p className="text-dim text-xs">
               This code is permanent for this card - it always resolves to the same quick-sell page,
@@ -1756,7 +1831,7 @@ function LocCell({ value, canEdit, onSave }: { value: string; canEdit: boolean; 
   if (!canEdit) return value ? <span className="text-xs font-bold text-foil">#{value}</span> : <span className="text-dim">-</span>;
   if (!editing)
     return (
-      <button className="text-xs hover:bg-white/5 rounded px-1 py-0.5 -mx-1" onClick={() => setEditing(true)} title="Click to set a location code like B1-12">
+      <button className="text-xs hover:bg-edge/60 rounded px-1 py-0.5 -mx-1" onClick={() => setEditing(true)} title="Click to set a location code like B1-12">
         {value ? <span className="font-bold text-foil">#{value}</span> : <span className="text-dim">set</span>}
       </button>
     );

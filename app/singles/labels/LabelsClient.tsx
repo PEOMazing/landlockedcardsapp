@@ -306,7 +306,7 @@ export default function LabelsClient() {
               {labels.length} labels - {roll ? "2in x 3/4in roll (thermal)" : "Avery 5160 (30 per sheet)"}
             </div>
             {short.length > 0 && (
-              <div className="mt-2 rounded-lg border border-givvy/50 bg-givvy/10 px-3 py-2 text-[11px] leading-snug">
+              <div className="mt-2 rounded-lg border border-givvy/50 bg-givvy/10 px-3 py-2 t-meta leading-snug">
                 <b className="text-givvy">
                   {short.length} card{short.length === 1 ? "" : "s"} here will print short
                   {" "}({short.reduce((a, s) => a + s.qty - 1, 0)} sticker
@@ -328,7 +328,7 @@ export default function LabelsClient() {
                 </div>
               </div>
             )}
-            <div className="text-dim text-[11px] mt-1">
+            <div className="text-dim t-meta mt-1">
               {["A", "B", "C", "D", "E", "F", "G", "H"].map((b) => (
                 <span key={b} className="mr-2.5 whitespace-nowrap">
                   <b className="text-body">{b}</b> {bucketRange(b)}

@@ -30,7 +30,7 @@ export default function Toaster() {
       {items.map((t) => (
         <div
           key={t.id}
-          className={`rounded-lg border px-4 py-2.5 text-sm font-medium shadow-2xl bg-panel backdrop-blur animate-[toast-in_.18s_ease-out] ${
+          className={`rounded-lg border px-4 py-2.5 text-sm font-medium lifted bg-panel backdrop-blur animate-[toast-in_.18s_ease-out] ${
             t.kind === "ok" ? "border-win/40 text-body" : "border-bad/50 text-bad"
           }`}
         >

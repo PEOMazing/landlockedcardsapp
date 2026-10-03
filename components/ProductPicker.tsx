@@ -146,7 +146,7 @@ export default function ProductPicker({
             }}
           />
           {open && (filtered.length > 0 || q.trim().length > 0) && (
-            <div className="absolute z-30 mt-1 w-full card overflow-hidden shadow-2xl">
+            <div className="absolute z-30 mt-1 w-full card overflow-hidden lifted">
               {filtered.map((i, idx) => (
                 <button
                   key={i.id}

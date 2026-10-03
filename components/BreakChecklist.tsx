@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Thumb from "@/components/Thumb";
+import TableEmpty from "@/components/ui/TableEmpty";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -110,7 +111,22 @@ export default function BreakChecklist({
             <span className="text-dim ml-3">{pulledCount} pulled</span>
             {pulledValue > 0 && <span className="text-win ml-3 num font-bold">{$(pulledValue)} market</span>}
             {!locked && (
-              <button className="text-bad text-xs hover:underline ml-4" onClick={() => save(null)}>change set</button>
+              // save(null) throws away every card ticked and every winner's
+              // name recorded tonight. It sat one tap away, on 11px text, in
+              // the header that is on screen for the whole break. Nobody picks
+              // a different set halfway through a break by accident; they do
+              // tap the wrong thing on a phone.
+              <button
+                className="text-bad t-meta hover:underline ml-4"
+                onClick={() => {
+                  const msg = pulledCount > 0
+                    ? `Change the set? ${pulledCount} pulled card${pulledCount === 1 ? "" : "s"} and the winner names recorded against them will be cleared, and that cannot be undone.`
+                    : "Change the set? The checklist will be rebuilt from scratch.";
+                  if (confirm(msg)) save(null);
+                }}
+              >
+                change set
+              </button>
             )}
           </div>
         )}
@@ -206,7 +222,7 @@ export default function BreakChecklist({
                   );
                 })}
                 {!loadingCards && shownCards.length === 0 && (
-                  <tr><td colSpan={6} className="text-dim">No cards match the filter</td></tr>
+                  <TableEmpty>No cards match the filter</TableEmpty>
                 )}
               </tbody>
             </table>

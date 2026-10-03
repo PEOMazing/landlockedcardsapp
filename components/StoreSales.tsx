@@ -235,9 +235,9 @@ export default function StoreSales({
       </div>
 
       {pendingLines.length > 0 && (
-        <div className="rounded-lg border border-amber-400/60 bg-amber-400/10 p-3 text-sm flex items-start justify-between gap-3 flex-wrap">
+        <div className="rounded-lg border border-warn/60 bg-warn/10 p-3 text-sm flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <div className="font-semibold text-amber-400">{"⚠"} Cannot complete set</div>
+            <div className="font-semibold text-warn">{"⚠"} Cannot complete set</div>
             <div className="text-dim text-xs mt-0.5">
               {pendingLines.length} store sale{pendingLines.length === 1 ? " is" : "s are"} logged but waiting on inventory. Update the count in inventory, then complete {pendingLines.length === 1 ? "it" : "them"}.
             </div>
@@ -257,10 +257,10 @@ export default function StoreSales({
             return (
               <div key={l.id} className="flex items-center justify-between gap-3 border-t border-edge pt-1.5 flex-wrap">
                 <span className="flex items-center gap-2 min-w-0">
-                  {pending && <span className="text-amber-400" title="Cannot complete set: not enough in inventory">{"⚠"}</span>}
+                  {pending && <span className="text-warn" title="Cannot complete set: not enough in inventory">{"⚠"}</span>}
                   <span className="truncate">{l.qty > 1 ? `${l.qty}x ` : ""}{l.name.replace(/ \(store\)$/, "")}</span>
                   {pending && (
-                    <span className="text-amber-400 text-xs">
+                    <span className="text-warn text-xs">
                       cannot complete set{item ? ` - ${item.qty} on hand, ${l.qty - l.qtyHit} needed` : ""}
                     </span>
                   )}
@@ -350,7 +350,7 @@ export default function StoreSales({
             </button>
           </div>
           {handShort && (
-            <div className="text-amber-400 text-xs">
+            <div className="text-warn text-xs">
               {"⚠"} Only {handItem!.qty} on hand. This will be logged as "cannot complete set" until inventory is updated.
             </div>
           )}
@@ -394,7 +394,7 @@ export default function StoreSales({
                 {preview.length > 0 && (
                   <div className="space-y-2">
                     {preview.map(({ r, p, item, status }) => (
-                      <div key={r.key} className={`rounded-lg border p-2.5 text-sm ${status === "booked" ? "border-edge opacity-60" : status === "nomatch" ? "border-bad/60" : status === "short" ? "border-amber-400/60" : "border-edge"}`}>
+                      <div key={r.key} className={`rounded-lg border p-2.5 text-sm ${status === "booked" ? "border-edge opacity-60" : status === "nomatch" ? "border-bad/60" : status === "short" ? "border-warn/60" : "border-edge"}`}>
                         <div className="flex items-start justify-between gap-3 flex-wrap">
                           <label className="flex items-start gap-2 min-w-0">
                             {status !== "booked" && status !== "nomatch" && (
@@ -408,7 +408,7 @@ export default function StoreSales({
                           <span className="text-xs">
                             {status === "booked" && <span className="text-dim">already on this stream</span>}
                             {status === "ready" && <span className="text-win">ready</span>}
-                            {status === "short" && <span className="text-amber-400">{"⚠"} {item!.qty} on hand, {r.units} needed - will log as cannot complete set</span>}
+                            {status === "short" && <span className="text-warn">{"⚠"} {item!.qty} on hand, {r.units} needed - will log as cannot complete set</span>}
                             {status === "nomatch" && <span className="text-bad">not in inventory - match it or add it</span>}
                           </span>
                         </div>

@@ -71,7 +71,7 @@ export default async function InsightsPage() {
     <>
       <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-6xl mx-auto p-6 space-y-8">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display, sans-serif)" }}>Insights</h1>
+        <h1 className="t-page">Insights</h1>
         <InsightsClient
           rows={rows}
           soldByStream={soldByStream}

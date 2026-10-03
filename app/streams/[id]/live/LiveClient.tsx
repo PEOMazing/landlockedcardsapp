@@ -27,20 +27,33 @@ export default function LiveClient({ id }: { id: string }) {
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [loadErr, setLoadErr] = useState("");
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [invOptions, setInvOptions] = useState<{ id: string; name: string; market: number; qty: number }[]>([]);
   const [storeProduct, setStoreProduct] = useState("");
   const [storePrice, setStorePrice] = useState("");
 
   const load = useCallback(async () => {
-    const r = await fetch(`/api/streams/${id}`);
-    if (!r.ok) return;
-    const d = await r.json();
-    setData(d);
-    setLines(d.lines || []);
-    const f = { afterFees: d.stream.afterFees ?? "", spotsSold: d.stream.spotsSold ?? "" };
-    setForm(f);
-    baselineRef.current = JSON.stringify(f);
+    // A failed load used to return quietly, which left `data` null and the page
+    // sitting on "Loading..." for ever. Mid-show, on venue wifi, that is the
+    // worst possible dead end: nothing to press and no way to tell whether the
+    // show is broken or the phone is.
+    setLoadErr("");
+    try {
+      const r = await fetch(`/api/streams/${id}`);
+      if (!r.ok) {
+        setLoadErr(r.status === 403 ? "This show is not yours to run." : "Could not load the show.");
+        return;
+      }
+      const d = await r.json();
+      setData(d);
+      setLines(d.lines || []);
+      const f = { afterFees: d.stream.afterFees ?? "", spotsSold: d.stream.spotsSold ?? "" };
+      setForm(f);
+      baselineRef.current = JSON.stringify(f);
+    } catch {
+      setLoadErr("Lost the connection.");
+    }
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
@@ -105,16 +118,42 @@ export default function LiveClient({ id }: { id: string }) {
     };
   }, [form, id]);
 
+  // Marking a hit is the most repeated action in the product, and it was the
+  // only one that could fail without saying so. The count moved on screen, the
+  // write was swallowed by `.catch(() => {})`, and nothing ever disagreed with
+  // the number in front of the streamer. That number is not cosmetic: it is the
+  // P&L, the payroll cost and what goes back on the shelf at close. Being
+  // quietly wrong about it is worse than being slow.
+  //
+  // So: still optimistic, because waiting on a phone mid-spin is not an option,
+  // but a failure puts the count back where it was and says so. One retry
+  // first, since the common case is a single dropped request on venue wifi
+  // rather than a real outage.
   async function bumpHit(l: Line, delta: number) {
     const next = Math.min(Math.max(l.qtyHit + delta, 0), l.qty);
     if (next === l.qtyHit) return;
+    const was = l.qtyHit;
     setLines((ls) => ls.map((x) => (x.id === l.id ? { ...x, qtyHit: next } : x)));
-    await fetch(`/api/lines/${l.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ qtyHit: next }),
-      keepalive: true,
-    }).catch(() => {});
+
+    const write = () =>
+      fetch(`/api/lines/${l.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ qtyHit: next }),
+        keepalive: true,
+      });
+
+    let ok = false;
+    try {
+      ok = (await write()).ok;
+      if (!ok) ok = (await write()).ok;
+    } catch {
+      try { ok = (await write()).ok; } catch { ok = false; }
+    }
+    if (!ok) {
+      setLines((ls) => ls.map((x) => (x.id === l.id ? { ...x, qtyHit: was } : x)));
+      toast(`Hit not saved for ${l.name} - check your signal and tap again`, "bad");
+    }
   }
 
   async function act(action: string) {
@@ -132,7 +171,26 @@ export default function LiveClient({ id }: { id: string }) {
     await load();
   }
 
-  if (!data) return <main className="max-w-3xl mx-auto px-4 py-10 text-dim">Loading...</main>;
+  if (!data) {
+    return (
+      <main className="max-w-3xl mx-auto px-s4 py-10 space-y-s4">
+        {loadErr ? (
+          <div className="card p-s4 space-y-s3">
+            <p className="t-body text-bad">{loadErr}</p>
+            <p className="t-secondary text-dim">
+              Nothing has been lost. Every hit you have already marked is saved on the show.
+            </p>
+            <div className="flex gap-s2 flex-wrap">
+              <button className="btn-foil" onClick={() => load()}>Try again</button>
+              <Link className="btn-ghost" href={`/streams/${id}`}>Open the show page</Link>
+            </div>
+          </div>
+        ) : (
+          <p className="text-dim t-body">Loading...</p>
+        )}
+      </main>
+    );
+  }
   const stream = data.stream;
   const status: string = stream.status;
   const isLive = status === "Live";
@@ -165,7 +223,7 @@ export default function LiveClient({ id }: { id: string }) {
     <main className="max-w-3xl mx-auto px-4 py-6 space-y-5 pb-32">
       <header className="flex items-baseline justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold">{stream.title}</h1>
+          <h1 className="t-section">{stream.title}</h1>
           <p className="text-dim text-sm mt-0.5">
             {isLive ? (
               <>

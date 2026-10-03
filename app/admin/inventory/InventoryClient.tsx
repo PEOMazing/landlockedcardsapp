@@ -8,6 +8,9 @@ type Item = {
   // units standing on a show that has not been closed out yet. Derived from
   // the show lines server-side, so it is never editable here.
   qtyOnShows?: number;
+  // which shows are holding them. Absent on the great majority of rows, which
+  // have nothing out, so the payload stays the size it was.
+  showsOnHold?: Hold[];
 };
 
 // Graded cards are comped off eBay solds, never TCGplayer, so they are not
@@ -24,7 +27,18 @@ import DeltaHover from "@/components/DeltaHover";
 import TcgMapper from "@/components/TcgMapper";
 import TcgNameSync from "@/components/TcgNameSync";
 import { toast } from "@/components/Toaster";
+import StatTile from "@/components/ui/StatTile";
+import OnShowsPanel, { type HeldProduct, type Hold } from "@/components/OnShowsPanel";
+import SortableTh from "@/components/ui/SortableTh";
+import TableEmpty from "@/components/ui/TableEmpty";
+import PageHeader from "@/components/ui/PageHeader";
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// The stock tiles count units and value them to the nearest dollar. Cents on a
+// 240-pack total are noise, and they are the only place in this screen that
+// rounds that way, which is why these sit here rather than in the tile.
+const units = (n: number) => (n || 0).toLocaleString("en-US");
+const atMarket = (n: number) => "$" + Math.round(n || 0).toLocaleString("en-US") + " at market";
 
 function csvEscape(v: any): string {
   const s = v === null || v === undefined ? "" : String(v);
@@ -110,6 +124,16 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
     setItems(d.items || []);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Which products' holds the panel is showing. null is closed. Holding the
+  // list rather than a product id lets the same panel serve the header tile
+  // (everything out) and one row (one product) without two code paths.
+  const [holdView, setHoldView] = useState<{ title: string; products: HeldProduct[] } | null>(null);
+
+  const held = useCallback(
+    (i: Item): HeldProduct => ({ id: i.id, name: i.name, market: i.marketPrice || 0, holds: i.showsOnHold || [] }),
+    [],
+  );
 
   const [stockTab, setStockTab] = useState<StockTab>("in");
   const [unmappedOnly, setUnmappedOnly] = useState(false);
@@ -213,9 +237,10 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
       });
     }
     setBulkBusy("");
+    const n = selected.size;
     setSelected(new Set());
     await load();
-    toast("Updated selected products");
+    toast(`${n} product${n === 1 ? "" : "s"} updated`);
   }
   async function bulkDelete() {
     if (!confirm(`Delete ${selected.size} products from inventory? Purchase history rows are kept for the record, but the products and their quantities are gone for good.`)) return;
@@ -224,9 +249,10 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
       await fetch(`/api/inventory/${id}`, { method: "DELETE" });
     }
     setBulkBusy("");
+    const n = selected.size;
     setSelected(new Set());
     await load();
-    toast("Deleted selected products");
+    toast(`${n} product${n === 1 ? "" : "s"} deleted`);
   }
 
   const [lotsFor, setLotsFor] = useState<string | null>(null);
@@ -250,11 +276,22 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   const [stockBusy, setStockBusy] = useState(false);
 
   async function receiveStock(id: string) {
+    // An empty cost box used to coerce to 0, log a lot at $0 each, drag the
+    // running average down, and report success. Receiving free stock is a real
+    // thing, so this asks rather than blocks - but it has to ask, because the
+    // buy price is what every margin and break-even number on the show page is
+    // built from, and nothing afterwards says the average moved for the wrong
+    // reason.
+    const cost = parseFloat(stockCost);
+    if (!(cost > 0)) {
+      const name = items.find((x) => x.id === id)?.name || "this product";
+      if (!confirm(`Log ${parseInt(stockQty) || 1} of ${name} at $0 each?\n\nThat is right for free or promo stock. For anything you paid for, cancel and type the unit cost: this rolls into the average buy price behind every margin and break-even figure.`)) return;
+    }
     setStockBusy(true);
     const r = await fetch(`/api/inventory/${id}/purchase`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ qty: parseInt(stockQty) || 1, unitCost: parseFloat(stockCost) || 0 }),
+      body: JSON.stringify({ qty: parseInt(stockQty) || 1, unitCost: cost > 0 ? cost : 0 }),
     });
     setStockBusy(false);
     if (r.ok) {
@@ -270,7 +307,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   async function add() {
     if (!draft.name) return;
     setBusy(true);
-    await fetch("/api/inventory", {
+    const r = await fetch("/api/inventory", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -281,6 +318,17 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         tcgUrl: draft.tcgUrl,
       }),
     });
+    // The form used to clear whatever the server said. A failed add therefore
+    // looked identical to a successful one, except the product was not there
+    // and everything just typed was gone. Keep the draft on failure so it can
+    // be retried rather than retyped.
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      toast(d.error || "Could not add the product - your entries are still here, try again", "bad");
+      setBusy(false);
+      return;
+    }
+    toast(`${draft.name.trim()} added`);
     setDraft({ name: "", category: "Elite Trainer Box", buyPrice: "", marketPrice: "", qtyOnHand: "", tcgUrl: "" });
     await load();
     setBusy(false);
@@ -328,61 +376,63 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
 
   return (
     <main className="max-w-7xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Inventory</h1>
-        <div className="flex items-center gap-3">
-          {msg && <span className="text-dim text-sm">{msg}</span>}
-          <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => refreshPrices()}>
-            Refresh all prices
-          </button>
-          {isAdmin && (
-              <button
-                className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
-                disabled={refreshingAll}
-                onClick={async () => {
-                  setRefreshingAll(true);
-                  toast("Refreshing every price - this takes a minute or two");
-                  const r = await fetch("/api/admin/refresh-prices", { method: "POST" });
-                  setRefreshingAll(false);
-                  if (r.ok) {
-                    const d = await r.json();
-                    toast(`Prices refreshed: ${d.sealed.priced} of ${d.sealed.total} sealed, ${d.singles?.refreshed ?? d.singles ?? 0} singles comps, ${d.openLines?.updated ?? 0} live board lines`);
-                    await load();
-                  } else {
-                    toast("Refresh failed - try again in a minute");
-                  }
-                }}
-              >
-                {refreshingAll ? "Refreshing..." : "Refresh all prices"}
-              </button>
-            )}
+      <PageHeader
+        title="Inventory"
+        actions={
+          <>
+            {msg && <span className="text-dim text-sm">{msg}</span>}
+            <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => refreshPrices()}>
+              Refresh all prices
+            </button>
             {isAdmin && (
-              <button
-                className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
-                disabled={backfilling}
-                title="Work out the TCGplayer set for every product that already has a link, so those get priced by exact product id too"
-                onClick={async () => {
-                  setBackfilling(true);
-                  const r = await fetch("/api/admin/backfill-tcg-map", { method: "POST" });
-                  setBackfilling(false);
-                  if (!r.ok) { toast("Backfill failed - try again in a minute", "bad"); return; }
-                  const d = await r.json();
-                  toast(
-                    `Mapped ${d.mapped} products from their existing links` +
-                      (d.already ? `, ${d.already} already mapped` : "") +
-                      (d.unresolved?.length ? `, ${d.unresolved.length} could not be worked out` : "")
-                  );
-                  await load();
-                }}
-              >
-                {backfilling ? "Mapping..." : "Map existing links"}
-              </button>
-            )}
-            {isAdmin && <TcgNameSync onDone={load} />}
-            <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
-          <CollectrImport onDone={load} />
-        </div>
-      </div>
+                <button
+                  className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
+                  disabled={refreshingAll}
+                  onClick={async () => {
+                    setRefreshingAll(true);
+                    toast("Refreshing every price - this takes a minute or two");
+                    const r = await fetch("/api/admin/refresh-prices", { method: "POST" });
+                    setRefreshingAll(false);
+                    if (r.ok) {
+                      const d = await r.json();
+                      toast(`Prices refreshed: ${d.sealed.priced} of ${d.sealed.total} sealed, ${d.singles?.refreshed ?? d.singles ?? 0} singles comps, ${d.openLines?.updated ?? 0} live board lines`);
+                      await load();
+                    } else {
+                      toast("Refresh failed - try again in a minute");
+                    }
+                  }}
+                >
+                  {refreshingAll ? "Refreshing..." : "Refresh all prices"}
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
+                  disabled={backfilling}
+                  title="Work out the TCGplayer set for every product that already has a link, so those get priced by exact product id too"
+                  onClick={async () => {
+                    setBackfilling(true);
+                    const r = await fetch("/api/admin/backfill-tcg-map", { method: "POST" });
+                    setBackfilling(false);
+                    if (!r.ok) { toast("Backfill failed - try again in a minute", "bad"); return; }
+                    const d = await r.json();
+                    toast(
+                      `Mapped ${d.mapped} products from their existing links` +
+                        (d.already ? `, ${d.already} already mapped` : "") +
+                        (d.unresolved?.length ? `, ${d.unresolved.length} could not be worked out` : "")
+                    );
+                    await load();
+                  }}
+                >
+                  {backfilling ? "Mapping..." : "Map existing links"}
+                </button>
+              )}
+              {isAdmin && <TcgNameSync onDone={load} />}
+              <button className="btn-ghost" onClick={exportCsv}>Export CSV</button>
+            <CollectrImport onDone={load} />
+          </>
+        }
+      />
 
       {/* Add product */}
       <div className="card p-4 grid grid-cols-2 md:grid-cols-7 gap-2 items-end">
@@ -411,7 +461,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         <div className="sm:col-span-2">
           <label className="label">Price link (TCGplayer, eBay, or any URL)</label>
           <input className="input mt-1" placeholder="https://www.tcgplayer.com/product/... or an eBay link" value={draft.tcgUrl} onChange={(e) => setDraft({ ...draft, tcgUrl: e.target.value })} />
-          <p className="text-dim text-[11px] mt-1">TCGplayer links wire into the nightly price refresh. Anything else (eBay etc.) is kept as a reference link and never auto-priced.</p>
+          <p className="text-dim t-meta mt-1">TCGplayer links wire into the nightly price refresh. Anything else (eBay etc.) is kept as a reference link and never auto-priced.</p>
         </div>
         <button className="btn-foil justify-center disabled:opacity-40" disabled={busy || !draft.name} onClick={add}>
           Add product
@@ -451,12 +501,90 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         </button>
         </div>
 
+        {/* The row checkboxes have always worked, on desktop and on mobile, and
+            there was nothing to press once you had ticked them: bulkPatch and
+            bulkDelete existed in this file with no caller. Ticking two hundred
+            rows and finding no action is worse than having no checkboxes, so
+            here is the bar they were written for. */}
+        {selected.size > 0 && (
+          <div className="sticky top-2 z-20 flex flex-wrap items-center gap-s3 rounded-lg border border-foil/40 bg-panel/95 backdrop-blur px-s3 py-s2 lifted">
+            <span className="t-body font-semibold">
+              <span className="num text-foil">{selected.size}</span> selected
+            </span>
+            <select
+              className="input !w-auto !py-1 t-meta"
+              value={bulkCategory}
+              onChange={(e) => setBulkCategory(e.target.value)}
+              disabled={!!bulkBusy}
+            >
+              <option value="">Set category to...</option>
+              {CATS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button
+              className="btn-ghost !py-1 t-meta disabled:opacity-40"
+              disabled={!bulkCategory || !!bulkBusy}
+              onClick={() => {
+                if (!confirm(`Set the category of ${selected.size} product${selected.size === 1 ? "" : "s"} to ${bulkCategory}?`)) return;
+                bulkPatch({ category: bulkCategory }, "category").then(() => setBulkCategory(""));
+              }}
+            >
+              {bulkBusy === "category" ? "Working..." : "Apply"}
+            </button>
+            <span className="flex items-center gap-s2">
+              <input
+                className="input !w-24 !py-1 t-meta"
+                inputMode="decimal"
+                placeholder="Buy $ each"
+                value={bulkBuy}
+                onChange={(e) => setBulkBuy(e.target.value)}
+                disabled={!!bulkBusy}
+              />
+              <button
+                className="btn-ghost !py-1 t-meta disabled:opacity-40"
+                disabled={!bulkBuy || !!bulkBusy}
+                onClick={() => {
+                  const v = parseFloat(bulkBuy);
+                  if (!(v >= 0)) { toast("Type a buy price first", "bad"); return; }
+                  if (!confirm(`Set the buy price of ${selected.size} product${selected.size === 1 ? "" : "s"} to $${v.toFixed(2)} each? This replaces the running average on each one.`)) return;
+                  bulkPatch({ buyPrice: v }, "buy").then(() => setBulkBuy(""));
+                }}
+              >
+                {bulkBusy === "buy" ? "Working..." : "Set buy price"}
+              </button>
+            </span>
+            <button className="text-dim hover:text-body t-meta ml-auto" onClick={() => setSelected(new Set())}>clear</button>
+            <button
+              className="text-bad hover:underline t-meta disabled:opacity-40"
+              disabled={!!bulkBusy}
+              onClick={bulkDelete}
+            >
+              {bulkBusy === "delete" ? "Deleting..." : `Delete ${selected.size}`}
+            </button>
+          </div>
+        )}
+
         {/* Where the units physically are. Reads across the filter box, so
             typing "booster" answers "how many boosters do we own" directly. */}
         <div className="flex flex-wrap items-stretch gap-2">
-          <Count label="In the storage room" units={stockTotals.hand} value={stockTotals.handValue} />
-          <Count label="Out on shows" units={stockTotals.shows} value={stockTotals.showsValue} tone="text-foil" />
-          <Count label="Owned" units={stockTotals.total} value={stockTotals.totalValue} strong />
+          <StatTile label="In the storage room" value={units(stockTotals.hand)} sub={atMarket(stockTotals.handValue)} size="md" surface="inline" />
+          <StatTile
+            label="Out on shows"
+            value={units(stockTotals.shows)}
+            sub={atMarket(stockTotals.showsValue)}
+            tone="foil"
+            size="md"
+            surface="inline"
+            // Reads across the current filter, like the counts themselves, so
+            // typing "booster" and clicking this answers "which shows are
+            // holding my boosters" rather than reopening the whole list.
+            onClick={
+              stockTotals.shows > 0
+                ? () => setHoldView({ title: "Out on shows", products: filtered.filter((i) => i.showsOnHold?.length).map(held) })
+                : undefined
+            }
+            title={stockTotals.shows > 0 ? "See which shows are holding these" : undefined}
+          />
+          <StatTile label="Owned" value={units(stockTotals.total)} sub={atMarket(stockTotals.totalValue)} size="md" surface="inline" highlight />
         </div>
         {/* the mobile cards have no header row to click, so sorting needs its own control */}
         <label className="md:hidden flex items-center gap-2 label">
@@ -522,8 +650,14 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                     <button className="text-foil text-xs" onClick={() => { setStockFor(stockFor === i.id ? null : i.id); setStockQty("1"); setStockCost(""); }}>+ stock</button>
                   </div>
                   {onShows(i) > 0 && (
-                    <div className="text-dim text-[10px] mt-0.5 whitespace-nowrap">
-                      <span className="num text-foil">{onShows(i)}</span> on shows
+                    <div className="text-dim t-meta mt-0.5 whitespace-nowrap">
+                      <button
+                        type="button"
+                        className="text-foil hover:underline"
+                        onClick={() => setHoldView({ title: i.name, products: [held(i)] })}
+                      >
+                        <span className="num">{onShows(i)}</span> on shows
+                      </button>
                       {" · "}
                       <span className="num">{ownedTotal(i)}</span> owned
                     </div>
@@ -558,7 +692,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
               {i.category !== "Graded Card" && (
                 <div className="mt-2 flex items-center gap-3 border-t border-edge pt-2">
                   <TcgMapper id={i.id} name={i.name} currentUrl={i.tcgUrl} mapped={!!i.tcgMapped} onDone={load} />
-                  {needsMapping(i) && <span className="text-givvy text-[10px] uppercase tracking-wide">no TCGplayer link</span>}
+                  {needsMapping(i) && <span className="text-givvy t-meta uppercase tracking-wide">no TCGplayer link</span>}
                 </div>
               )}
             </div>
@@ -572,16 +706,16 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
           <thead>
             <tr>
               <th className="!px-2 w-8"><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={() => toggleSelectAll(filtered.map((i) => i.id))} /></th>
-              <Th label="Product" k="name" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Category" k="category" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Buy (avg)" k="buyPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Market" k="marketPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Retail" k="retailPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Price checked" k="priceChecked" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="Margin" k="margin" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="On hand" k="qtyOnHand" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="In the storage room right now" />
-              <Th label="On shows" k="qtyOnShows" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="Assigned to a show that has not been closed out yet. Worked out from the show lines, so it cannot be edited here." />
-              <Th label="Owned" k="qtyTotal" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="On hand plus on shows: what the business actually has, and the number to check before buying more" />
+              <SortableTh label="Product" k="name" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Category" k="category" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Buy (avg)" k="buyPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Market" k="marketPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Retail" k="retailPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Price checked" k="priceChecked" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="Margin" k="margin" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <SortableTh label="On hand" k="qtyOnHand" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="In the storage room right now" />
+              <SortableTh label="On shows" k="qtyOnShows" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="Assigned to a show that has not been closed out yet. Worked out from the show lines, so it cannot be edited here." />
+              <SortableTh label="Owned" k="qtyTotal" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="On hand plus on shows: what the business actually has, and the number to check before buying more" />
               <th>Links</th>
               <th></th>
             </tr>
@@ -611,9 +745,9 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                     </select>
                   </td>
                   <td>
-                    {num(i.id, "buyPrice", i.buyPrice, "0.01", !(i.buyPrice > 0) ? "!border-amber-400/70 !bg-amber-400/10" : "")}
+                    {num(i.id, "buyPrice", i.buyPrice, "0.01", !(i.buyPrice > 0) ? "!border-warn/70 !bg-warn/10" : "")}
                     <button
-                      className="block text-dim text-[10px] hover:text-body mt-0.5"
+                      className="block text-dim t-meta hover:text-body mt-0.5"
                       onClick={() => toggleLots(i.id)}
                       title="Show every purchase lot behind this average"
                     >
@@ -640,8 +774,8 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                       {num(i.id, "qtyOnHand", i.qtyOnHand, "1")}
                       {!inStock(i) && (
                         onShows(i) > 0
-                          ? <span className="text-foil text-[10px] uppercase tracking-wide whitespace-nowrap" title="None on the shelf, but these are standing on an open show">on shows</span>
-                          : <span className="text-bad text-[10px] uppercase tracking-wide">out</span>
+                          ? <span className="text-foil t-meta uppercase tracking-wide whitespace-nowrap" title="None on the shelf, but these are standing on an open show">on shows</span>
+                          : <span className="text-bad t-meta uppercase tracking-wide">out</span>
                       )}
                       <button
                         className="text-foil text-xs hover:underline whitespace-nowrap"
@@ -669,9 +803,18 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                       lines say they are, and a box you could type in would be
                       a second place for the truth to live. */}
                   <td>
-                    {onShows(i) > 0
-                      ? <span className="num text-foil font-semibold">{onShows(i)}</span>
-                      : <span className="text-dim">-</span>}
+                    {onShows(i) > 0 ? (
+                      <button
+                        type="button"
+                        className="num text-foil font-semibold hover:underline"
+                        title={`See which show${(i.showsOnHold?.length ?? 0) === 1 ? "" : "s"} ${i.name} is on`}
+                        onClick={() => setHoldView({ title: i.name, products: [held(i)] })}
+                      >
+                        {onShows(i)}
+                      </button>
+                    ) : (
+                      <span className="text-dim">-</span>
+                    )}
                   </td>
                   <td>
                     <span className={`num font-semibold ${ownedTotal(i) > 0 ? "" : "text-dim"}`}>{ownedTotal(i)}</span>
@@ -705,7 +848,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                     </button>
                   </td>
                   <td className="text-right">
-                    <button className="text-bad text-xs hover:underline" onClick={() => patch(i.id, { active: false })}>
+                    <button className="text-bad text-xs hover:underline" onClick={() => { if (confirm(`Retire ${i.name}? It stays on past streams and keeps its history, but disappears from the show-set picker and this list.`)) patch(i.id, { active: false }); }}>
                       retire
                     </button>
                   </td>
@@ -745,7 +888,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 </Fragment>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={13} className="text-dim">{emptyLabel(stockTab, q, unmappedOnly)}</td></tr>}
+            {filtered.length === 0 && <TableEmpty>{emptyLabel(stockTab, q, unmappedOnly)}</TableEmpty>}
           </tbody>
         </table>
       </div>
@@ -754,7 +897,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         product link, check the match it shows you, save, and every refresh from then on reads that product&apos;s
         price directly. Anything left <strong className="text-body">unmapped</strong> has to be recognised by name,
         which is why oddly named products can sit at no price forever. Editing a market
-        price stamps the checked date; amber means it has been more than 14 days.
+        price stamps the checked date; the warn colour means more than 14 days.
         Buy price is what you paid, market price drives spot value and break-even. Retired products stay on past
         streams but disappear from the picker. Adding a product to a show set snapshots today&apos;s prices and
         deducts from on-hand quantity; removing it puts the quantity back.
@@ -762,50 +905,23 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         On hand is the storage room. On shows is everything sitting on a show that has not been closed out yet,
         worked out from the show lines rather than stored, so it cannot drift away from them. Owned is the two
         added together, and it is the number to check before buying more of something.
+        {" "}
+        Any on-shows number can be clicked to see which shows are holding it.
       </p>
+
+      {holdView && (
+        <OnShowsPanel
+          title={holdView.title}
+          products={holdView.products}
+          onClose={() => setHoldView(null)}
+        />
+      )}
     </main>
   );
 }
 
 
 // The three stock numbers, totalled across whatever the filter box is showing.
-function Count({ label, units, value, tone, strong }: { label: string; units: number; value: number; tone?: string; strong?: boolean }) {
-  return (
-    <div className={`rounded-lg border px-3 py-2 ${strong ? "border-foil/40 bg-foil/5" : "border-edge"}`}>
-      <div className="label">{label}</div>
-      <div className={`num text-lg font-bold leading-tight ${tone || ""}`}>{units.toLocaleString("en-US")}</div>
-      <div className="text-dim text-[10px]">
-        {"$" + Math.round(value || 0).toLocaleString("en-US")} at market
-      </div>
-    </div>
-  );
-}
-
-function Th({ label, k, sortKey, sortDir, onSort, title }: { label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void; title?: string }) {
-  const active = sortKey === k;
-  return (
-    // th already carries the uppercase dim label styling from globals.css, so the
-    // button only has to add the active tint.
-    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
-      <button
-        type="button"
-        title={title}
-        onClick={() => onSort(k)}
-        className={`inline-flex items-center gap-1 whitespace-nowrap transition-colors hover:text-body ${active ? "text-foil" : ""}`}
-      >
-        {label}
-        {active ? (
-          <span className="text-[8px] leading-none">{sortDir === "asc" ? "\u25B2" : "\u25BC"}</span>
-        ) : (
-          <span className="text-[8px] leading-none opacity-30 flex flex-col">
-            <span>{"\u25B2"}</span>
-            <span>{"\u25BC"}</span>
-          </span>
-        )}
-      </button>
-    </th>
-  );
-}
 
 function PriceAge({ date }: { date: string | null }) {
   if (!date) return <span className="text-bad text-xs">never</span>;

@@ -76,7 +76,7 @@ export default function QuoteClient() {
   return (
     <main className="max-w-2xl mx-auto p-6 space-y-4">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Quote</h1>
+        <h1 className="t-page">Quote</h1>
         <span className="text-dim text-sm">scan labels with a scanner gun or paste a code</span>
       </div>
 

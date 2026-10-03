@@ -8,6 +8,8 @@ import { atList, T } from "@/lib/airtable";
 import { toSingle } from "@/lib/singles";
 import { getSnapshots } from "@/lib/priceRefresh";
 import { HeroCard, TopMovers, TrendChart, ValueDelta } from "@/components/PortfolioPulse";
+import StatTile from "@/components/ui/StatTile";
+import PageHeader from "@/components/ui/PageHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +19,6 @@ const $0 = (n: number) => "$" + Math.round(n || 0).toLocaleString("en-US");
 
 const GRADED = ["PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
 
-function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
-  return (
-    <div className="card p-4">
-      <div className="label">{label}</div>
-      <div className={`num text-2xl font-bold mt-1 ${tone || ""}`}>{value}</div>
-      {sub && <div className="text-dim text-xs mt-1">{sub}</div>}
-    </div>
-  );
-}
 
 export default async function CollectionDashboard() {
   const me = await getMe();
@@ -106,34 +99,34 @@ export default async function CollectionDashboard() {
     <>
       <Nav isAdmin={me.isAdmin} isManager={me.isManager} isCollector={me.isCollector} name={me.streamer?.fields?.["Name"] || "Collector"} />
       <main className="max-w-6xl mx-auto p-6 space-y-6">
-        <div className="flex items-baseline justify-between flex-wrap gap-2">
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>Collection</h1>
-          <span className="text-dim text-sm">Everything you hold, at today&apos;s market</span>
-          {collectorMode && <CollectionRefresh />}
-        </div>
+        <PageHeader
+          title="Collection"
+          subtitle="Everything you hold, at today&apos;s market"
+          actions={collectorMode ? <CollectionRefresh /> : undefined}
+        />
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <ValueDelta snaps={snaps} fallback={collectionValue} label="Collection value" sub={collectorMode ? "singles at live market" : `${$0(singlesValue)} singles - ${$0(sealedMarket)} sealed`} />
-          <Tile label="Cards" value={String(cards)} sub={`${slabs.reduce((a: number, s: any) => a + (s.qty || 1), 0)} slabs worth ${$0(slabValue)}`} />
+          <StatTile label="Cards" value={String(cards)} sub={`${slabs.reduce((a: number, s: any) => a + (s.qty || 1), 0)} slabs worth ${$0(slabValue)}`} />
           {tracked.length > 0 ? (
-            <Tile
+            <StatTile
               label="Since entry"
               value={`${entryGain >= 0 ? "+" : "-"}${$0(entryGain)}`}
               sub={`${entryPct >= 0 ? "+" : ""}${entryPct.toFixed(1)}% on ${$0(entryBase)} at entry - ${upCount} of ${tracked.length} up`}
-              tone={entryGain >= 0 ? "text-win" : "text-bad"}
+              tone={entryGain >= 0 ? "win" : "bad"}
             />
           ) : (
-            <Tile label="Since entry" value="-" sub="no card has an entry price recorded yet" />
+            <StatTile label="Since entry" value="-" sub="no card has an entry price recorded yet" />
           )}
           {invested !== null ? (
-            <Tile
+            <StatTile
               label="Invested"
               value={$0(invested)}
               sub={`${singlesValue - invested >= 0 ? "+" : ""}${$0(singlesValue - invested)} unrealized on singles`}
-              tone={singlesValue - invested >= 0 ? "text-win" : "text-bad"}
+              tone={singlesValue - invested >= 0 ? "win" : "bad"}
             />
           ) : (
-            <Tile label="Sets represented" value={String(bySet.size)} sub="across your singles" />
+            <StatTile label="Sets represented" value={String(bySet.size)} sub="across your singles" />
           )}
         </div>
         {!collectorMode && (
@@ -206,7 +199,7 @@ export default async function CollectionDashboard() {
                   <div key={name} className="flex items-center gap-3">
                     <div className="w-40 text-sm truncate">{name}</div>
                     <div className="flex-1 h-2 rounded bg-edge overflow-hidden">
-                      <div className="h-full" style={{ width: `${(v.value / maxSet) * 100}%`, background: "linear-gradient(90deg, #7aa2ff, #c084fc)" }} />
+                      <div className="h-full" style={{ width: `${(v.value / maxSet) * 100}%`, background: "linear-gradient(90deg, rgb(var(--c-foil)), rgb(var(--c-givvy)))" }} />
                     </div>
                     <span className="num text-xs text-dim w-20 text-right">{$0(v.value)}</span>
                   </div>
@@ -235,7 +228,7 @@ export default async function CollectionDashboard() {
               <div key={s.id} className="rounded-lg border border-edge p-3 text-center">
                 {s.image && <img src={s.image} alt="" className="h-20 mx-auto object-contain mb-2" loading="lazy" />}
                 <div className="text-xs font-medium truncate">{s.name}</div>
-                <div className="text-dim text-[10px] truncate">{s.setName}</div>
+                <div className="text-dim t-meta truncate">{s.setName}</div>
                 <div className="num text-foil text-sm font-semibold mt-1">{s.comp !== null ? $(s.comp) : "-"}</div>
               </div>
             ))}

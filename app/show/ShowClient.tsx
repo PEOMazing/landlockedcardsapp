@@ -168,7 +168,7 @@ export default function ShowClient({ cards, failed }: { cards: ShowCard[]; faile
                     href={`/label/${g.first.id}`}
                     className="card overflow-hidden flex flex-col hover:border-foil/60 transition-colors"
                   >
-                    <div className="relative aspect-square bg-white/[0.03]">
+                    <div className="relative aspect-square bg-edge/40">
                       {g.first.img ? (
                         // Plain img, lazy below the first rows, with its size
                         // fixed up front so the grid never jumps as art arrives.
@@ -186,25 +186,25 @@ export default function ShowClient({ cards, failed }: { cards: ShowCard[]; faile
                         <div className="absolute inset-0 flex items-center justify-center text-dim text-xs">No image</div>
                       )}
                       {g.count > 1 && (
-                        <span className="absolute top-1.5 right-1.5 rounded-md bg-black/80 px-1.5 py-0.5 text-[11px] font-bold num">{g.count} available</span>
+                        <span className="absolute top-1.5 right-1.5 rounded-md bg-black/80 px-1.5 py-0.5 t-meta font-bold num">{g.count} available</span>
                       )}
                       {(isGraded(g.first.cond) || g.first.lang) && (
                         <span className="absolute top-1.5 left-1.5 flex gap-1">
-                          {isGraded(g.first.cond) && <span className="rounded-md bg-foil/90 px-1.5 py-0.5 text-[10px] font-bold text-black">{g.first.cond}</span>}
-                          {g.first.lang && <span className="rounded-md bg-black/75 px-1.5 py-0.5 text-[10px] font-bold">{g.first.lang === "Japanese" ? "JP" : g.first.lang}</span>}
+                          {isGraded(g.first.cond) && <span className="rounded-md bg-foil/90 px-1.5 py-0.5 t-meta font-bold text-black">{g.first.cond}</span>}
+                          {g.first.lang && <span className="rounded-md bg-black/75 px-1.5 py-0.5 t-meta font-bold">{g.first.lang === "Japanese" ? "JP" : g.first.lang}</span>}
                         </span>
                       )}
                     </div>
                     <div className="p-2 flex flex-col gap-0.5 flex-1">
-                      <div className="text-[13px] font-semibold leading-tight line-clamp-2">{displayName(g.first.name)}</div>
-                      <div className="text-dim text-[11px] leading-tight truncate">
+                      <div className="t-secondary font-semibold leading-tight line-clamp-2">{displayName(g.first.name)}</div>
+                      <div className="text-dim t-meta leading-tight truncate">
                         {g.first.set}{g.first.num ? ` #${g.first.num}` : ""}
                       </div>
                       {!isGraded(g.first.cond) && g.first.cond && g.first.cond !== "NM" && (
-                        <div className="text-dim text-[11px]">{g.first.cond}</div>
+                        <div className="text-dim t-meta">{g.first.cond}</div>
                       )}
                       <div className="mt-auto pt-1.5 flex items-end justify-between gap-2">
-                        <span className="num text-[11px] text-dim leading-tight">{formatNos(g.nos, 2)}</span>
+                        <span className="num t-meta text-dim leading-tight">{formatNos(g.nos, 2)}</span>
                         <span className={`num font-bold leading-none ${g.first.price !== null ? "text-foil text-base" : "text-dim text-sm"}`}>
                           {formatPrice(g.first.price)}
                         </span>

@@ -66,12 +66,12 @@ function Row({ c, inCart, onToggle }: { c: ShareCard; inCart: boolean; onToggle:
           </span>
           <span className="flex flex-wrap gap-1 mt-1">
             {c.pending && (
-              <span className="text-[10px] rounded px-1.5 py-0.5 border border-edge text-foil">
+              <span className="t-meta rounded px-1.5 py-0.5 border border-edge text-foil">
                 Order pending
               </span>
             )}
             {badges(c).map((b) => (
-              <span key={b} className="text-[10px] text-dim border border-edge/60 rounded px-1.5 py-0.5">
+              <span key={b} className="t-meta text-dim border border-edge/60 rounded px-1.5 py-0.5">
                 {b}
               </span>
             ))}
@@ -85,7 +85,7 @@ function Row({ c, inCart, onToggle }: { c: ShareCard; inCart: boolean; onToggle:
             sells, so the card number is the one that still means something on
             an order placed last week. */}
         {c.slot && <div className="num text-xs font-semibold text-foil">Slot {c.slot}</div>}
-        <div className="text-dim text-[10px] num">#{c.cardNo}</div>
+        <div className="text-dim t-meta num">#{c.cardNo}</div>
         <button
           onClick={onToggle}
           className={`mt-1 text-xs rounded-lg px-2.5 py-1 border transition-colors ${
@@ -189,7 +189,7 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
     <main className="min-h-screen">
       <div className="max-w-3xl mx-auto p-5 space-y-4 pb-28">
         <header className="pt-2">
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display, sans-serif)" }}>
+          <h1 className="t-page">
             LandLocked <span className="holo-text">Cards</span>
           </h1>
           <p className="text-dim text-sm mt-1">
@@ -264,7 +264,7 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
           <div className="text-dim text-sm py-10 text-center">Nothing matches that search.</div>
         )}
 
-        <footer className="text-dim text-[11px] pt-6 border-t border-edge/50">
+        <footer className="text-dim t-meta pt-6 border-t border-edge/50">
           Tap a card for its price detail. Updated {updated.slice(0, 10)}.
         </footer>
       </div>
@@ -272,7 +272,7 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
       {cart.length > 0 && !open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-edge bg-panel px-5 py-3 text-sm font-semibold shadow-lg"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-edge bg-panel px-5 py-3 text-sm font-semibold lifted"
         >
           Cart · {cart.length} · <span className="num">{$(total)}</span>
         </button>
@@ -286,7 +286,7 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h2 className="font-bold text-lg">{placed ? "Order placed" : "Your cart"}</h2>
+              <h2 className="t-section">{placed ? "Order placed" : "Your cart"}</h2>
               <button onClick={() => setOpen(false)} className="text-dim px-2">
                 {"✕"}
               </button>
@@ -367,7 +367,7 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
                 >
                   {busy ? "Placing..." : `Checkout · ${$(total)}`}
                 </button>
-                <p className="text-dim text-[11px]">
+                <p className="text-dim t-meta">
                   Checkout marks these cards pending and shows you a Venmo link. Your name and contact
                   go to LandLocked Cards so the payment can be matched to you.
                 </p>

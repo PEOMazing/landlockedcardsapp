@@ -91,7 +91,7 @@ export default async function AllStreamsPage() {
           cut off Net profit and the Open links on a wide monitor. */}
       <main className="w-full p-6 space-y-6">
         <div className="flex items-baseline justify-between flex-wrap gap-3">
-          <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+          <h1 className="t-page">
             All streams
           </h1>
           <Link href="/streams/new" className="btn-foil">+ New stream</Link>

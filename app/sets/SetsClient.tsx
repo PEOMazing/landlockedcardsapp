@@ -195,7 +195,7 @@ export default function SetsClient() {
         <div className="flex items-center gap-4 flex-wrap">
           {active.logo && <img src={active.logo} alt="" className="h-10 object-contain" />}
           <div>
-            <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{active.name}</h1>
+            <h1 className="t-page">{active.name}</h1>
             <div className="text-dim text-sm">
               {active.series} - released {active.releaseDate} - {active.total} cards
               {setValue > 0 && (
@@ -268,7 +268,7 @@ export default function SetsClient() {
           {shownCards.map((c) => (
             <div key={c.id} className={`card p-3 space-y-2 relative ${ownedQty(c) > 0 ? "!border-win/50" : ""}`}>
               {ownedQty(c) > 0 && (
-                <span className="absolute top-2 right-2 z-10 text-[10px] font-bold text-win bg-ink/90 border border-win/50 rounded-full px-2 py-0.5">
+                <span className="absolute top-2 right-2 z-10 t-meta font-bold text-win bg-ink/90 border border-win/50 rounded-full px-2 py-0.5">
                   Owned{ownedQty(c) > 1 ? ` x${ownedQty(c)}` : ""}
                 </span>
               )}
@@ -303,7 +303,7 @@ export default function SetsClient() {
 
   return (
     <main className="max-w-6xl mx-auto p-6 space-y-5">
-      <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+      <h1 className="t-page">
         Set <span className="text-foil">checklists</span>
       </h1>
       <p className="text-dim text-sm">

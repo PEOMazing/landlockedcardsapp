@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 // Values read as text until clicked, then become an input. Enter or blur
-// saves, Escape cancels. Empty required values get a quiet amber treatment.
+// saves, Escape cancels. Empty required values get a quiet warn-coloured treatment.
 export default function EditCell({
   value,
   onSave,
@@ -66,7 +66,7 @@ export default function EditCell({
       className={`num rounded px-2 py-1 -mx-2 text-sm hover:bg-edge/60 transition-colors text-${align} ${
         empty
           ? highlightEmpty
-            ? "text-amber-400 border border-amber-400/40 bg-amber-400/5"
+            ? "text-warn border border-warn/40 bg-warn/5"
             : "text-dim"
           : ""
       }`}

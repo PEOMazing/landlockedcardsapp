@@ -115,17 +115,17 @@ export default function QuickSell({ id, isManager, card }: {
             className="h-48 mx-auto rounded-lg flex flex-col items-center justify-center text-center px-3 gap-1"
             style={{ width: "8.6rem", border: "1px dashed rgba(122,162,255,.35)", background: "rgba(122,162,255,.06)" }}
           >
-            <div className="text-[11px] font-bold leading-tight">{card.name}</div>
-            <div className="text-dim text-[9px] leading-tight">{card.setName}</div>
-            {card.number && <div className="text-dim text-[9px] num">#{card.number}</div>}
-            <div className="text-dim text-[8px] mt-1 opacity-70">no art on file</div>
+            <div className="t-meta font-bold leading-tight">{card.name}</div>
+            <div className="text-dim t-meta leading-tight">{card.setName}</div>
+            {card.number && <div className="text-dim t-meta num">#{card.number}</div>}
+            <div className="text-dim t-meta mt-s1 opacity-70">no art on file</div>
           </div>
         )}
         <div>
           <div className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{card.name}</div>
           <div className="text-dim text-sm">
             {card.setName}{card.number ? ` #${card.number}` : ""}
-            {card.printing && <span className="ml-1.5 text-[10px] text-foil border border-foil/40 rounded px-1 py-px align-middle">{card.printing}</span>}
+            {card.printing && <span className="ml-1.5 t-meta text-foil border border-foil/40 rounded px-1 py-px align-middle">{card.printing}</span>}
           </div>
           <div className="text-dim text-sm">{card.cardNo ? <span className="mr-2 font-bold text-foil num">{card.cardNo}</span> : null}<a href="/conditions" target="_blank" className="underline decoration-dotted underline-offset-2 hover:text-foil">{card.condition}</a>{card.location ? <span className="ml-2 text-dim">{card.location}</span> : null}</div>
         </div>
@@ -143,7 +143,7 @@ export default function QuickSell({ id, isManager, card }: {
                 spreadsheet. Managers only: it is a note about our own
                 confidence, not something a customer needs. */}
             {isManager && isThinComp(shown.compSales) && (
-              <div className="text-givvy text-[11px] mt-1 leading-snug">
+              <div className="text-givvy t-meta mt-1 leading-snug">
                 {shown.compSales === 0
                   ? "No sales behind this - priced off live asks"
                   : `Only ${shown.compSales} sale${shown.compSales === 1 ? "" : "s"} in 30 days behind this`}
@@ -179,7 +179,7 @@ export default function QuickSell({ id, isManager, card }: {
                 it actually earns the space. */}
             {isManager && asks.length > 1 && (
               <details className="mt-3 text-left" open={oddLow}>
-                <summary className="label !text-[10px] cursor-pointer select-none hover:text-body">
+                <summary className="label !t-meta cursor-pointer select-none hover:text-body">
                   Live {card.condition} Asks:
                   {oddLow && <span className="ml-1.5 text-givvy normal-case">check the cheapest one</span>}
                 </summary>
@@ -192,7 +192,7 @@ export default function QuickSell({ id, isManager, card }: {
                     $95-$100 is obvious to a person and invisible to a filter. */}
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {asks.map((p, i) => (
-                    <span key={i} className={`num text-[11px] rounded px-1.5 py-0.5 border ${
+                    <span key={i} className={`num t-meta rounded px-1.5 py-0.5 border ${
                       i === 0 && oddLow ? "border-givvy/60 text-givvy"
                         : i === 0 ? "border-foil/50 text-foil"
                         : "border-edge text-dim"
@@ -203,13 +203,13 @@ export default function QuickSell({ id, isManager, card }: {
             )}
             {isManager && judged.length > 0 && (
               <details className="mt-3 text-left group" open>
-                <summary className="label !text-[10px] cursor-pointer select-none hover:text-body">
+                <summary className="label !t-meta cursor-pointer select-none hover:text-body">
                   TCG Sales History:
                 </summary>
                 <div className="mt-1.5 space-y-0.5">
                   {judged.slice(0, 8).map((j, i) => <SaleRow key={i} s={j} />)}
                   {judged.length > 8 && (
-                    <div className="text-dim text-[10px] pt-0.5">+{judged.length - 8} older</div>
+                    <div className="text-dim t-meta pt-0.5">+{judged.length - 8} older</div>
                   )}
                 </div>
               </details>
@@ -249,7 +249,7 @@ export default function QuickSell({ id, isManager, card }: {
             className="block rounded-lg border border-edge px-3 py-2.5 text-sm hover:border-foil/60 hover:text-foil transition-colors"
           >
             View on TCGplayer
-            <span className="block text-dim text-[10px] mt-0.5 normal-case">
+            <span className="block text-dim t-meta mt-0.5 normal-case">
               {card.printing || "this printing"} · {card.condition}
             </span>
           </a>
@@ -267,9 +267,9 @@ function Ref({ label, value, sub, href, warn }: {
 }) {
   const body = (
     <>
-      <div className={`label !text-[10px] ${warn ? "text-givvy" : ""}`}>{label}</div>
+      <div className={`label !t-meta ${warn ? "text-givvy" : ""}`}>{label}</div>
       <div className="num text-lg font-bold">{value != null ? $(value) : "-"}</div>
-      {sub && <div className="text-dim text-[10px] leading-tight">{sub}</div>}
+      {sub && <div className="text-dim t-meta leading-tight">{sub}</div>}
     </>
   );
   const cls = "rounded-lg border border-edge px-2.5 py-2 block";
@@ -284,12 +284,12 @@ function Ref({ label, value, sub, href, warn }: {
 function SaleRow({ s }: { s: JudgedSale }) {
   const dim = !s.used;
   return (
-    <div className={`flex items-baseline justify-between text-[11px] ${dim ? "text-dim opacity-60" : "text-body"}`}>
+    <div className={`flex items-baseline justify-between t-meta ${dim ? "text-dim opacity-60" : "text-body"}`}>
       <span className="tabular-nums">{s.date}</span>
       <span className="flex items-baseline gap-1.5">
-        {s.excluded === "old" && <span className="text-[9px] uppercase tracking-wide">past 30d</span>}
-        {s.excluded === "outlier" && <span className="text-[9px] uppercase tracking-wide text-givvy">outlier</span>}
-        {s.isMedian && <span className="text-[9px] uppercase tracking-wide text-foil">median</span>}
+        {s.excluded === "old" && <span className="label">past 30d</span>}
+        {s.excluded === "outlier" && <span className="label !text-givvy">outlier</span>}
+        {s.isMedian && <span className="label !text-foil">median</span>}
         <span className={`num ${dim ? "line-through" : s.isMedian ? "font-bold text-foil" : ""}`}>{$(s.price)}</span>
       </span>
     </div>

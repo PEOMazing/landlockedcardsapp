@@ -5,6 +5,7 @@ import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
 import { buildWeekPay, buildManagerPay, buildPersonHours, money, StreamRow, toLine } from "@/lib/calc";
+import TableEmpty from "@/components/ui/TableEmpty";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export default async function Dashboard() {
         <Nav isAdmin={me.isAdmin} isManager={me.isManager} />
         <main className="max-w-3xl mx-auto p-6">
           <div className="card p-6">
-            <h1 className="text-lg font-bold mb-2">Almost there</h1>
+            <h1 className="t-section mb-2">Almost there</h1>
             <p className="text-dim text-sm">
               Your login works, but there is no streamer profile for {me.email} yet.
               Ask the admin to add a row with this email on the Streamers table, then reload.
@@ -137,7 +138,7 @@ export default async function Dashboard() {
       <main className="max-w-6xl mx-auto p-6 space-y-8">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display, sans-serif)" }}>
+            <h1 className="t-page">
               Hey {name?.split(" ")[0]}
             </h1>
             <p className="text-dim text-sm">
@@ -266,7 +267,7 @@ export default async function Dashboard() {
                   );
                 })}
                 {visibleStreams.length === 0 && (
-                  <tr><td colSpan={4} className="text-dim">No streams yet</td></tr>
+                  <TableEmpty>No streams yet</TableEmpty>
                 )}
               </tbody>
             </table>

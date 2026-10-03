@@ -51,14 +51,14 @@ export default function CompSales({
     <span onMouseEnter={open} onMouseLeave={close} className="relative">
       <span
         className={`text-xs cursor-help whitespace-nowrap underline decoration-dotted ${
-          thin ? "text-amber-400" : "text-dim"
+          thin ? "text-warn" : "text-dim"
         }`}
       >
         {detail.length} sold{detail.length > 1 ? "s" : ""}
       </span>
       {pos && (
         <span
-          className="fixed z-50 block w-72 rounded-lg border border-edge bg-panel shadow-2xl p-3 space-y-1"
+          className="fixed z-50 block w-72 rounded-lg border border-edge bg-panel lifted p-3 space-y-1"
           style={style}
           onMouseEnter={open}
           onMouseLeave={close}
@@ -74,7 +74,7 @@ export default function CompSales({
             Comp = median of these sales
           </span>
           {thin && (
-            <span className="block text-amber-400 text-xs font-semibold">
+            <span className="block text-warn text-xs font-semibold">
               Thin data: only {detail.length} recent sale{detail.length > 1 ? "s" : ""} in this condition. Verify before pricing.
             </span>
           )}
