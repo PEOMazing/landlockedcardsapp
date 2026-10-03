@@ -91,6 +91,9 @@ export default function LabelsClient() {
   const [order, setOrder] = useState<Order>("az");
   const [cal, setCal] = useState<Cal>(DEFAULT_CAL);
   const [err, setErr] = useState("");
+  // What the stamp pass actually recorded. Shown on the page rather than
+  // swallowed, because this is the only place Label Printed is ever written.
+  const [stampMsg, setStampMsg] = useState("");
 
   // Remember which printer you last used, so you are not re-picking every time.
   // Storage can throw in a locked-down browser, and a label page that refuses
@@ -183,17 +186,34 @@ export default function LabelsClient() {
     // function gets a minute. A 635-label run sent as one request printed every
     // sticker, wrote 338 of them, and was killed mid-loop - leaving half the
     // collection reading as never re-printed with nothing on screen to say so.
+    let stamped = 0;
+    let missed = 0;
     for (let i = 0; i < ids.length; i += STAMP_CHUNK) {
+      const chunk = ids.slice(i, i + STAMP_CHUNK);
       try {
-        await fetch("/api/singles/labels-printed", {
+        const r = await fetch("/api/singles/labels-printed", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: ids.slice(i, i + STAMP_CHUNK) }),
+          body: JSON.stringify({ ids: chunk }),
         });
+        if (r.ok) stamped += chunk.length;
+        else missed += chunk.length;
       } catch {
-        // the paper is already out; drift tracking catching up later is fine
+        missed += chunk.length;
       }
     }
+    // "Drift tracking catching up later is fine" was the old comment here, and
+    // there is no later: nothing else in the app writes Label Printed. That
+    // field is the only input to the "never printed" filter, and Printed
+    // Bucket is the only input to "needs re-sticker", so a chunk that fails
+    // leaves those cards reading as unprinted forever with stickers already on
+    // them. The paper really is already out, which is exactly why the person
+    // holding it needs to be told which ones to record by hand.
+    setStampMsg(
+      missed === 0
+        ? ""
+        : `${stamped} of ${ids.length} recorded as printed. ${missed} were not, so they will still show as never printed even though their stickers are in your hand. Print those again when you can, or record them from the singles list.`,
+    );
   }
 
   if (err) return <main className="p-8 text-dim">{err}</main>;
@@ -300,6 +320,15 @@ export default function LabelsClient() {
         }
       `}</style>
       <main className="py-6 printroot">
+        {stampMsg && (
+          <div className="no-print max-w-[8.5in] mx-auto mb-4 px-2">
+            <div className="card p-s4 border-warn/60 flex items-start gap-s3">
+              <span className="text-warn">{"⚠"}</span>
+              <p className="flex-1 min-w-0 t-body">{stampMsg}</p>
+              <button className="text-dim hover:text-body t-meta" onClick={() => setStampMsg("")}>dismiss</button>
+            </div>
+          </div>
+        )}
         <div className="no-print max-w-[8.5in] mx-auto mb-4 flex items-start justify-between gap-4 px-2">
           <div>
             <div className="font-bold">

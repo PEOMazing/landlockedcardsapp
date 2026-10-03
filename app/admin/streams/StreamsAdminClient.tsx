@@ -27,16 +27,26 @@ export default function StreamsAdminClient({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState("");
+  // Nothing on this page could report a failed write before. Every action here
+  // is either a payroll field or a deletion, and all of them ended in a
+  // router.refresh() that quietly repainted the old state.
+  const [err, setErr] = useState("");
 
   // Who earns the override on this show. Admin only, independent of Packaging.
   async function setOverride(id: string, personId: string) {
     setBusy(id);
-    await fetch(`/api/streams/${id}`, {
+    // Checked, because this decides who earns the commission override, which
+    // is money. Unchecked, a failure looked exactly like a success: the
+    // refresh put the dropdown back to its old value and said nothing, so the
+    // admin's only clue was noticing the selection had reverted.
+    const r = await fetch(`/api/streams/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ overrideRecId: personId || null }),
-    });
+    }).catch(() => null);
     setBusy("");
+    if (!r || !r.ok) setErr("Could not change who earns the override on that show - it is unchanged");
+    else setErr("");
     router.refresh();
   }
 
@@ -46,19 +56,28 @@ export default function StreamsAdminClient({
     );
     if (!ok) return;
     setBusy(s.id);
-    await fetch(`/api/streams/${s.id}`, { method: "DELETE" });
+    const r = await fetch(`/api/streams/${s.id}`, { method: "DELETE" }).catch(() => null);
     setBusy("");
+    // The confirm promises a 72 hour reinstate window. If the delete did not
+    // land there is nothing to reinstate, and the row simply staying put was
+    // the only sign.
+    if (!r || !r.ok) setErr(`Could not delete "${s.title}" - it is still live on dashboards and pay`);
+    else setErr("");
     router.refresh();
   }
 
   async function reinstate(s: DeletedRowT) {
     setBusy(s.id);
-    await fetch(`/api/streams/${s.id}`, {
+    const r = await fetch(`/api/streams/${s.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ restoreDeleted: true }),
-    });
+    }).catch(() => null);
     setBusy("");
+    // The grace window expires. A reinstate that silently failed and was not
+    // noticed is a show that gets purged.
+    if (!r || !r.ok) setErr(`Could not reinstate "${s.title}" - it is still deleted and still on the purge clock`);
+    else setErr("");
     router.refresh();
   }
 
@@ -80,6 +99,13 @@ export default function StreamsAdminClient({
 
   return (
     <>
+      {err && (
+        <div className="card p-s4 border-bad/50 flex items-start gap-s3 mb-s4">
+          <span className="text-bad">{"⚠"}</span>
+          <p className="flex-1 min-w-0 t-body">{err}</p>
+          <button className="text-dim hover:text-body t-meta" onClick={() => setErr("")}>dismiss</button>
+        </div>
+      )}
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>

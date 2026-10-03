@@ -24,6 +24,8 @@ type Profile = {
 export default function SettingsClient() {
   const [s, setS] = useState<any>(null);
   const [saved, setSaved] = useState("");
+  const [saveErr, setSaveErr] = useState<{ key: string; msg: string } | null>(null);
+  const [pSaveErr, setPSaveErr] = useState<{ id: string; msg: string } | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [pSaved, setPSaved] = useState("");
   const [adding, setAdding] = useState({ name: "", email: "", role: "streamer", hourlyRate: "", overridePct: "" });
@@ -40,12 +42,22 @@ export default function SettingsClient() {
     loadProfiles();
   }, []);
 
+  // Per-person hourly rate and override percentage. Same reasoning as `save`
+  // below: a green "Saved" that was never checked is worse than no indicator,
+  // because it stops the admin from looking.
   async function saveProfile(id: string, patch: Record<string, any>) {
-    await fetch(`/api/streamers/${id}`, {
+    const r = await fetch(`/api/streamers/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
-    });
+    }).catch(() => null);
+    if (!r || !r.ok) {
+      const d = r ? await r.json().catch(() => ({})) : {};
+      setPSaveErr({ id, msg: d.error || "Not saved" });
+      await loadProfiles();
+      return;
+    }
+    setPSaveErr(null);
     setPSaved(id);
     setTimeout(() => setPSaved(""), 1500);
     await loadProfiles();
@@ -69,12 +81,30 @@ export default function SettingsClient() {
 
   if (!s) return <main className="max-w-3xl mx-auto p-6 text-dim">Loading settings...</main>;
 
-  async function save(key: string, value: number) {
-    await fetch("/api/settings", {
+  // These fields are the commission ladder and the hourly default, and the
+  // footer tells the admin they apply immediately, including to past weeks.
+  //
+  // This used to show a green "Saved" without reading the response, and the
+  // new number was already pinned into local state by the caller, so a failed
+  // write left the intended value on screen next to a confirmation that it had
+  // been stored. Payroll then kept computing on the old rate, and nothing
+  // disagreed until somebody reloaded the page.
+  //
+  // On failure the field goes back to what the server still has, so the screen
+  // and the server never disagree silently.
+  async function save(key: string, value: number, previous: number) {
+    const r = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key, value }),
-    });
+    }).catch(() => null);
+    if (!r || !r.ok) {
+      setS((prev: any) => ({ ...prev, [key]: previous }));
+      const d = r ? await r.json().catch(() => ({})) : {};
+      setSaveErr({ key, msg: d.error || "Not saved - the old rate is still in effect" });
+      return;
+    }
+    setSaveErr(null);
     setSaved(key);
     setTimeout(() => setSaved(""), 1500);
   }
@@ -96,10 +126,15 @@ export default function SettingsClient() {
                 defaultValue={s[f.key]}
                 onBlur={(e) => {
                   const v = parseFloat(e.target.value);
-                  if (!isNaN(v) && v !== s[f.key]) { setS({ ...s, [f.key]: v }); save(f.key, v); }
+                  if (!isNaN(v) && v !== s[f.key]) {
+                    const previous = s[f.key];
+                    setS({ ...s, [f.key]: v });
+                    save(f.key, v, previous);
+                  }
                 }}
               />
               {saved === f.key && <span className="text-win text-xs">Saved</span>}
+              {saveErr?.key === f.key && <span className="text-bad text-xs">{saveErr.msg}</span>}
             </div>
           </div>
         ))}
@@ -157,6 +192,7 @@ export default function SettingsClient() {
                 Active
               </label>
               {pSaved === p.id && <span className="text-win text-xs">Saved</span>}
+              {pSaveErr?.id === p.id && <span className="text-bad text-xs">{pSaveErr.msg}</span>}
             </div>
           </div>
         ))}

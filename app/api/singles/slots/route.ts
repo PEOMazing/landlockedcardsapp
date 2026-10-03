@@ -46,13 +46,21 @@ export async function POST(req: Request) {
       return n > 0 && r.fields["Location"] !== slotAddress(n);
     });
     let fixed = 0;
+    let failed = 0;
     for (const r of stale.slice(0, limit)) {
       try {
         await atUpdate(T.singles, r.id, slotFields(Number(r.fields["Slot"])));
         fixed++;
-      } catch {}
+      } catch {
+        // Counted, not swallowed. This used to return a literal `failed: 0`
+        // over an empty catch, so by construction nothing could ever be
+        // reported as having failed, and a card left with a printed address
+        // that no longer matches its pocket gave no signal to re-run. The
+        // three other modes in this file already count honestly.
+        failed++;
+      }
     }
-    return NextResponse.json({ mode, filed: fixed, failed: 0, remaining: stale.length - fixed });
+    return NextResponse.json({ mode, filed: fixed, failed, remaining: stale.length - fixed - failed });
   }
 
   if (mode === "compact") {

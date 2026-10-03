@@ -40,37 +40,59 @@ export async function POST(req: Request) {
 
   if (rows.length === 0) return NextResponse.json({ error: "none of those cards are available" }, { status: 409 });
 
+  // There is no orders table. `Order Pending` IS the order, so a card is only
+  // this buyer's if the flag went on for this buyer, in this request.
+  //
+  // Both of the old exceptions put a card the buyer does not have into the
+  // list they were about to pay for. A card already flagged for someone else
+  // was deliberately not re-flagged, correctly, and then listed anyway. A card
+  // whose write threw was listed too, on the reasoning that the flag is a
+  // courtesy rather than the order. With no orders table that reasoning is
+  // backwards: the flag is the only record that exists.
+  //
+  // Either way two strangers got a Venmo link for the same card, paid, and
+  // left nothing behind to say which of them should be refunded. So the total
+  // is built from what was actually reserved, and everything else is named.
   const stamp = new Date().toISOString();
   const who = `${name} (${contact})`;
-  const taken: { cardNo: string; name: string; price: number | null }[] = [];
+  const card = (r: (typeof rows)[number]) => ({
+    cardNo: formatCardNo(r.fields["Card No"]),
+    name: String(r.fields["Card Name"] || ""),
+    price: Number(r.fields["Comp"]) > 0 ? Number(r.fields["Comp"]) : null,
+  });
+
+  const held: ReturnType<typeof card>[] = [];
+  const justTaken: ReturnType<typeof card>[] = [];
   for (const r of rows) {
-    try {
-      // An existing pending flag is left as it was: the first person to ask is
-      // the one whose name should still be on it when the payment arrives.
-      if (!r.fields["Order Pending"]) {
-        await atUpdate(T.singles, r.id, { "Order Pending": stamp, "Order Buyer": who });
-      }
-      taken.push({
-        cardNo: formatCardNo(r.fields["Card No"]),
-        name: String(r.fields["Card Name"] || ""),
-        price: Number(r.fields["Comp"]) > 0 ? Number(r.fields["Comp"]) : null,
-      });
-    } catch {
-      // the flag is a courtesy, not the order - a card that would not take it
-      // still belongs on the list the buyer is about to pay for
-      taken.push({
-        cardNo: formatCardNo(r.fields["Card No"]),
-        name: String(r.fields["Card Name"] || ""),
-        price: Number(r.fields["Comp"]) > 0 ? Number(r.fields["Comp"]) : null,
-      });
+    if (r.fields["Order Pending"]) {
+      // Someone got here first. Their name stays on it.
+      justTaken.push(card(r));
+      continue;
     }
+    try {
+      await atUpdate(T.singles, r.id, { "Order Pending": stamp, "Order Buyer": who });
+      held.push(card(r));
+    } catch {
+      justTaken.push(card(r));
+    }
+  }
+
+  if (held.length === 0) {
+    return NextResponse.json(
+      { error: "those cards were all claimed in the last few minutes - refresh to see what is still here" },
+      { status: 409 },
+    );
   }
 
   return NextResponse.json({
     ok: true,
-    cards: taken,
-    total: orderTotal(taken.map((t) => t.price)),
-    // cards the cart asked for that are no longer for sale
+    cards: held,
+    total: orderTotal(held.map((t) => t.price)),
+    // Asked for but already sold before the read.
     unavailable: ids.length - rows.length,
+    // Still listed, but claimed by someone else between the page loading and
+    // this click. Separate from `unavailable` because the buyer may well want
+    // to ask about these, where a sold card is simply gone.
+    justTaken,
   });
 }

@@ -455,13 +455,41 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     const end = start + shown.length - 1;
     if (!window.confirm(`Number all ${shown.length} shown cards as ${prefix}-${start} through ${prefix}-${end}, top to bottom in the current order? This overwrites existing locations on these cards. Tip: filter or search first to number one binder at a time.`)) return;
     toast(`Numbering ${shown.length} cards...`);
+    // The counter only advances on a card that actually took its number.
+    //
+    // It used to advance either way, so a failure left a hole: card 12 failed,
+    // card 13 got B1-13, and the binder had no B1-12 in it. The toast then
+    // reported the range it had intended rather than the one it wrote, so
+    // "47 cards numbered B1-1 to B1-50" was a sentence that cannot be true,
+    // printed in green with a tick, with nothing anywhere naming the three
+    // cards that need doing again.
+    //
+    // Numbers are physical here: they are what somebody reads off a sleeve to
+    // find a card. A gap is a card that cannot be found.
     let n = start, ok = 0;
+    const failed: string[] = [];
     for (const s of shown) {
-      const code = `${prefix}-${n++}`;
-      const r = await fetch(`/api/singles/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ location: code }) });
-      if (r.ok) ok++;
+      const code = `${prefix}-${n}`;
+      const r = await fetch(`/api/singles/${s.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: code }),
+      }).catch(() => null);
+      if (r && r.ok) { ok++; n++; }
+      else failed.push(s.name || s.id);
     }
-    toast(`${ok} cards numbered ${prefix}-${start} to ${prefix}-${end}`);
+    const last = n - 1;
+    if (failed.length === 0) {
+      toast(`${ok} cards numbered ${prefix}-${start} to ${prefix}-${last}`);
+    } else {
+      const named = failed.slice(0, 3).join(", ");
+      const more = failed.length > 3 ? ` and ${failed.length - 3} more` : "";
+      toast(`${ok} numbered, ${prefix}-${start} to ${prefix}-${last}. ${failed.length} did not take a number`, "bad");
+      setErr(
+        `${failed.length} card${failed.length === 1 ? "" : "s"} did not get a location, so the run stopped short of ${prefix}-${end}: ${named}${more}. ` +
+          `The numbers that were written run without gaps to ${prefix}-${last}, so you can re-run from ${prefix}-${n} once those are sorted.`,
+      );
+    }
     load();
   }
 
@@ -610,6 +638,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     if (ids.length === 0) { toast("Nothing to refresh", "bad"); return; }
     setBulkBusy(true); setErr("");
     let done = 0, linkedTotal = 0, skippedTotal = 0, estTotal = 0;
+    let stoppedEarly = "";
     const reasons: { id: string; reason: string }[] = [];
     const review: { name: string; condition: string; before: number | null; after: number }[] = [];
     // The modal opens before the first request goes out, so the click has a
@@ -626,7 +655,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
           body: JSON.stringify({ ids: queue }),
         });
         const d = await r.json();
-        if (!r.ok) { setErr(d.error || "Price refresh failed"); break; }
+        if (!r.ok) { stoppedEarly = d.error || "Price refresh failed"; break; }
         done += d.updated;
         linkedTotal += d.linked || 0;
         skippedTotal += d.skipped || 0;
@@ -647,15 +676,30 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
         if (!d.remaining) break;
         queue = queue.slice(queue.length - d.remaining);
       }
+      // A run that stopped early is the headline, not a footnote.
+      //
+      // The break above used to `setErr` and fall straight through to here,
+      // where a non-empty `notes` overwrote it unconditionally. So asking to
+      // reprice 200 cards, failing after 40, produced a green toast reading
+      // "40 prices updated" and a banner about which of those 40 to check by
+      // hand. Nothing said the other 160 were never touched.
+      const untouched = ids.length - done;
       const bits = [`${done} ${done === 1 ? "price" : "prices"} updated`];
       if (linkedTotal) bits.push(`${linkedTotal} newly linked to TCGplayer`);
       if (estTotal) bits.push(`${estTotal} estimated (no recent sales)`);
       if (skippedTotal) bits.push(`${skippedTotal} skipped`);
-      toast(bits.join(" - "), skippedTotal && !done ? "bad" : "ok");
+      if (stoppedEarly) bits.push(`stopped early, ${untouched} not repriced`);
+      toast(bits.join(" - "), stoppedEarly || (skippedTotal && !done) ? "bad" : "ok");
 
       // Named, not counted. A card whose price just doubled off a guess is
       // something to go look at, and a number in a toast does not get looked at.
       const notes: string[] = [];
+      if (stoppedEarly) {
+        notes.push(
+          `The run stopped after ${done} of ${ids.length}: ${stoppedEarly}. ` +
+            `${untouched} card${untouched === 1 ? "" : "s"} still ${untouched === 1 ? "has" : "have"} the old comp. Run it again to finish.`,
+        );
+      }
       if (review.length) {
         notes.push(
           `Check these ${review.length} by hand - the new price is an estimate and moved a long way: ` +
@@ -1335,10 +1379,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   {bulkBusy ? "Splitting..." : `Split ${selStats.splittable} extra card${selStats.splittable === 1 ? "" : "s"} out`}
                 </button>
               )}
+              {/* Scoped to what is on screen, which is what the button counts.
+                  The selection survives a filter change, so after narrowing
+                  from 50 cards to 5 this said "Print 5 labels" and sent all
+                  50 to the thermal roll. The other two bulk actions, split and
+                  delete, already intersect with `shown`; this one did not, and
+                  the 45 extra came off the printer and got stamped as printed,
+                  which then hides them from the "never printed" filter. */}
               <button
                 className="btn-foil !py-1.5 text-xs"
-                onClick={() => printLabels(Array.from(selSet))}
-                title="Print a sticker for each selected card"
+                onClick={() => printLabels(shown.filter((s) => selSet.has(s.id)).map((s) => s.id))}
+                title="Print a sticker for each selected card currently shown"
               >
                 Print {selStats.rows} labels
               </button>
@@ -1723,8 +1774,12 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                           onClick={async () => {
                             setMenuFor(null);
                             const next = s.language === "Japanese" ? "English" : "Japanese";
-                            await fetch(`/api/singles/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ language: next }) });
-                            await load();
+                            // Through `patch`, like every other write on this
+                            // row. On its own it was the one unchecked fetch in
+                            // the file, and language picks the comp source, so
+                            // a silent failure leaves a Japanese card priced
+                            // off English sales indefinitely.
+                            await patch(s.id, { language: next });
                           }}
                         >
                           Mark {s.language === "Japanese" ? "English" : "Japanese"}

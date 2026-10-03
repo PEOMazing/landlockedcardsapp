@@ -57,7 +57,11 @@ export default function Timeclock({
 
   async function remove(id: string) {
     setBusy(true);
-    await fetch(`/api/time/${id}`, { method: "DELETE" });
+    // These are payroll hours. `add` just above checks its response; this did
+    // not, so a failed delete just saw the row reappear after the refresh with
+    // nothing said about why.
+    const r = await fetch(`/api/time/${id}`, { method: "DELETE" }).catch(() => null);
+    if (!r || !r.ok) setErr("Could not remove that entry - the hours are still on this stream");
     await onChanged();
     setBusy(false);
   }

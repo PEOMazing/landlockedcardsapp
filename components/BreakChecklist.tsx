@@ -52,13 +52,34 @@ export default function BreakChecklist({
       .finally(() => setLoadingCards(false));
   }, [checklist?.setId]);
 
-  function save(next: Checklist | null) {
+  // The footer of this panel says everything saves automatically. It did not
+  // check whether anything did.
+  //
+  // What goes through here is which cards were pulled and the Whatnot username
+  // of whoever pulled each one, typed live during a break, on venue wifi. A
+  // failed PATCH left the name on screen for the rest of the night and gone on
+  // reload, and those names decide who gets shipped which card. The component
+  // already had an `err` state rendered above the table; nothing ever wrote to
+  // it.
+  //
+  // Optimistic with a real rollback: the tick or the name appears instantly,
+  // and if the write does not land the screen goes back to what the server
+  // actually has rather than showing work that was never recorded.
+  async function save(next: Checklist | null) {
+    const previous = checklist;
     setChecklist(next);
-    fetch(`/api/streams/${streamId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ checklist: next }),
-    });
+    setErr("");
+    try {
+      const r = await fetch(`/api/streams/${streamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ checklist: next }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setChecklist(previous);
+      setErr("That did not save. Check your connection and do it again - the last change is not recorded.");
+    }
   }
 
   function chooseSet(s: SetT) {

@@ -335,7 +335,14 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     removingRef.current.add(lineId);
     setBusy(true);
     try {
-      await fetch(`/api/lines/${lineId}`, { method: "DELETE" });
+      // Removing a line moves stock. Unchecked, a refusal (a closed stream, or
+      // a non-manager) looked exactly like a removal that worked, except the
+      // row was still there after the reload.
+      const r = await fetch(`/api/lines/${lineId}`, { method: "DELETE" }).catch(() => null);
+      if (!r || !r.ok) {
+        const d = r ? await r.json().catch(() => ({})) : {};
+        toast(d.error || "Could not remove that line", "bad");
+      }
       await load();
     } finally {
       removingRef.current.delete(lineId);
@@ -924,7 +931,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                 type="checkbox"
                 checked={!stream.overrideExcluded}
                 onChange={async (e) => {
-                  await fetch(`/api/streams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ overrideEligible: e.target.checked }) });
+                  const r = await fetch(`/api/streams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ overrideEligible: e.target.checked }) }).catch(() => null);
+                  if (!r || !r.ok) toast("Could not change whether this show counts toward the override", "bad");
                   await load();
                 }}
               />
@@ -938,12 +946,14 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                   disabled={busy}
                   onChange={async (e) => {
                     setBusy(true);
-                    await fetch(`/api/streams/${id}`, {
+                    // Who earns the override is a payroll field.
+                    const r = await fetch(`/api/streams/${id}`, {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ overrideRecId: e.target.value || null }),
-                    });
+                    }).catch(() => null);
                     setBusy(false);
+                    if (!r || !r.ok) toast("Could not change who earns the override - it is unchanged", "bad");
                     await load();
                   }}
                 >

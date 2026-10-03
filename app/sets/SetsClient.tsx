@@ -47,8 +47,11 @@ export default function SetsClient() {
 
   async function deleteCustomSet(id: string, name: string) {
     if (!confirm(`Delete "${name}"? Your cards are untouched - this only removes the saved master set.`)) return;
-    const r = await fetch(`/api/custom-sets/${id}`, { method: "DELETE" });
-    if (r.ok) { loadCustomSets(); toast("Master set deleted"); }
+    const r = await fetch(`/api/custom-sets/${id}`, { method: "DELETE" }).catch(() => null);
+    if (r && r.ok) { loadCustomSets(); toast("Master set deleted"); }
+    // Without this branch the button did nothing at all on failure: the
+    // confirm closed, the set stayed, and no message explained why.
+    else toast("Could not delete that master set - it is still here", "bad");
   }
   const [cards, setCards] = useState<CardT[]>([]);
   const [loading, setLoading] = useState(false);

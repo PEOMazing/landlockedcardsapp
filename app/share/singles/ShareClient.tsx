@@ -110,7 +110,16 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
   const [contact, setContact] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [placed, setPlaced] = useState<{ cardNos: string[]; total: number; unavailable: number } | null>(null);
+  // `justTaken` is cards that were still listed when the page loaded and got
+  // claimed by someone else before this click. They are not in the total and
+  // are not held, and saying so is the difference between a buyer who knows to
+  // ask about them and one who thinks they bought them.
+  const [placed, setPlaced] = useState<{
+    cardNos: string[];
+    total: number;
+    unavailable: number;
+    justTaken: { cardNo: string; name: string }[];
+  } | null>(null);
 
   // The cart survives a refresh, because a phone browsing eight hundred cards
   // will reload at some point and losing the pile is the fastest way to lose
@@ -173,6 +182,7 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
         cardNos: d.cards.map((c: any) => c.cardNo),
         total: d.total,
         unavailable: d.unavailable || 0,
+        justTaken: d.justTaken || [],
       });
       setCart([]);
     } catch (e: any) {
@@ -303,6 +313,17 @@ export default function ShareClient({ cards, updated }: { cards: ShareCard[]; up
                   <p className="text-bad text-sm">
                     {placed.unavailable} {placed.unavailable === 1 ? "card was" : "cards were"} already
                     gone and {placed.unavailable === 1 ? "is" : "are"} not in this total.
+                  </p>
+                )}
+                {placed.justTaken.length > 0 && (
+                  <p className="text-warn text-sm">
+                    {placed.justTaken.length === 1 ? "This one was" : "These were"} claimed by someone
+                    else while you were deciding, so {placed.justTaken.length === 1 ? "it is" : "they are"}{" "}
+                    not held and not in the total:{" "}
+                    <span className="num">
+                      {placed.justTaken.map((c) => `${c.cardNo} ${c.name}`.trim()).join(", ")}
+                    </span>
+                    . Message us if you want to be next in line.
                   </p>
                 )}
                 <a
