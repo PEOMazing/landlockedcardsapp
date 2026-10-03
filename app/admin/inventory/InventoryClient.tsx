@@ -429,13 +429,25 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         actions={
           <>
             {msg && <span className="text-dim text-sm">{msg}</span>}
-            <button className="btn-ghost disabled:opacity-40" disabled={busy} onClick={() => refreshPrices()}>
-              Refresh all prices
+            {/* Two buttons here were both called "Refresh all prices" and they
+                are not the same job. This one is sealed product only. The
+                admin one below runs the whole nightly pipeline: sealed, then
+                singles comps, then the live board. Same label on both meant
+                picking between them was a coin toss, and the cheap one looks
+                like it did nothing when what you wanted was the other. */}
+            <button
+              className="btn-ghost disabled:opacity-40"
+              disabled={busy}
+              onClick={() => refreshPrices()}
+              title="Market prices for sealed product only, from the TCGplayer mirror. Quick."
+            >
+              Refresh sealed prices
             </button>
             {isAdmin && (
                 <button
                   className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
                   disabled={refreshingAll}
+                  title="The full nightly pipeline on demand: sealed markets, then every single's comp, then the live board lines. Takes a minute or two."
                   onClick={async () => {
                     setRefreshingAll(true);
                     toast("Refreshing every price - this takes a minute or two");
@@ -450,7 +462,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                     }
                   }}
                 >
-                  {refreshingAll ? "Refreshing..." : "Refresh all prices"}
+                  {refreshingAll ? "Refreshing..." : "Refresh everything"}
                 </button>
               )}
               {isAdmin && (

@@ -2,10 +2,11 @@
 import AlertsBanner from "./AlertsBanner";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SignOutButton, UserButton } from "@clerk/nextjs";
 import { BRAND, streamsEnabled } from "@/lib/appMode";
 import ThemeToggle from "@/components/ThemeToggle";
+import CommandPalette from "@/components/CommandPalette";
 
 const I = {
   vendor: <path d="M3 13h4v8H3zM10 9h4v12h-4zM17 3h4v18h-4z" />,
@@ -120,6 +121,15 @@ export default function Nav({ isAdmin, isManager = false, isCollector = false, n
   const pathname = usePathname() || "/";
   const [open, setOpen] = useState(false);
 
+  // The modifier key, named the way the keyboard in front of you names it.
+  // Resolved after mount: the server has no idea what you are on, and
+  // rendering the wrong symbol then swapping it is a visible flicker.
+  const [cmdKey, setCmdKey] = useState("⌘");
+  useEffect(() => {
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+    setCmdKey(mac ? "⌘" : "Ctrl ");
+  }, []);
+
   // The holo treatment lands on the last word, which is what made "LandLocked
   // Cards" read right. A one-word brand gets the whole thing rather than
   // nothing, because a name with no shine next to one that has it looks like
@@ -162,8 +172,27 @@ export default function Nav({ isAdmin, isManager = false, isCollector = false, n
 
   return (
     <>
+      {/* Mounted here because Nav is the one client component on every signed
+          in screen, and the palette has to be reachable from all of them. It
+          renders nothing until it is opened. */}
+      <CommandPalette isAdmin={isAdmin} isManager={isManager} />
+
       <nav className="sidebar hidden md:flex fixed inset-y-0 left-0 w-56 flex-col border-r border-edge bg-panel/70 backdrop-blur z-30">
         <div className="h-14 flex items-center px-3 border-b border-edge">{brand}</div>
+        <div className="px-3 pt-3">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("palette:open"))}
+            className="w-full flex items-center gap-2 rounded-lg border border-edge px-2.5 py-1.5 text-dim hover:text-body hover:border-foil/40 transition-colors"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-4-4" />
+            </svg>
+            <span className="t-secondary">Search</span>
+            <kbd className="kbd ml-auto">{cmdKey}K</kbd>
+          </button>
+        </div>
         <NavLinks isAdmin={isAdmin} isManager={isManager} isCollector={isCollector} pathname={pathname} />
         {footer}
       </nav>

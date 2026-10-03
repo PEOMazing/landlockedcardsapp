@@ -231,11 +231,18 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   // add flow
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchCard[]>([]);
+  // Which search result the keyboard is on, and the two refs that let the
+  // flow run hands-on-keys: one to put focus back in the box after a card is
+  // added, one to keep the highlighted result scrolled into view.
+  const [pickHi, setPickHi] = useState(0);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const hiRef = useRef<HTMLButtonElement>(null);
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<SearchCard | null>(null);
   const [manual, setManual] = useState(false);
   const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "", language: "English" });
   const debounce = useRef<any>(null);
+  const searchAbort = useRef<AbortController | null>(null);
 
   async function load() {
     const r = await fetch("/api/singles");
@@ -251,18 +258,29 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     const term = q.trim();
     if (term.length < 3) { setResults([]); return; }
     clearTimeout(debounce.current);
+    // Cancel the request in flight when the next keystroke arrives. Without
+    // this a fast typist gets responses back out of order and the list ends
+    // up showing matches for a prefix they have already moved past.
+    searchAbort.current?.abort();
+    const ac = new AbortController();
+    searchAbort.current = ac;
     debounce.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const r = await fetch(`/api/pokemon/cards?q=${encodeURIComponent(term)}`);
+        const r = await fetch(`/api/pokemon/cards?q=${encodeURIComponent(term)}`, { signal: ac.signal });
         const d = await r.json();
-        setResults(d.cards || []);
+        if (!ac.signal.aborted) { setResults(d.cards || []); setPickHi(0); }
+      } catch {
+        // an aborted request is the expected case, not a failure
       } finally {
-        setSearching(false);
+        if (!ac.signal.aborted) setSearching(false);
       }
     }, 400);
     return () => clearTimeout(debounce.current);
   }, [q, picked, manual]);
+
+  // Keep the keyboard-highlighted result visible when arrowing past the fold.
+  useEffect(() => { hiRef.current?.scrollIntoView({ block: "nearest" }); }, [pickHi]);
 
   async function runSetup() {
     setBusy("setup"); setSetupMsg("Running setup...");
@@ -321,9 +339,18 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
       // over: a box of cards graded by hand is nearly always a run of the same
       // condition, and re-picking LP two hundred times is two hundred clicks
       // nobody should spend.
-      toast(`${d.name || draft.name.trim() || "Card"} added`);
-      setPicked(null); setManual(false); setQ(""); setResults([]);
+      // The route answers with { single }, so `d.name` was always undefined
+      // and this toast always read a bare "Card added". Naming the card is the
+      // whole point of the message: it is the only confirmation that the right
+      // one went in.
+      const added = d.single?.name || d.name || picked?.name || draft.name.trim() || "Card";
+      toast(`${added} added`);
+      setPicked(null); setManual(false); setQ(""); setResults([]); setPickHi(0);
       setDraft({ name: "", setName: "", number: "", condition: draft.condition, qty: "1", buyPrice: "", comp: "", notes: "", printing: "", language: draft.language });
+      // Straight back to the search box. Without this the hands-on-keys loop
+      // breaks on the last step of every card and you reach for the mouse
+      // two hundred times to get back to where you started.
+      requestAnimationFrame(() => searchRef.current?.focus());
       await load();
     }
     setBusy("");
@@ -1019,18 +1046,50 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 ))}
               </div>
             </div>
+            {/* Typing a stack of cards in is the longest sitting-down job in
+                this app, and until now it could not be done without the
+                mouse: no autofocus, no way to choose a result from the
+                keyboard, and nothing bound to Enter. Three pointer actions
+                per card, times two hundred cards.
+
+                Down and up walk the results, Enter takes the highlighted one,
+                Escape clears back to the search. The pattern is lifted from
+                ProductPicker, which has been the only real combobox in the
+                codebase. */}
             <input
+              ref={searchRef}
+              autoFocus
               className="input"
               placeholder='Search any card - try "Charizard ex" or "Umbreon"'
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") { e.preventDefault(); setPickHi((h) => Math.min(h + 1, results.length - 1)); }
+                else if (e.key === "ArrowUp") { e.preventDefault(); setPickHi((h) => Math.max(h - 1, 0)); }
+                else if (e.key === "Enter" && results[pickHi]) { e.preventDefault(); setPicked(results[pickHi]); }
+                else if (e.key === "Escape") { e.preventDefault(); setQ(""); setResults([]); }
+              }}
+              aria-label="Search for a card to add"
+              aria-activedescendant={results[pickHi] ? `addcard-${results[pickHi].id}` : undefined}
             />
             {searching && <div className="text-dim text-xs">Searching TCGplayer...</div>}
-            <div className="grid gap-1 max-h-80 overflow-y-auto">
-              {results.map((c) => (
+            {results.length > 0 && (
+              <div className="text-dim t-meta">
+                <kbd className="kbd">&uarr;</kbd><kbd className="kbd">&darr;</kbd> to choose, <kbd className="kbd">&crarr;</kbd> to pick
+              </div>
+            )}
+            <div className="grid gap-1 max-h-80 overflow-y-auto" role="listbox">
+              {results.map((c, ci) => (
                 <button
                   key={c.id}
-                  className="flex items-center gap-3 text-left rounded-lg border border-edge px-3 py-2 hover:border-foil/50"
+                  id={`addcard-${c.id}`}
+                  role="option"
+                  aria-selected={ci === pickHi}
+                  ref={ci === pickHi ? hiRef : undefined}
+                  className={`flex items-center gap-3 text-left rounded-lg border px-3 py-2 ${
+                    ci === pickHi ? "border-foil bg-foil/10" : "border-edge hover:border-foil/50"
+                  }`}
+                  onMouseEnter={() => setPickHi(ci)}
                   onClick={() => setPicked(c)}
                 >
                   {c.image && <img src={c.image} alt="" className="w-8 rounded-sm" loading="lazy" />}
@@ -1045,8 +1104,24 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
           </div>
         )}
 
+        {/* A real form, so Enter submits from any field in it. There is not
+            one <form> element anywhere else in this app, which is why no
+            screen has ever had Enter-to-submit. Submit is intercepted and
+            handled in script: the action would otherwise navigate.
+
+            Enter in a textarea still inserts a newline, which is correct, so
+            Notes keeps behaving like Notes. */}
         {(picked || manual) && (
-          <div className="space-y-3">
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (busy === "add") return;
+              if (manual && !draft.name.trim()) return;
+              if (!manual && !picked) return;
+              addCard();
+            }}
+          >
             {picked && (
               <div className="flex items-center gap-3 rounded-lg border border-foil/40 bg-foil/5 px-3 py-2">
                 {picked.image && <img src={picked.image} alt="" className="w-10 rounded-sm" />}
@@ -1136,14 +1211,17 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             )}
             <div className="flex items-center gap-3">
               <button
+                type="submit"
                 className="btn-foil disabled:opacity-40"
                 disabled={busy === "add" || (manual && !draft.name.trim()) || (!manual && !picked)}
-                onClick={addCard}
               >
                 {busy === "add" ? "Adding..." : "Add to singles inventory"}
               </button>
+              <span className="text-dim t-meta">
+                <kbd className="kbd">&crarr;</kbd> adds and goes back to the search box
+              </span>
             </div>
-          </div>
+          </form>
         )}
       </section>
 
