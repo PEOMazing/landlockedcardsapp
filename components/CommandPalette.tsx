@@ -103,12 +103,20 @@ export default function CommandPalette({ isAdmin = false, isManager = false }: {
   }, [open, index, loading]);
 
   useEffect(() => {
-    if (open) {
-      setQ("");
-      setCursor(0);
-      // rAF, because the input does not exist until this render commits
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
+    if (!open) return;
+    setQ("");
+    setCursor(0);
+    // Focus straight away: refs are attached before effects run, so the input
+    // is already there. The extra frame is a backstop for the case where the
+    // element is not yet focusable, and it is only a backstop because
+    // requestAnimationFrame does not fire at all in a hidden tab. Relying on
+    // it alone means the palette can open with focus left behind on whatever
+    // was underneath, and you type your search into the page.
+    inputRef.current?.focus();
+    const raf = requestAnimationFrame(() => {
+      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
   }, [open]);
 
   const groups = useMemo(() => {

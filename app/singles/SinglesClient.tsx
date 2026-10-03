@@ -350,7 +350,12 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
       // Straight back to the search box. Without this the hands-on-keys loop
       // breaks on the last step of every card and you reach for the mouse
       // two hundred times to get back to where you started.
-      requestAnimationFrame(() => searchRef.current?.focus());
+      //
+      // Called directly rather than inside requestAnimationFrame, which does
+      // not run in a backgrounded tab: entering a long stack of cards with the
+      // window parked on a second monitor is exactly when this matters, and
+      // that is the case rAF quietly skips.
+      searchRef.current?.focus();
       await load();
     }
     setBusy("");

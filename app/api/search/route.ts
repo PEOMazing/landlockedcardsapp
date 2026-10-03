@@ -33,8 +33,12 @@ export async function GET() {
     return NextResponse.json(cache.body);
   }
 
+  // `= ''` and not `= BLANK()`. Owner Rec Id is a text field, and on a text
+  // field those two are not the same test in Airtable: BLANK() matched nothing
+  // here and the palette shipped with zero cards in it while 780 sat on the
+  // page behind it. This is the comparison /api/singles has always used.
   const singlesP = atList(T.singles, {
-    filterByFormula: "{Owner Rec Id} = BLANK()",
+    filterByFormula: "{Owner Rec Id} = ''",
     "fields[]": ["Card Name", "Card No", "Set", "Status", "Location"],
   }).catch(() => []);
 
