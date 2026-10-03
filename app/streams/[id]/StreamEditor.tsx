@@ -7,6 +7,7 @@ import Timeclock from "@/components/Timeclock";
 import BreakChecklist from "@/components/BreakChecklist";
 import SinglesPicker from "@/components/SinglesPicker";
 import RollSingles from "@/components/RollSingles";
+import ReturnSingles from "@/components/ReturnSingles";
 import CardBoard from "@/components/CardBoard";
 import Thumb from "@/components/Thumb";
 import { toast } from "@/components/Toaster";
@@ -20,7 +21,7 @@ const $ = (n: number) =>
 type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
   market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; tcgUrl?: string; image?: string; buy?: number;
-  singleRecId?: string; salePrice?: number | null;
+  singleRecId?: string; salePrice?: number | null; slot?: number | null; holdOut?: boolean;
 };
 
 export default function StreamEditor({ id, isAdmin = false }: { id: string; isAdmin?: boolean }) {
@@ -60,6 +61,11 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [pasteMsg, setPasteMsg] = useState("");
   const [returnArmed, setReturnArmed] = useState(false);
   const [returnMsg, setReturnMsg] = useState("");
+  // Singles lines the streamer has un-ticked on the return list: these cards
+  // are staying out of stock for an upcoming show instead of going back in the
+  // binder. Seeded from the lines so a flag set on an earlier visit, or by the
+  // approve path, is still shown.
+  const [holdOut, setHoldOut] = useState<Set<string>>(new Set());
   // one Whatnot upload feeds both the show set and the store sales
   const [whatnotFile, setWhatnotFile] = useState<SharedFile | null>(null);
 
@@ -79,6 +85,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     const d = await res.json();
     setData(d);
     setLines(d.lines || []);
+    setHoldOut(new Set(((d.lines || []) as LineT[]).filter((l) => l.holdOut).map((l) => l.id)));
     const f = {
       afterFees: d.stream.afterFees ?? "",
       promotion: d.stream.promotion ?? "",
@@ -342,12 +349,33 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     });
   }
 
+  // Singles that could still come back: the ones the return list asks about.
+  const returnableSingles = useMemo(
+    () => lines.filter((l) => !!l.singleRecId && Math.max(l.qty - l.qtyHit, 0) > 0),
+    [lines],
+  );
+  const heldCount = useMemo(
+    () => returnableSingles.filter((l) => holdOut.has(l.id)).length,
+    [returnableSingles, holdOut],
+  );
+
   async function returnItems() {
     setBusy(true); setReturnMsg("");
-    const res = await fetch(`/api/streams/${id}/return`, { method: "POST" });
+    const res = await fetch(`/api/streams/${id}/return`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Only the lines still on the return list. A card whose line has since
+      // been hit is gone and holding it would be meaningless.
+      body: JSON.stringify({ holdLineIds: returnableSingles.filter((l) => holdOut.has(l.id)).map((l) => l.id) }),
+    });
     const d = await res.json();
     if (!res.ok) setReturnMsg(d.error || "Return failed");
-    else setReturnMsg(`Returned ${d.itemsReturned} items to inventory`);
+    else {
+      const bits = [`Returned ${d.itemsReturned} sealed item${d.itemsReturned === 1 ? "" : "s"}`];
+      if (d.singlesReturned) bits.push(`${d.singlesReturned} card${d.singlesReturned === 1 ? "" : "s"} back in stock`);
+      if (d.singlesHeld) bits.push(`${d.singlesHeld} held out for the next show`);
+      setReturnMsg(bits.join(", "));
+    }
     setReturnArmed(false);
     await load();
     setBusy(false);
@@ -858,13 +886,41 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               Return unsold items to inventory
             </button>
           ) : (
-            <span className="flex items-center gap-2">
-              <span className="text-givvy text-sm">
-                Return {lines.reduce((a, l) => a + Math.max(l.qty - l.qtyHit, 0), 0)} items? Hits must be final - this locks the show set.
+            <>
+              <span className="flex items-center gap-2 flex-wrap">
+                <span className="text-givvy text-sm">
+                  {(() => {
+                    const sealed = lines.reduce(
+                      (a, l) => a + (l.singleRecId ? 0 : Math.max(l.qty - l.qtyHit, 0)),
+                      0,
+                    );
+                    const cardsBack = returnableSingles.length - heldCount;
+                    const parts = [`${sealed} sealed item${sealed === 1 ? "" : "s"}`];
+                    if (returnableSingles.length) parts.push(`${cardsBack} card${cardsBack === 1 ? "" : "s"}`);
+                    return `Put ${parts.join(" and ")} back in stock?`;
+                  })()}
+                  {heldCount > 0 && ` ${heldCount} card${heldCount === 1 ? "" : "s"} stay out.`}
+                  {" "}Hits must be final - this locks the show set.
+                </span>
+                <button className="btn-win" disabled={busy} onClick={returnItems}>Yes, return</button>
+                <button className="btn-ghost" onClick={() => setReturnArmed(false)}>Cancel</button>
               </span>
-              <button className="btn-win" disabled={busy} onClick={returnItems}>Yes, return</button>
-              <button className="btn-ghost" onClick={() => setReturnArmed(false)}>Cancel</button>
-            </span>
+              {/* The checklist opens under the confirm, so the default path is
+                  still one click and picking cards is the deliberate detour. */}
+              <ReturnSingles
+                cards={returnableSingles.map((l) => ({
+                  id: l.id,
+                  name: l.name,
+                  qty: l.qty,
+                  qtyHit: l.qtyHit,
+                  market: l.market,
+                  image: l.image,
+                  slot: l.slot ?? null,
+                }))}
+                hold={holdOut}
+                onChange={setHoldOut}
+              />
+            </>
           )}
           {returnMsg && <span className="text-win text-sm">{returnMsg}</span>}
           <span className="text-dim text-xs">
