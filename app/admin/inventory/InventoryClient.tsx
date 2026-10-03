@@ -5,6 +5,9 @@ type Item = {
   id: string; name: string; category: string; buyPrice: number;
   marketPrice: number; qtyOnHand: number; tcgUrl: string; imageUrl?: string; retailPrice?: number | null; entryMarket?: number | null; dateAdded?: string; priceChecked: string | null;
   tcgMapped?: boolean;
+  // units standing on a show that has not been closed out yet. Derived from
+  // the show lines server-side, so it is never editable here.
+  qtyOnShows?: number;
 };
 
 // Graded cards are comped off eBay solds, never TCGplayer, so they are not
@@ -47,9 +50,23 @@ function displayName(name: string, category: string): string {
 
 type StockTab = "in" | "out" | "all";
 type SortDir = "asc" | "desc";
-type SortKey = "name" | "category" | "buyPrice" | "marketPrice" | "retailPrice" | "priceChecked" | "margin" | "qtyOnHand";
+type SortKey = "name" | "category" | "buyPrice" | "marketPrice" | "retailPrice" | "priceChecked" | "margin" | "qtyOnHand" | "qtyOnShows" | "qtyTotal";
+
+const onShows = (i: Item): number => Math.max(0, Math.floor(Number(i.qtyOnShows) || 0));
+const onHand = (i: Item): number => Math.max(0, Math.floor(Number(i.qtyOnHand) || 0));
+
+// What the business owns: the storage room plus whatever is out on a wheel.
+// This is the number to inventory against and the one to check before buying
+// more of something.
+const ownedTotal = (i: Item): number => onHand(i) + onShows(i);
 
 // One definition of "in stock", shared by the tabs, the counts and the row badge.
+//
+// Deliberately the shelf, not the total. "Out of stock" here means nothing is
+// in the storage room to build a set from, which is the question this tab is
+// asked. A product with six units on tonight's wheel is still unbuildable
+// today, so it belongs on the Out tab - but the row says "on shows" instead of
+// "out" so nobody re-orders something that is standing in the studio.
 function inStock(i: Item): boolean {
   return (i.qtyOnHand ?? 0) > 0;
 }
@@ -66,6 +83,8 @@ function sortValue(i: Item, key: SortKey): string | number | null {
     case "priceChecked": return i.priceChecked ? new Date(i.priceChecked + "T00:00:00").getTime() : null;
     case "margin": return i.buyPrice > 0 ? (i.marketPrice || 0) - i.buyPrice : null;
     case "qtyOnHand": return i.qtyOnHand ?? 0;
+    case "qtyOnShows": return onShows(i);
+    case "qtyTotal": return ownedTotal(i);
   }
 }
 
@@ -120,6 +139,19 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
     return { in: inCount, out: searched.length - inCount, all: searched.length };
   }, [searched]);
 
+  // Where the stock physically is, across whatever is in the filter box. Three
+  // numbers rather than one because "we have 300 packs" and "there are 300
+  // packs in the storage room" stopped being the same sentence the moment sets
+  // started getting built a week ahead.
+  const stockTotals = useMemo(() => {
+    let hand = 0, shows = 0, handValue = 0, showsValue = 0;
+    for (const i of searched) {
+      const h = onHand(i), s = onShows(i), p = i.marketPrice || 0;
+      hand += h; shows += s; handValue += h * p; showsValue += s * p;
+    }
+    return { hand, shows, total: hand + shows, handValue, showsValue, totalValue: handValue + showsValue };
+  }, [searched]);
+
   // Counted against whatever the stock tab is showing, so "12 unmapped" on the
   // In stock tab means twelve products you are actually selling have no link.
   const unmappedCount = useMemo(() => {
@@ -144,8 +176,8 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   }, [searched, stockTab, unmappedOnly, sortKey, sortDir]);
 
   function exportCsv() {
-    const header = ["Product", "Category", "Buy Price", "Market Price", "Retail Price", "Qty On Hand", "Price Checked", "TCGplayer URL"];
-    const rows = filtered.map((i) => [i.name, i.category, i.buyPrice, i.marketPrice, i.retailPrice ?? "", i.qtyOnHand, i.priceChecked ?? "", i.tcgUrl]);
+    const header = ["Product", "Category", "Buy Price", "Market Price", "Retail Price", "Qty On Hand", "Qty On Shows", "Qty Owned", "Price Checked", "TCGplayer URL"];
+    const rows = filtered.map((i) => [i.name, i.category, i.buyPrice, i.marketPrice, i.retailPrice ?? "", i.qtyOnHand, onShows(i), ownedTotal(i), i.priceChecked ?? "", i.tcgUrl]);
     const csv = [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -418,6 +450,14 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
           <span className="num ml-1.5 text-xs opacity-70">{unmappedCount}</span>
         </button>
         </div>
+
+        {/* Where the units physically are. Reads across the filter box, so
+            typing "booster" answers "how many boosters do we own" directly. */}
+        <div className="flex flex-wrap items-stretch gap-2">
+          <Count label="In the storage room" units={stockTotals.hand} value={stockTotals.handValue} />
+          <Count label="Out on shows" units={stockTotals.shows} value={stockTotals.showsValue} tone="text-foil" />
+          <Count label="Owned" units={stockTotals.total} value={stockTotals.totalValue} strong />
+        </div>
         {/* the mobile cards have no header row to click, so sorting needs its own control */}
         <label className="md:hidden flex items-center gap-2 label">
           Sort
@@ -438,6 +478,8 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
             <option value="margin:asc">Margin low to high</option>
             <option value="qtyOnHand:desc">On hand high to low</option>
             <option value="qtyOnHand:asc">On hand low to high</option>
+            <option value="qtyOnShows:desc">Most out on shows</option>
+            <option value="qtyTotal:desc">Most owned</option>
             <option value="priceChecked:asc">Price checked oldest first</option>
           </select>
         </label>
@@ -467,11 +509,25 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                   </select>
                 </div>
                 <div className="text-right">
-                  <div className="label">On hand{!inStock(i) && <span className="text-bad ml-1">- out</span>}</div>
+                  <div className="label">
+                    On hand
+                    {!inStock(i) && (
+                      onShows(i) > 0
+                        ? <span className="text-foil ml-1">- on shows</span>
+                        : <span className="text-bad ml-1">- out</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 justify-end">
                     {num(i.id, "qtyOnHand", i.qtyOnHand, "1")}
                     <button className="text-foil text-xs" onClick={() => { setStockFor(stockFor === i.id ? null : i.id); setStockQty("1"); setStockCost(""); }}>+ stock</button>
                   </div>
+                  {onShows(i) > 0 && (
+                    <div className="text-dim text-[10px] mt-0.5 whitespace-nowrap">
+                      <span className="num text-foil">{onShows(i)}</span> on shows
+                      {" · "}
+                      <span className="num">{ownedTotal(i)}</span> owned
+                    </div>
+                  )}
                 </div>
               </div>
               {stockFor === i.id && (
@@ -523,7 +579,9 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
               <Th label="Retail" k="retailPrice" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <Th label="Price checked" k="priceChecked" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
               <Th label="Margin" k="margin" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
-              <Th label="On hand" k="qtyOnHand" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} />
+              <Th label="On hand" k="qtyOnHand" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="In the storage room right now" />
+              <Th label="On shows" k="qtyOnShows" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="Assigned to a show that has not been closed out yet. Worked out from the show lines, so it cannot be edited here." />
+              <Th label="Owned" k="qtyTotal" sortKey={sortKey} sortDir={sortDir} onSort={sortBy} title="On hand plus on shows: what the business actually has, and the number to check before buying more" />
               <th>Links</th>
               <th></th>
             </tr>
@@ -580,7 +638,11 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                   <td>
                     <div className="flex items-center gap-2">
                       {num(i.id, "qtyOnHand", i.qtyOnHand, "1")}
-                      {!inStock(i) && <span className="text-bad text-[10px] uppercase tracking-wide">out</span>}
+                      {!inStock(i) && (
+                        onShows(i) > 0
+                          ? <span className="text-foil text-[10px] uppercase tracking-wide whitespace-nowrap" title="None on the shelf, but these are standing on an open show">on shows</span>
+                          : <span className="text-bad text-[10px] uppercase tracking-wide">out</span>
+                      )}
                       <button
                         className="text-foil text-xs hover:underline whitespace-nowrap"
                         title="Receive stock: adds quantity, logs the lot, and rolls the average buy price"
@@ -602,6 +664,17 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                         </button>
                       </div>
                     )}
+                  </td>
+                  {/* Read-only on purpose: these units are wherever the show
+                      lines say they are, and a box you could type in would be
+                      a second place for the truth to live. */}
+                  <td>
+                    {onShows(i) > 0
+                      ? <span className="num text-foil font-semibold">{onShows(i)}</span>
+                      : <span className="text-dim">-</span>}
+                  </td>
+                  <td>
+                    <span className={`num font-semibold ${ownedTotal(i) > 0 ? "" : "text-dim"}`}>{ownedTotal(i)}</span>
                   </td>
                   <td className="whitespace-nowrap">
                     <a
@@ -640,7 +713,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 {lotsFor === i.id && (
                   <tr className="!bg-ink/60">
                     <td className="!py-0 !border-b-0" />
-                    <td colSpan={10} className="!py-0">
+                    <td colSpan={12} className="!py-0">
                       <div className="py-3 pl-2 pr-4 space-y-1.5">
                         <div className="label">Buy history</div>
                         {!lotsCache[i.id] && <div className="text-dim text-xs">Loading...</div>}
@@ -672,7 +745,7 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
                 </Fragment>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={11} className="text-dim">{emptyLabel(stockTab, q, unmappedOnly)}</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={13} className="text-dim">{emptyLabel(stockTab, q, unmappedOnly)}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -685,13 +758,30 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
         Buy price is what you paid, market price drives spot value and break-even. Retired products stay on past
         streams but disappear from the picker. Adding a product to a show set snapshots today&apos;s prices and
         deducts from on-hand quantity; removing it puts the quantity back.
+        {" "}
+        On hand is the storage room. On shows is everything sitting on a show that has not been closed out yet,
+        worked out from the show lines rather than stored, so it cannot drift away from them. Owned is the two
+        added together, and it is the number to check before buying more of something.
       </p>
     </main>
   );
 }
 
 
-function Th({ label, k, sortKey, sortDir, onSort }: { label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void }) {
+// The three stock numbers, totalled across whatever the filter box is showing.
+function Count({ label, units, value, tone, strong }: { label: string; units: number; value: number; tone?: string; strong?: boolean }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${strong ? "border-foil/40 bg-foil/5" : "border-edge"}`}>
+      <div className="label">{label}</div>
+      <div className={`num text-lg font-bold leading-tight ${tone || ""}`}>{units.toLocaleString("en-US")}</div>
+      <div className="text-dim text-[10px]">
+        {"$" + Math.round(value || 0).toLocaleString("en-US")} at market
+      </div>
+    </div>
+  );
+}
+
+function Th({ label, k, sortKey, sortDir, onSort, title }: { label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void; title?: string }) {
   const active = sortKey === k;
   return (
     // th already carries the uppercase dim label styling from globals.css, so the
@@ -699,6 +789,7 @@ function Th({ label, k, sortKey, sortDir, onSort }: { label: string; k: SortKey;
     <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
       <button
         type="button"
+        title={title}
         onClick={() => onSort(k)}
         className={`inline-flex items-center gap-1 whitespace-nowrap transition-colors hover:text-body ${active ? "text-foil" : ""}`}
       >
