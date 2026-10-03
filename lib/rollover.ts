@@ -1,4 +1,5 @@
 import { isRecId } from "./airtable";
+import { heldOut } from "./streamSingles";
 
 // Rolling unhit singles from one show onto the next.
 //
@@ -52,7 +53,14 @@ export function rollDecision(
   // moving the line, not the card.
   if (f["Single Copy"]) {
     if (!fromReturned) return { action: "move-copy" };
-    // The old show has already closed and handed the copy back, so there is a
+    // A copy held out of the return never came back. There is nothing on the
+    // shelf to take, because the copy still exists only as this line - so
+    // moving the line is what moves it, same as on a show that has not closed.
+    // Claiming here instead would take a SECOND copy off the record and leave
+    // this one stranded on a closed show: the record ends up one short and the
+    // old show keeps a line for a card that is now on two sets at once.
+    if (heldOut(line)) return { action: "move-copy" };
+    // Otherwise the old show has closed and handed the copy back, so there is a
     // copy on the shelf to take again in the ordinary way.
     return status === "In Stock" ? { action: "claim" } : SKIP("the copy did not come back in stock");
   }
