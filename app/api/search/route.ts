@@ -33,20 +33,30 @@ export async function GET() {
     return NextResponse.json(cache.body);
   }
 
-  // `= ''` and not `= BLANK()`. Owner Rec Id is a text field, and on a text
-  // field those two are not the same test in Airtable: BLANK() matched nothing
-  // here and the palette shipped with zero cards in it while 780 sat on the
-  // page behind it. This is the comparison /api/singles has always used.
+  // One section failing should not take the other two down, so each read has
+  // its own catch. But a swallowed catch is how this route shipped empty, so
+  // each one records why, the response carries it, and a partial index is
+  // never cached as though it were the real thing.
+  const failures: string[] = [];
+
+  // The field is "Set Name". It was written as "Set" here, which does not
+  // exist, and Airtable rejects the whole request for one unknown field name
+  // rather than ignoring it. The `.catch` below then turned that rejection
+  // into an empty array, so the palette shipped with zero cards in it while
+  // 890 sat on the page behind it, and nothing anywhere said why.
+  //
+  // `= ''` and not `= BLANK()` for the same reason of matching what works:
+  // this is the comparison /api/singles has always used on this field.
   const singlesP = atList(T.singles, {
     filterByFormula: "{Owner Rec Id} = ''",
-    "fields[]": ["Card Name", "Card No", "Set", "Status", "Location"],
-  }).catch(() => []);
+    "fields[]": ["Card Name", "Card No", "Set Name", "Status", "Location"],
+  }).catch((e) => { failures.push(`cards: ${e?.message || e}`); return [] as any[]; });
 
   const productsP = me.isManager
     ? atList(T.inventory, {
         filterByFormula: "{Active} = TRUE()",
         "fields[]": ["Product Name", "Category", "Qty On Hand"],
-      }).catch(() => [])
+      }).catch((e) => { failures.push(`products: ${e?.message || e}`); return [] as any[]; })
     : Promise.resolve([] as any[]);
 
   const streamsP = atList(T.streams, {
@@ -54,7 +64,7 @@ export async function GET() {
     "fields[]": ["Title", "Stream Date", "Status"],
     "sort[0][field]": "Stream Date",
     "sort[0][direction]": "desc",
-  }).catch(() => []);
+  }).catch((e) => { failures.push(`shows: ${e?.message || e}`); return [] as any[]; });
 
   const [singles, products, streams] = await Promise.all([singlesP, productsP, streamsP]);
 
@@ -68,7 +78,7 @@ export async function GET() {
         // The card number leads, because that is what gets called out loud
         // mid-break and read off a sleeve.
         label: no ? `${no}  ${r.fields["Card Name"] || ""}` : String(r.fields["Card Name"] || ""),
-        sub: [r.fields["Set"], status, loc].filter(Boolean).join("  ·  "),
+        sub: [r.fields["Set Name"], status, loc].filter(Boolean).join("  ·  "),
         href: `/singles?card=${encodeURIComponent(no || r.id)}`,
         kind: "Cards",
       };
@@ -93,6 +103,9 @@ export async function GET() {
     })),
   };
 
-  cache = { at: Date.now(), key, body };
-  return NextResponse.json(body);
+  // Only cache a complete index. Caching a broken one for a minute turns a
+  // transient Airtable error into a minute of a palette that silently has no
+  // cards in it.
+  if (failures.length === 0) cache = { at: Date.now(), key, body };
+  return NextResponse.json(failures.length ? { ...body, failures } : body);
 }
