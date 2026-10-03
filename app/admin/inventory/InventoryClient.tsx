@@ -167,14 +167,21 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
   // numbers rather than one because "we have 300 packs" and "there are 300
   // packs in the storage room" stopped being the same sentence the moment sets
   // started getting built a week ahead.
+  //
+  // One named source for both the number and the panel behind it. They were
+  // two expressions that happened to agree until the stock tab was added, and
+  // nothing in the code said they had to. Now they read the same binding, and
+  // a test asserts they still do.
+  const stockSource = searched;
+
   const stockTotals = useMemo(() => {
     let hand = 0, shows = 0, handValue = 0, showsValue = 0;
-    for (const i of searched) {
+    for (const i of stockSource) {
       const h = onHand(i), s = onShows(i), p = i.marketPrice || 0;
       hand += h; shows += s; handValue += h * p; showsValue += s * p;
     }
     return { hand, shows, total: hand + shows, handValue, showsValue, totalValue: handValue + showsValue };
-  }, [searched]);
+  }, [stockSource]);
 
   // Counted against whatever the stock tab is showing, so "12 unmapped" on the
   // In stock tab means twelve products you are actually selling have no link.
@@ -574,12 +581,16 @@ export default function InventoryClient({ isAdmin = true }: { isAdmin?: boolean 
             tone="foil"
             size="md"
             surface="inline"
-            // Reads across the current filter, like the counts themselves, so
-            // typing "booster" and clicking this answers "which shows are
-            // holding my boosters" rather than reopening the whole list.
+            // Fed from `searched`, which is the exact set stockTotals counts.
+            // Not `filtered`: that applies the stock tab, and the default tab
+            // is In stock, so a product whose whole quantity is out on a show
+            // has nothing on hand and drops out of the list while still being
+            // counted in the number above it. The tile then said 491 and the
+            // panel listed 478, and the moment those two disagree neither one
+            // is worth opening.
             onClick={
               stockTotals.shows > 0
-                ? () => setHoldView({ title: "Out on shows", products: filtered.filter((i) => i.showsOnHold?.length).map(held) })
+                ? () => setHoldView({ title: "Out on shows", products: stockSource.filter((i) => i.showsOnHold?.length).map(held) })
                 : undefined
             }
             title={stockTotals.shows > 0 ? "See which shows are holding these" : undefined}

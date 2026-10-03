@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { committedByProduct, committedHoldsByProduct, OpenLine } from "../stockSplit";
 
 // Breaking the on-shows number down by show.
@@ -109,4 +110,42 @@ test("empty and junk input do not throw", () => {
   assert.equal(committedHoldsByProduct([]).size, 0);
   assert.equal(committedHoldsByProduct(null as any).size, 0);
   assert.equal(committedHoldsByProduct([line({ productId: "" })]).size, 0);
+});
+
+// The invariant above holds inside stockSplit, and it still shipped broken.
+//
+// The tile said 491 and the panel listed 478. Nothing in stockSplit was wrong:
+// the number was summed over `searched` (every product matching the search box)
+// while the panel was handed `filtered`, which also applies the stock tab. The
+// default tab is In stock, so a product whose entire quantity is out on a show
+// has nothing on hand, drops out of `filtered`, and is counted but not listed.
+//
+// A pure-function test cannot see that, because the defect is which collection
+// the component passed, not what the function did with it. So this reads the
+// component. It is a source assertion and it is narrow on purpose: it checks
+// that the number and the list name the same binding, which is the only thing
+// that has to stay true.
+test("the on-shows tile and its panel read the same collection", () => {
+  const src = readFileSync("app/admin/inventory/InventoryClient.tsx", "utf8");
+
+  const totals = /const stockTotals = useMemo\(\(\) => \{[\s\S]*?for \(const i of (\w+)\)/.exec(src);
+  assert.ok(totals, "could not find the stockTotals loop; update this test with the code");
+
+  const panel = /title: "Out on shows", products: (\w+)\.filter/.exec(src);
+  assert.ok(panel, "could not find the on-shows panel call; update this test with the code");
+
+  assert.equal(
+    panel[1],
+    totals[1],
+    `The tile counts "${totals[1]}" but the panel lists "${panel[1]}". ` +
+      "Whichever is right, they have to be the same collection, or the number " +
+      "and the breakdown behind it will disagree on screen.",
+  );
+});
+
+test("a product fully out on a show is not filtered out of its own breakdown", () => {
+  // The shape of the row that exposed it: nothing on hand, everything on a show.
+  const holds = committedHoldsByProduct([line({ qty: 13, qtyHit: 0, streamId: "s1" })]);
+  assert.deepEqual(Object.fromEntries(holds.get("p1")!), { s1: 13 });
+  assert.equal(committedByProduct([line({ qty: 13, streamId: "s1" })]).get("p1"), 13);
 });
