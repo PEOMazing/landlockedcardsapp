@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { atList, atCreate, T } from "@/lib/airtable";
+import { atList, atCreate, atUpdate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { CATEGORIES } from "@/lib/categories";
+import { matchProduct } from "@/lib/productNames";
 
 // Quick-add from the stream builder. Any signed-in streamer or manager can
 // create a product that is missing from inventory. Buy price is intentionally
@@ -15,14 +16,18 @@ export async function POST(req: Request) {
   if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
   const category = CATEGORIES.includes(b.category) ? b.category : "Other";
 
-  // If an active product with this exact name already exists, hand it back
-  // instead of creating a duplicate.
-  const safe = name.replace(/'/g, "\\'");
-  const existing = await atList(T.inventory, {
-    filterByFormula: `AND({Active} = TRUE(), LOWER({Product Name}) = LOWER('${safe}'))`,
-  });
-  if (existing.length > 0) {
-    const r = existing[0];
+  // If this product already exists, hand it back instead of making another.
+  //
+  // This used to be an Airtable formula on the current Product Name of ACTIVE
+  // records only, and it missed on both counts. A product that has been
+  // renamed answers to its old name too, and typing that old name slipped past
+  // the check and made a second copy at $0 market, which is exactly what
+  // Former Names exists to prevent. And a retired product is one to bring
+  // back, not one to duplicate. matchProduct knows about both.
+  const hit = matchProduct(name, await atList(T.inventory));
+  if (hit.kind === "exact") {
+    const r = hit.product;
+    if (!r.fields["Active"]) await atUpdate(T.inventory, r.id, { "Active": true });
     return NextResponse.json({
       existed: true,
       item: {
