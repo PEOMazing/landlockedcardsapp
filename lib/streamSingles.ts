@@ -39,6 +39,7 @@ type Card = { fields: Record<string, any> } | null;
 // not Sold. So holding a card changes where it is, never how much there is.
 export type CloseAction = "sold" | "return" | "hold" | "copy-sold" | "copy-return" | "copy-hold" | "skip";
 export type ReleaseAction = "restore" | "copy-restore" | "skip";
+export type RehitAction = "sell" | "unsell" | "copy-sell" | "copy-unsell" | "skip";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -99,6 +100,43 @@ export function releaseActionFor(
   // moved to another show or corrected by hand since - leave it alone
   if (String(card.fields["Stream Rec Id"] || "") !== streamId) return "skip";
   return "restore";
+}
+
+// Correcting a card's hit AFTER the show closed.
+//
+// Before the close a hit is only a counter. The card left stock the moment it
+// went on the set, and whether a spin landed on it just decides where it ends
+// up. After the close that stops being true: the close has already filed every
+// card, hit ones Sold and unhit ones back In Stock. So changing a hit now has
+// to move the card as well, or the number on the show disagrees with the
+// binder, and the binder is the thing you can hold.
+//
+// Decided from where the card IS rather than from what the line used to say.
+// Two reasons. Running the same correction twice then does nothing the second
+// time, which matters because a Whatnot re-upload re-applies every hit it
+// finds. And a card somebody has already put right by hand is left alone
+// instead of being dragged back to whatever the line remembers.
+export function rehitActionFor(
+  line: Line,
+  card: Card,
+  streamId: string,
+  nowSold: boolean,
+): RehitAction {
+  // A copy came off a record that stayed In Stock, so there is no status to
+  // read: the count is the only evidence, and the line's old value is what the
+  // correction is measured against.
+  if (line.fields["Single Copy"]) {
+    const wasSold = (Number(line.fields["Qty Hit"]) || 0) > 0;
+    if (nowSold === wasSold) return "skip";
+    return nowSold ? "copy-sell" : "copy-unsell";
+  }
+  if (!card) return "skip";
+  const status = String(card.fields["Status"] || "");
+  // Sitting on somebody else's set now. Rollover or a hand correction moved
+  // it, and that decision outranks a correction to an old show.
+  if (status === "In Stream" && String(card.fields["Stream Rec Id"] || "") !== streamId) return "skip";
+  if (nowSold) return status === "Sold" ? "skip" : "sell";
+  return status === "Sold" ? "unsell" : "skip";
 }
 
 async function bumpQty(sid: string, by: number): Promise<void> {
@@ -278,15 +316,58 @@ export async function releaseSingleFromLine(
   const act = releaseActionFor(line, card, streamId, streamType, streamClosed);
   try {
     if (act === "copy-restore") { await bumpQty(sid, 1); return true; }
-    if (act === "restore") {
-      // undoing a sale takes its price back off too, and the card needs filing
-      // again: it goes back to the pocket printed on its sticker when that is
-      // still empty, and to the lowest empty one when it is not. A card that
-      // still holds a pocket keeps it.
-      const refile = card && Number(card.fields?.["Slot"]) > 0 ? {} : (await reclaimSlot(card?.fields?.["Last Slot"])).fields;
-      await atUpdate(T.singles, sid, { "Status": "In Stock", "Stream Rec Id": "", "Sold Date": null as any, "Sale Price": null as any, ...refile });
-      return true;
-    }
+    if (act === "restore") { await restoreSoldCard(sid, card); return true; }
   } catch {}
   return false;
+}
+
+// Put a card back on the shelf, undoing a sale.
+//
+// Taking the price back off matters as much as the status: a card that reads
+// In Stock while still carrying a Sale Price has been sold according to every
+// report and is available according to every picker.
+//
+// Filing it again: it goes back to the pocket printed on its sticker when that
+// pocket is still empty, and to the lowest empty one when something else has
+// taken it. A card that never gave up its pocket keeps it.
+export async function restoreSoldCard(sid: string, card: Card): Promise<void> {
+  const refile = card && Number(card.fields?.["Slot"]) > 0 ? {} : (await reclaimSlot(card?.fields?.["Last Slot"])).fields;
+  await atUpdate(T.singles, sid, {
+    "Status": "In Stock", "Stream Rec Id": "", "Sold Date": null as any, "Sale Price": null as any, ...refile,
+  });
+}
+
+/** Move the card to match a hit count corrected after the show closed.
+ *
+ *  Returns what it did, so the route can tell the user whether a card
+ *  actually moved or the correction was already reflected in the binder. */
+export async function applyRehitToSingle(
+  line: Line,
+  streamId: string,
+  streamType: string,
+  nowSold: boolean,
+): Promise<RehitAction> {
+  const sid = String(line?.fields?.["Single Rec Id"] || "");
+  if (!isRecId(sid)) return "skip";
+  const card = line.fields["Single Copy"] ? null : await fetchCard(sid);
+  const act = rehitActionFor(line, card, streamId, nowSold);
+  try {
+    if (act === "copy-sell") await bumpQty(sid, -1);
+    else if (act === "copy-unsell") await bumpQty(sid, 1);
+    else if (act === "unsell") await restoreSoldCard(sid, card);
+    else if (act === "sell") {
+      // Same price rule the close uses: a wheel hit sells at the line's price,
+      // an auction's price is whatever the bidding reached and is left for a
+      // person to fill in.
+      const linePrice = Number(line.fields["Market Price Snapshot"]);
+      const salePrice = hitsDecideSingles(streamType) && Number.isFinite(linePrice) && linePrice >= 0
+        ? { "Sale Price": linePrice } : {};
+      await atUpdate(T.singles, sid, {
+        "Status": "Sold", "Sold Date": today(), ...salePrice, ...clearedSlotFields(card?.fields?.["Slot"]),
+      });
+    }
+  } catch {
+    return "skip"; // the card was deleted since the show - nothing to move
+  }
+  return act;
 }
