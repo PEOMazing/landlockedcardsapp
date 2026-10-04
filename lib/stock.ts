@@ -38,3 +38,21 @@ export function shortBy(onHand: unknown, qty: unknown): number {
 export function shortMessage(name: string, onHand: unknown, qty: unknown): string {
   return `${NEGATIVE_STOCK_MSG} ${name || "This product"} has ${clampStock(onHand)} on hand, ${Math.floor(Number(qty) || 0)} needed.`;
 }
+
+/** How the shelf has to move when a hit count is corrected AFTER the close.
+ *
+ *  Before the close, changing a hit moves nothing: the units left the shelf
+ *  when the line was built and the hit count only decides where they end up.
+ *  After the close they have been dealt with, and the shelf is holding exactly
+ *  the unhit remainder. Correct the hit count now and the shelf has to follow:
+ *
+ *    hit goes up      a unit that was put back actually left      take it off
+ *    hit goes down    a unit written off never left               put it back
+ *
+ *  Positive means units go back on the shelf, negative means they come off. */
+export function shelfDeltaForHitChange(qty: unknown, oldHit: unknown, newHit: unknown): number {
+  const q = Math.max(0, Math.floor(Number(qty) || 0));
+  const before = Math.max(0, q - Math.max(0, Math.floor(Number(oldHit) || 0)));
+  const after = Math.max(0, q - Math.max(0, Math.floor(Number(newHit) || 0)));
+  return after - before;
+}
