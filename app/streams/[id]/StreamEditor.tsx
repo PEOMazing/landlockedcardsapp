@@ -16,9 +16,11 @@ import WhatnotSync, { type SharedFile } from "@/components/WhatnotSync";
 import { splitByKind } from "@/lib/calc";
 import StatTile from "@/components/ui/StatTile";
 import TableEmpty from "@/components/ui/TableEmpty";
+import { cardNoOf, keepSetLine, withoutCardNo } from "@/lib/setFilter";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 
 type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
@@ -57,6 +59,13 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
   const [resultsErr, setResultsErr] = useState("");
   const [setSort, setSetSort] = useState<"board" | "name" | "price" | "hitValue">("board");
+  // The set table could be sorted four ways and asked nothing. On a 250 unit
+  // wheel that means the only way to reach a card is to scroll past the other
+  // 249, and most of them are copies of each other. These three narrow it:
+  // type anything, or show one kind, or show only what is still live.
+  const [setQuery, setSetQuery] = useState("");
+  const [setKind, setSetKind] = useState<"all" | "singles" | "sealed">("all");
+  const [unhitOnly, setUnhitOnly] = useState(false);
 
   // A Single Stream auctions each card, so what it went for has to be recorded
   // per card. A Surprise Set does not: the spin price is the price, whatever
@@ -248,6 +257,44 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     () => returnableSingles.filter((l) => holdOut.has(l.id)).length,
     [returnableSingles, holdOut],
   );
+
+  // Rows the show-set table draws. Store purchases were always excluded and
+  // the four sorts are unchanged; what is new is the filtering in front of
+  // them. Up here with the other hooks, above the early return, for the same
+  // reason the comment on qtyChain gives.
+  const setPool = useMemo(() => (lines as any[]).filter((l) => !l.isStore), [lines]);
+  const setRows = useMemo(() => {
+    return setPool
+      .filter((l) => keepSetLine(l, { kind: setKind, unhitOnly, query: setQuery }))
+      .sort((a, b) =>
+        setSort === "name"
+          ? a.name.localeCompare(b.name)
+          : setSort === "price"
+          ? (b.market || 0) - (a.market || 0)
+          // What is still on the table, biggest first: a $30 card with two
+          // copies left outranks a $40 card that has already been hit. Price
+          // sorts by the card, this sorts by the prize pool.
+          : setSort === "hitValue"
+          ? Math.max((b.qty || 0) - (b.qtyHit || 0), 0) * (b.market || 0) -
+            Math.max((a.qty || 0) - (a.qtyHit || 0), 0) * (a.market || 0)
+          // Slot order, so the set always reads the way the binder is filed no
+          // matter what order the cards were added in. Sealed product and
+          // unfiled cards have no slot and sort to the end, by name, rather
+          // than all colliding at zero.
+          : (a.slot ?? Number.MAX_SAFE_INTEGER) - (b.slot ?? Number.MAX_SAFE_INTEGER)
+            || a.name.localeCompare(b.name),
+      );
+  }, [setPool, setQuery, setKind, unhitOnly, setSort]);
+
+  const setCounts = useMemo(() => ({
+    shown: setRows.length,
+    all: setPool.length,
+    units: setRows.reduce((a, l) => a + (l.qty || 0), 0),
+    left: setRows.reduce((a, l) => a + Math.max((l.qty || 0) - (l.qtyHit || 0), 0) * (l.market || 0), 0),
+    hasSingles: setPool.some((l) => !!l.singleRecId),
+    hasSealed: setPool.some((l) => !l.singleRecId),
+  }), [setRows, setPool]);
+  const setFiltered = !!setQuery.trim() || setKind !== "all" || unhitOnly;
 
   if (loadErr) {
     return (
@@ -1168,8 +1215,55 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           lines={(lines as any[]).filter((l) => !l.isStore)}
           onChanged={load}
         />
+        {/* Ask the set a question rather than scrolling it. Hidden on a short
+            set, where the controls would cost more room than they save. */}
+        {setPool.length > 8 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              value={setQuery}
+              onChange={(e) => setSetQuery(e.target.value)}
+              placeholder="Filter the set - number, name or set"
+              aria-label="Filter the show set"
+              className="input !py-1 !w-60 text-sm"
+            />
+            {setCounts.hasSingles && setCounts.hasSealed && (
+              <div className="inline-flex rounded-lg border border-edge overflow-hidden t-meta">
+                {([["all", "All"], ["singles", "Singles"], ["sealed", "Sealed"]] as const).map(([k, label]) => (
+                  <button
+                    key={k}
+                    onClick={() => setSetKind(k)}
+                    className={`px-3 py-1 ${setKind === k ? "bg-foil/15 text-foil" : "text-dim hover:text-paper"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setUnhitOnly((v) => !v)}
+              title="Hide anything already fully hit"
+              className={`px-3 py-1 rounded-lg border t-meta ${unhitOnly ? "border-foil text-foil" : "border-edge text-dim hover:text-paper"}`}
+            >
+              Still live
+            </button>
+            {setFiltered && (
+              <button
+                className="t-meta text-foil hover:underline"
+                onClick={() => { setSetQuery(""); setSetKind("all"); setUnhitOnly(false); }}
+              >
+                clear
+              </button>
+            )}
+            <span className="t-meta text-dim ml-auto num">
+              {setCounts.shown === setCounts.all ? `${setCounts.all} lines` : `${setCounts.shown} of ${setCounts.all} lines`}
+              {`, ${setCounts.units} units, ${$(setCounts.left)} still live`}
+            </span>
+          </div>
+        )}
         <div className="overflow-x-auto">
-          <table className="w-full">
+          {/* Tighter rows: the set is the longest table in the app and every
+              pixel of padding is another flick of the wheel on a 250 unit show. */}
+          <table className="w-full [&_td]:!py-1 [&_th]:!py-1">
             <thead>
               <tr>
                 <th>Product</th><th>Qty</th><th>Market</th><th>Hits</th><th>Remain</th><th>Hit value left</th>
@@ -1178,30 +1272,21 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               </tr>
             </thead>
             <tbody>
-              {([...lines] as any[]).filter((l) => !l.isStore).sort((a, b) =>
-                setSort === "name"
-                  ? a.name.localeCompare(b.name)
-                  : setSort === "price"
-                  ? (b.market || 0) - (a.market || 0)
-                  // What is still on the table, biggest first: a $30 card with
-                  // two copies left outranks a $40 card that has already been
-                  // hit. Price sorts by the card, this sorts by the prize pool.
-                  : setSort === "hitValue"
-                  ? Math.max((b.qty || 0) - (b.qtyHit || 0), 0) * (b.market || 0) -
-                    Math.max((a.qty || 0) - (a.qtyHit || 0), 0) * (a.market || 0)
-                  // Slot order, so the set always reads the way the binder is
-                  // filed no matter what order the cards were added in. Sealed
-                  // product and unfiled cards have no slot and sort to the end,
-                  // by name, rather than all colliding at zero.
-                  : (a.slot ?? Number.MAX_SAFE_INTEGER) - (b.slot ?? Number.MAX_SAFE_INTEGER)
-                    || a.name.localeCompare(b.name)
-              ).map((l) => (
+              {setRows.map((l) => (
                 <tr key={l.id} className={l.isGiveaway ? "bg-givvy/5" : ""}>
                   <td className="!font-medium">
-                    {l.image && <Thumb src={l.image} size={28} className="mr-2" />}
-                    {l.name}
-                    {l.isGiveaway && <span className="text-givvy text-xs ml-2">giveaway</span>}
-                    {l.isHit && <span className="text-foil text-xs ml-2 font-bold">HIT</span>}
+                    <div className="flex items-center gap-2 min-w-0">
+                      {l.image && <Thumb src={l.image} size={24} className="shrink-0" />}
+                      {cardNoOf(l.name) && (
+                        <span className="num text-dim text-xs shrink-0 tabular-nums">{cardNoOf(l.name)}</span>
+                      )}
+                      {/* One line, always. A card name that wraps turns a 60
+                          row set into 120 rows of scrolling; the full text is
+                          still there on hover. */}
+                      <span className="truncate max-w-[22rem]" title={l.name}>{withoutCardNo(l.name)}</span>
+                      {l.isGiveaway && <span className="text-givvy text-xs shrink-0">giveaway</span>}
+                      {l.isHit && <span className="text-foil text-xs font-bold shrink-0">HIT</span>}
+                    </div>
                   </td>
                   <td>
                     {canManage && !stream.itemsReturned ? (
@@ -1351,7 +1436,12 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                   </td>
                 </tr>
               ))}
-              {lines.length === 0 && (
+              {setRows.length === 0 && setPool.length > 0 && (
+                <TableEmpty>
+                  Nothing on this set matches. <button className="text-foil hover:underline" onClick={() => { setSetQuery(""); setSetKind("all"); setUnhitOnly(false); }}>Show all {setPool.length} lines</button>
+                </TableEmpty>
+              )}
+              {setPool.length === 0 && (
                 <TableEmpty>
                   {stream.streamType === "Single Stream"
                     ? "Search the singles inventory above to add auction cards - each starts at $1 on Whatnot"
