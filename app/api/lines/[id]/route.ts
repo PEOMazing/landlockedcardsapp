@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { stockAlert } from "@/lib/alerts";
 import { atDelete, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
-import { releaseSingleFromLine } from "@/lib/streamSingles";
-import { clampStock, shortMessage } from "@/lib/stock";
+import { applyRehitToSingle, releaseSingleFromLine } from "@/lib/streamSingles";
+import { clampStock, shelfDeltaForHitChange, shortMessage } from "@/lib/stock";
 
 async function guard(lineId: string) {
   const me = await getMe();
@@ -14,6 +14,83 @@ async function guard(lineId: string) {
   const stream = await atGet(T.streams, streamId);
   if (!ownsStream(me, stream)) return { err: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
   return { me, line, stream };
+}
+
+type Guarded = { me: any; line: any; stream: any };
+
+// Rewriting what a closed show delivered.
+//
+// Everything else in this file assumes the show is still open, where a hit is
+// a number and the stock moved when the line was built. Here it is the other
+// way round: the close already filed everything, so the number is right and
+// the shelf is wrong until this puts it right.
+//
+// Kept whole and separate rather than threaded through the normal PATCH,
+// because the two have opposite stock rules and interleaving them is how you
+// end up applying both.
+async function correctHitAfterClose(req: Request, g: Guarded, want: number) {
+  const lineId = g.line.id;
+  const qty = Number(g.line.fields["Qty"]) || 0;
+  const oldHit = Number(g.line.fields["Qty Hit"]) || 0;
+  if (want === oldHit) return NextResponse.json({ ok: true, unchanged: true });
+  if (want > qty) {
+    return NextResponse.json(
+      { error: `this line only had ${qty} on the show, so it cannot have delivered ${want}` },
+      { status: 400 },
+    );
+  }
+
+  const delta = shelfDeltaForHitChange(qty, oldHit, want);
+  const productId = g.line.fields["Product"]?.[0];
+  let moved: { name: string; qtyNow: number; delta: number } | null = null;
+
+  if (productId && delta !== 0) {
+    const product = await atGet(T.inventory, productId);
+    const onHand = clampStock(product.fields["Qty On Hand"]);
+    // Taking units back off the shelf can only work if they are still on it.
+    // Refusing beats clamping: a silent clamp loses the units entirely and
+    // nobody finds out until a count does not add up months later.
+    if (delta < 0 && onHand < -delta) {
+      return NextResponse.json(
+        { error: shortMessage(product.fields["Product Name"], onHand, -delta) },
+        { status: 400 },
+      );
+    }
+    const qtyNow = clampStock(onHand + delta);
+    await atUpdate(T.inventory, productId, { "Qty On Hand": qtyNow });
+    moved = { name: String(product.fields["Product Name"] || ""), qtyNow, delta };
+  }
+
+  const cardAction = await applyRehitToSingle(
+    g.line,
+    String(g.line.fields["Stream Rec Id"] || ""),
+    String(g.stream.fields["Stream Type"] || "Surprise Set"),
+    want > 0,
+  );
+
+  await atUpdate(T.lines, lineId, { "Qty Hit": want });
+
+  // A retroactive change to a closed show moves money as well as stock, and on
+  // a show that has already paid out it moves money that is already spent. It
+  // leaves a trail.
+  try {
+    const { recordTrace } = await import("@/lib/alerts");
+    await recordTrace(`Hit corrected on a closed show - ${g.line.fields["Line"] || lineId}`, {
+      lineId,
+      line: g.line.fields["Line"] || "",
+      streamId: g.line.fields["Stream Rec Id"] || "",
+      from: oldHit,
+      to: want,
+      shelfDelta: delta,
+      card: cardAction,
+      paidOut: !!g.stream.fields["Paid Out"],
+      user: g.me?.streamer?.fields?.["Name"] || g.me?.streamer?.id || "unknown",
+      at: new Date().toISOString(),
+    });
+  } catch {}
+  if (moved) await stockAlert([moved], "hit corrected on a closed show").catch(() => {});
+
+  return NextResponse.json({ ok: true, qtyHit: want, shelfDelta: delta, moved, card: cardAction });
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -28,8 +105,29 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: "store sales are changed from the Store sales section - undo it and enter it again" }, { status: 400 });
   }
   if (b.qtyHit !== undefined) {
-    if (returned) return NextResponse.json({ error: "items already returned - hits are locked" }, { status: 400 });
-    fields["Qty Hit"] = Math.max(0, parseInt(b.qtyHit) || 0);
+    const want = Math.max(0, parseInt(b.qtyHit) || 0);
+    // Correcting a hit on a show that has already closed.
+    //
+    // The lock is here because the close has already acted on every hit: unhit
+    // units went back on the shelf, hit singles were marked Sold. A hit count
+    // changed afterwards is not a counter any more, it is a claim about where
+    // a physical thing is, so the correction has to move the thing too.
+    //
+    // Admin only, and only admin. A manager can already remove a line from a
+    // closed show, which is a bigger hammer, but rewriting what a show
+    // delivered rewrites its profit and therefore what the streamer is owed,
+    // and that is not a call the person who ran the show should make about
+    // their own pay.
+    if (returned) {
+      if (!g.me.isAdmin) {
+        return NextResponse.json(
+          { error: "this show is closed - only an admin can correct hits after the items have been returned" },
+          { status: 403 },
+        );
+      }
+      return correctHitAfterClose(req, g, want);
+    }
+    fields["Qty Hit"] = want;
   }
   // Pull a card off the OBS board, or put it back. Purely cosmetic: it changes
   // nothing about quantities, hits, stock or pay, which is the point - the
