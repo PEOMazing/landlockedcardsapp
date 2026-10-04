@@ -4,6 +4,7 @@ import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { toLine, isHitLine } from "@/lib/calc";
 import { syncWheelSinglePrices } from "@/lib/streamSingles";
+import { whatnotDescription, whatnotTitle } from "@/lib/showSetTitle";
 
 
 // The historical delivery rate is computed from every line and every completed
@@ -92,6 +93,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   // imageless, which is fine for a text list and useless for the OBS board.
   const imageBySingle: Record<string, string> = {};
   const slotBySingle: Record<string, number> = {};
+  // Read off the card rather than off the line text, for the same reason the
+  // slot is: the line is written once and the card keeps changing. A card
+  // regraded or recorded wrong after it went on a set would otherwise go out
+  // under the condition it had the afternoon the set was built.
+  const cardBySingle: Record<string, { cond: string; name: string; num: string; set: string }> = {};
   const singleIds = Array.from(
     new Set(lineRows.map((l) => String(l.fields["Single Rec Id"] || "")).filter(Boolean)),
   );
@@ -103,6 +109,12 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       if (url) imageBySingle[s.id] = url;
       const slot = Number(s.fields["Slot"]);
       if (Number.isFinite(slot) && slot > 0) slotBySingle[s.id] = slot;
+      cardBySingle[s.id] = {
+        cond: String(s.fields["Condition"] || "").trim(),
+        name: String(s.fields["Card Name"] || "").trim(),
+        num: String(s.fields["Card Number"] || "").trim(),
+        set: String(s.fields["Set Name"] || "").trim(),
+      };
     }
   }
 
@@ -230,6 +242,28 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       // show set is ordered by. Null on sealed product and on a card not
       // currently filed in a binder.
       slot: slotBySingle[String(lineRows[i].fields["Single Rec Id"] || "")] ?? null,
+      // What gets pasted into Whatnot. Deliberately not the same string as
+      // `name`, which is the app's own display text and carries the set name
+      // for searching. Whatnot flagged a show set for listings without a
+      // condition, so this one puts the condition inside the leading bracket,
+      // which the sale report proved survives their rewrite intact.
+      ...(() => {
+        const sid = String(lineRows[i].fields["Single Rec Id"] || "");
+        const bare = l.name.replace(/^\d+x\s+/, "");
+        const card = cardBySingle[sid];
+        if (sid) {
+          return {
+            // A card deleted since the show has no record left to read, so the
+            // line's own text stands: every line the app has written already
+            // carries its condition at the front.
+            exportTitle: card?.name
+              ? whatnotTitle({ slot: slotBySingle[sid], condition: card.cond, name: card.name, cardNumber: card.num })
+              : bare,
+            exportDescription: whatnotDescription(card?.set),
+          };
+        }
+        return { exportTitle: whatnotTitle({ name: bare, sealed: true }), exportDescription: whatnotDescription("") };
+      })(),
       ...(me.isAdmin ? { buy: l.buy } : {}),
     })),
     config: {
