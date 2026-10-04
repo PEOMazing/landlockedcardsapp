@@ -16,7 +16,7 @@ import WhatnotSync, { type SharedFile } from "@/components/WhatnotSync";
 import { splitByKind } from "@/lib/calc";
 import StatTile from "@/components/ui/StatTile";
 import TableEmpty from "@/components/ui/TableEmpty";
-import { cardNoOf, keepSetLine, withoutCardNo } from "@/lib/setFilter";
+import { cardNoOf, groupSetRows, groupTotals, keepSetLine, withoutCardNo } from "@/lib/setFilter";
 
 const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -66,6 +66,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [setQuery, setSetQuery] = useState("");
   const [setKind, setSetKind] = useState<"all" | "singles" | "sealed">("all");
   const [unhitOnly, setUnhitOnly] = useState(false);
+  // Which collapsed runs of copies are open. Keyed by the group key rather
+  // than by position, so an open run stays the same run when the sort or the
+  // filter moves everything around underneath it.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
   // A Single Stream auctions each card, so what it went for has to be recorded
   // per card. A Surprise Set does not: the spin price is the price, whatever
@@ -296,6 +300,24 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   }), [setRows, setPool]);
   const setFiltered = !!setQuery.trim() || setKind !== "all" || unhitOnly;
 
+  // The table draws this: copies of one card collapse to a single row, and the
+  // members slot back in underneath when it is opened. Flattened here so the
+  // row markup below stays one map over one list.
+  //
+  // A filtered table never collapses. Searching for a card and being handed a
+  // folded group containing it would hide the one thing that was asked for.
+  const setFlat = useMemo(() => {
+    const out: { type: "group" | "line"; g?: any; l?: any; nested?: boolean }[] = [];
+    for (const g of groupSetRows(setRows as any[], setFiltered ? Number.MAX_SAFE_INTEGER : 3)) {
+      if (g.kind === "line") { out.push({ type: "line", l: g.line, nested: false }); continue; }
+      out.push({ type: "group", g });
+      if (openGroups.has(g.key)) for (const l of g.lines) out.push({ type: "line", l, nested: true });
+    }
+    return out;
+  }, [setRows, setFiltered, openGroups]);
+  const toggleGroup = (key: string) =>
+    setOpenGroups((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+
   if (loadErr) {
     return (
       <main className="max-w-2xl mx-auto p-6">
@@ -411,6 +433,25 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ market: mkt }),
     });
+  }
+
+  // Reprice every copy of a card at once. Copies share a comp, so repricing a
+  // run of 23 was 23 identical edits, and any one of them missed left the run
+  // disagreeing with itself.
+  function setMarketMany(lineIds: string[], market: number) {
+    const cfg = data?.config || { hitThreshold: 10 };
+    const mkt = Math.max(0, market);
+    const ids = new Set(lineIds);
+    setLines((prev) =>
+      prev.map((l) => (ids.has(l.id) ? { ...l, market: mkt, isHit: !l.isGiveaway && mkt > cfg.hitThreshold } : l)),
+    );
+    for (const id of lineIds) {
+      fetch(`/api/lines/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ market: mkt }),
+      }).catch(() => {});
+    }
   }
 
   // optimistic hit updates: instant on screen, saved in the background
@@ -1279,10 +1320,70 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               </tr>
             </thead>
             <tbody>
-              {setRows.map((l) => (
-                <tr key={l.id} className={l.isGiveaway ? "bg-givvy/5" : ""}>
+              {setFlat.map((it: any) => {
+                if (it.type === "group") {
+                  const g = it.g;
+                  const t = groupTotals(g.lines);
+                  const open = openGroups.has(g.key);
+                  const ids = g.lines.map((x: any) => x.id);
+                  const first = g.lines[0];
+                  const last = g.lines[g.lines.length - 1];
+                  return (
+                    <tr key={g.key} className="border-t border-edge/60">
+                      <td className="!font-medium">
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          className="flex items-center gap-2 min-w-0 text-left w-full"
+                          onClick={() => toggleGroup(g.key)}
+                        >
+                          <span className="text-dim text-xs w-3 shrink-0">{open ? "-" : "+"}</span>
+                          {first.image && <Thumb src={first.image} size={24} className="shrink-0" />}
+                          <span className="num text-foil text-xs shrink-0">{g.lines.length}x</span>
+                          <span className="truncate max-w-[19rem]" title={first.name}>{withoutCardNo(first.name)}</span>
+                          {cardNoOf(first.name) && (
+                            <span className="t-meta text-dim shrink-0 tabular-nums">{cardNoOf(first.name)} to {cardNoOf(last.name)}</span>
+                          )}
+                        </button>
+                      </td>
+                      <td className="num">{t.qty}</td>
+                      <td>
+                        {canManage ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number" step="0.01" min={0}
+                              className="input !w-24 !py-1"
+                              title={t.samePrice ? "Sets the price on every copy" : "These copies are priced differently - saving here sets them all"}
+                              value={t.market}
+                              onChange={(e) => setMarketMany(ids, parseFloat(e.target.value) || 0)}
+                            />
+                            {!t.samePrice && <span className="text-warn text-xs">mixed</span>}
+                          </div>
+                        ) : (
+                          $(t.market)
+                        )}
+                      </td>
+                      {/* No hit buttons on a group. A hit is one physical card
+                          going to one buyer, so the row opens and the card
+                          that actually went gets marked. */}
+                      <td className="t-meta text-dim whitespace-nowrap">{t.hit} of {t.qty} hit</td>
+                      <td className="num">{t.remain}</td>
+                      <td className="num">{$(t.valueLeft)}</td>
+                      {sellsPerCard(stream) && lines.some((x) => x.singleRecId) && <td />}
+                      <td className="text-right">
+                        <button type="button" className="t-meta text-foil hover:underline whitespace-nowrap" onClick={() => toggleGroup(g.key)}>
+                          {open ? "collapse" : "show each"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }
+                const l = it.l;
+                const nested = it.nested;
+                return (
+                <tr key={l.id} className={`${l.isGiveaway ? "bg-givvy/5" : ""} ${nested ? "bg-edge/20" : ""}`}>
                   <td className="!font-medium">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className={`flex items-center gap-2 min-w-0 ${nested ? "pl-5" : ""}`}>
                       {l.image && <Thumb src={l.image} size={24} className="shrink-0" />}
                       {cardNoOf(l.name) && (
                         <span className="num text-dim text-xs shrink-0 tabular-nums">{cardNoOf(l.name)}</span>
@@ -1442,7 +1543,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {setRows.length === 0 && setPool.length > 0 && (
                 <TableEmpty>
                   Nothing on this set matches. <button className="text-foil hover:underline" onClick={() => { setSetQuery(""); setSetKind("all"); setUnhitOnly(false); }}>Show all {setPool.length} lines</button>
