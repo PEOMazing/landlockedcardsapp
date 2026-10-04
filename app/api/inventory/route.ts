@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { atList, atCreate, T } from "@/lib/airtable";
+import { atList, atCreate, atUpdate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { clampStock } from "@/lib/stock";
+import { matchProduct } from "@/lib/productNames";
 import { openHoldsByProduct, type ShowHold } from "@/lib/openStock";
 
 export async function GET() {
@@ -59,8 +60,38 @@ export async function POST(req: Request) {
   const me = await getMe();
   if (!me?.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json();
+
+  // Add product had no duplicate check at all, and it is how most of them got
+  // here: 57 products in this table had a second copy, several a third, and
+  // the pairs disagreed about price, category and how many were on the shelf.
+  // A show set built off the wrong copy prices the night wrong.
+  //
+  // Exact only, against current AND former names, which is what productAliases
+  // gives. Not the fuzzy match: that one exists to help a human pick from a
+  // pasted line, and using it here would refuse to create a genuinely new
+  // product because an older one shares most of its words.
+  const name = String(b.name || "").trim();
+  if (!name) return NextResponse.json({ error: "name required" }, { status: 400 });
+  const hit = matchProduct(name, await atList(T.inventory));
+  if (hit.kind === "exact") {
+    // Reviving the record rather than making another one: an inactive product
+    // with the right name is a product that was retired, not a missing one.
+    const revive: Record<string, any> = {};
+    if (!hit.product.fields["Active"]) revive["Active"] = true;
+    if (clampStock(b.qtyOnHand) > 0) {
+      revive["Qty On Hand"] = (hit.product.fields["Qty On Hand"] ?? 0) + clampStock(b.qtyOnHand);
+    }
+    if ((b.buyPrice ?? 0) > 0) revive["Buy Price"] = b.buyPrice;
+    if (Object.keys(revive).length) await atUpdate(T.inventory, hit.product.id, revive);
+    return NextResponse.json({
+      id: hit.product.id,
+      existed: true,
+      name: hit.product.fields["Product Name"],
+    });
+  }
+
   const rec = await atCreate(T.inventory, {
-    "Product Name": b.name,
+    "Product Name": name,
     "Category": b.category || "Other",
     "Buy Price": b.buyPrice ?? 0,
     "Market Price": b.marketPrice ?? 0,
