@@ -176,6 +176,23 @@ const singular = (w: string) => (w.length > 3 && w.endsWith("s") && !w.endsWith(
 
 export type Product = { id: string; name: string };
 
+/** The permanent card number a single carries, as a plain number string.
+ *
+ *  A set line writes it at the front of the name ("[0236] NM Leafeon ..."),
+ *  and the Whatnot listing carries it wherever the person typing the title
+ *  put it, usually after the show's own prefix. So the line is read anchored
+ *  and the listing is read loose. Compared as a number, which makes [0236]
+ *  and [236] the same card. */
+export const cardNoInListing = (s: string): string | null => {
+  const m = /\[(\d{3,5})\]/.exec(String(s || ""));
+  return m ? String(Number(m[1])) : null;
+};
+
+export const cardNoOnLine = (s: string): string | null => {
+  const m = /^\s*\[(\d{3,5})\]/.exec(String(s || ""));
+  return m ? String(Number(m[1])) : null;
+};
+
 /** The stocked product a sale is for, or null. Every meaningful word of the
  *  product's name has to appear in the listing, and the longest name that
  *  fits wins - so "Darkness Ablaze Booster Pack" beats plain "Darkness Ablaze"
@@ -191,6 +208,31 @@ export function matchProduct(
   products: Product[],
   prefer: Set<string> = new Set()
 ): Product | null {
+  // A card number settles it on its own, and has to be checked before the
+  // token match rather than after, because for a single the token match can
+  // never succeed. The line carries the full catalogue name and the listing
+  // carries the short one a person typed at 11pm:
+  //
+  //   line     [0236] NM Leafeon - 170 (Cosmos Holo) #170 SV: Scarlet & Violet Promo Cards
+  //   listing  GREAT ODDS!!! - [0236] LEAFEON - 170 COSMOS HOLO #170
+  //
+  // Requiring every word of the line to appear in the listing fails on "nm",
+  // "sv", "scarlet", "violet", "promo" and "cards" every time, and stripping
+  // brackets or generic words does not save it either. So before this, every
+  // single card on every wheel came back as "sold on Whatnot but not on this
+  // show set", whether it was on the set or not, which buried the cards that
+  // genuinely were missing in a list of forty that were not.
+  const saleNo = cardNoInListing(sale.title);
+  if (saleNo) {
+    const numbered = products.filter((p) => cardNoOnLine(p.name));
+    const same = numbered.filter((p) => cardNoOnLine(p.name) === saleNo);
+    if (same.length) return same.find((p) => prefer.has(p.id)) || same[0];
+    // The set numbers its cards and none of them is this one, so this card
+    // really was not on it. Falling through to the token match here would be
+    // free to land a sold [0238] on the [0236] sitting next to it.
+    if (numbered.length) return null;
+  }
+
   const hay = new Set(tokens(`${sale.title} ${sale.description}`));
   let best: Product | null = null;
   let bestScore = 0;
