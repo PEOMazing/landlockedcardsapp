@@ -119,7 +119,10 @@ export default function QuickSetClient() {
               id="spots"
               type="number"
               min={1}
-              className="input w-24"
+              /* !w-24 because .input carries its own w-full, and a plain w-24
+                 loses to it: the field stretched across the whole header row
+                 on the live page. */
+              className="input !w-24"
               value={spots}
               placeholder="auto"
               onChange={(e) => setSpots(e.target.value)}
