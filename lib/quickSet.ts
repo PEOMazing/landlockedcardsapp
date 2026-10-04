@@ -138,13 +138,21 @@ export function generateQuickSet(pool: Candidate[], opts: QuickSetOptions): Quic
 
   // Anything too big for the set, or seen too recently by the same audience,
   // is off the table before the picking starts.
+  //
+  // THE COOLDOWN IS FOR SINGLES ONLY, and finding that out cost a run against
+  // the real shelf. A card is one physical object with a number on it, and a
+  // regular who watched it go up unwon last Tuesday will notice it again on
+  // Thursday. A booster pack is not: one Brilliant Fantasy pack is every other
+  // Brilliant Fantasy pack, and nobody has ever recognised one.
+  //
+  // Applied to everything, the cooldown ate the floor of the wheel. Packs go
+  // up every single show by definition, so all 708 of them were always inside
+  // the window, and a 119 spot set came back with 52 spots on it and a note
+  // saying the shelf had one pack left. The shelf had 708.
+  const onCooldown = (c: Candidate) =>
+    c.kind === "single" && c.lastUsedShowsAgo !== undefined && c.lastUsedShowsAgo < cooldown;
   const tooBig = pool.filter((c) => c.value > cap);
-  const eligible = pool.filter(
-    (c) =>
-      c.value <= cap &&
-      c.available > 0 &&
-      (c.lastUsedShowsAgo === undefined || c.lastUsedShowsAgo >= cooldown),
-  );
+  const eligible = pool.filter((c) => c.value <= cap && c.available > 0 && !onCooldown(c));
 
   const picks: Pick[] = [];
   const takenQty = new Map<string, number>();
