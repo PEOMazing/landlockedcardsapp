@@ -175,6 +175,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       giveaways: stream.fields["Giveaways Run"] ?? null,
       singlesGiveaways: stream.fields["Singles Giveaways Run"] ?? null,
       itemsReturned: !!stream.fields["Items Returned"],
+      // Sent so the page can say what a correction on this show actually
+      // costs. Changing what a paid show delivered changes its profit, and the
+      // commission on that profit has already left the bank.
+      paidOut: !!stream.fields["Paid Out"],
       managerPackingHours: stream.fields["Manager Packing Hours"] ?? null,
       managerName,
       streamerName,
