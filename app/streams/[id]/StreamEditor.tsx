@@ -22,6 +22,22 @@ const $ = (n: number) =>
   (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 
+// What a correction on a closed show actually did, said in units and cards
+// rather than "saved". The whole reason it is allowed is that it moves
+// physical things, so the confirmation should name them.
+function hitCorrectionMessage(d: any): string {
+  const bits: string[] = [];
+  const delta = Number(d?.moved?.delta) || 0;
+  if (delta) {
+    const n = Math.abs(delta);
+    const name = d.moved.name || "that product";
+    bits.push(delta < 0 ? `took ${n}x ${name} off the shelf` : `put ${n}x ${name} back on the shelf`);
+  }
+  if (d?.card === "sell" || d?.card === "copy-sell") bits.push("card marked sold");
+  if (d?.card === "unsell" || d?.card === "copy-unsell") bits.push("card back in stock");
+  return bits.length ? `Corrected: ${bits.join(", ")}.` : "Corrected.";
+}
+
 type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
   market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; tcgUrl?: string; image?: string; buy?: number;
@@ -36,6 +52,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   // early return changes the hook order between renders and React throws #310.
   // That is not hypothetical: it is what took the stream page down earlier.
   const qtyChain = useRef<Record<string, Promise<unknown>>>({});
+  // Asked once per visit, not once per card: correcting eight hits on a paid
+  // show should not mean reading the same warning eight times, which is how a
+  // warning becomes something you dismiss without reading.
+  const paidWarned = useRef(false);
   // Collapsed by default: most visits to this page are to build or run a show,
   // not to settle one.
   const [manageOpen, setManageOpen] = useState(false);
@@ -81,6 +101,9 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [pasteMsg, setPasteMsg] = useState("");
   const [returnArmed, setReturnArmed] = useState(false);
   const [returnMsg, setReturnMsg] = useState("");
+  // Sits next to the set table rather than down in the settle section: a
+  // refused hit needs to be seen where the press happened.
+  const [hitMsg, setHitMsg] = useState<{ text: string; bad: boolean } | null>(null);
   // Singles lines the streamer has un-ticked on the return list: these cards
   // are staying out of stock for an upcoming show instead of going back in the
   // binder. Seeded from the lines so a flag set on an earlier visit, or by the
@@ -454,15 +477,53 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
     }
   }
 
-  // optimistic hit updates: instant on screen, saved in the background
-  function setHit(lineId: string, qtyHit: number) {
+  // Optimistic: a live show is dozens of these in a row, and waiting on a
+  // round trip for each one makes the page feel broken.
+  //
+  // It used to ignore the response entirely, which was fine right up until the
+  // server had reasons to say no. On a closed show every press was rejected
+  // and the number moved on screen anyway, so the page showed hits that were
+  // never saved. A refused change now goes back where it was and says why.
+  async function setHit(lineId: string, qtyHit: number) {
     const clamped = Math.max(0, qtyHit);
+    const before = lines.find((l) => l.id === lineId)?.qtyHit ?? 0;
+    if (clamped === before) return;
+
+    // Correcting a closed show rewrites what it delivered. On a show that has
+    // already paid out, that rewrites a commission which has already left the
+    // bank, and no amount of recalculating gets it back.
+    if (stream.itemsReturned && stream.paidOut && !paidWarned.current) {
+      const ok = confirm(
+        "This show has already been paid out.\n\n" +
+          "Changing what it delivered changes its profit, so what the app says is owed will " +
+          "no longer match what was actually paid. You will have to settle the difference yourself.\n\n" +
+          "Carry on?",
+      );
+      if (!ok) return;
+      paidWarned.current = true;
+    }
+
+    setHitMsg(null);
     setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, qtyHit: clamped } : l)));
-    fetch(`/api/lines/${lineId}`, {
+    const res = await fetch(`/api/lines/${lineId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ qtyHit: clamped }),
-    });
+    }).catch(() => null);
+
+    if (!res || !res.ok) {
+      const d = res ? await res.json().catch(() => ({})) : {};
+      setLines((prev) => prev.map((l) => (l.id === lineId ? { ...l, qtyHit: before } : l)));
+      setHitMsg({ text: d.error || "could not save that hit", bad: true });
+      return;
+    }
+    // On a closed show the correction moved real stock and may have moved a
+    // card in or out of the binder, so every total on the page is now stale.
+    if (stream.itemsReturned) {
+      const d = await res.json().catch(() => ({}));
+      setHitMsg({ text: hitCorrectionMessage(d), bad: false });
+      await load();
+    }
   }
 
   // Quantity on a show-set line.
@@ -1056,7 +1117,14 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           {resultsErr && <span className="text-bad text-sm">{resultsErr}</span>}
           <span className="mx-2 text-edge">|</span>
           {stream.itemsReturned ? (
-            <span className="text-win text-sm">✓ Unsold items returned to inventory - show set locked</span>
+            <span className="text-win text-sm">
+              ✓ Unsold items returned to inventory - show set locked
+              {isAdmin && (
+                <span className="text-dim">
+                  {" "}· you can still correct hits, and the shelf follows the change
+                </span>
+              )}
+            </span>
           ) : !returnArmed ? (
             <button
               className="btn-ghost disabled:opacity-40"
@@ -1308,6 +1376,9 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             </span>
           </div>
         )}
+        {hitMsg && (
+          <div className={`t-secondary ${hitMsg.bad ? "text-bad" : "text-win"} mb-s2`}>{hitMsg.text}</div>
+        )}
         <div className="overflow-x-auto">
           {/* Tighter rows: the set is the longest table in the app and every
               pixel of padding is another flick of the wheel on a 250 unit show. */}
@@ -1481,11 +1552,21 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                       $(l.market)
                     )}
                   </td>
+                  {/* After the close these stop being a counter and start
+                      moving stock, so they are admin only from that point.
+                      Everyone else sees the number, because the number is
+                      still the answer to "what did this show deliver". */}
                   <td>
+                    {stream.itemsReturned && !isAdmin ? (
+                      <span className="num" title="This show is closed. Only an admin can correct hits now.">
+                        {l.qtyHit}
+                      </span>
+                    ) : (
                     <div className="flex items-center gap-1">
                       <button
                         className="rounded-md border border-edge text-dim px-2 py-1 text-xs font-bold hover:bg-edge/40 hover:text-body disabled:opacity-30"
                         disabled={l.qtyHit <= 0}
+                        title={stream.itemsReturned ? "Undo a hit on a closed show - the unit goes back on the shelf" : undefined}
                         onClick={() => setHit(l.id, l.qtyHit - 1)}
                         aria-label={`Undo one ${l.name} hit`}
                       >
@@ -1500,12 +1581,14 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                       <button
                         className="rounded-md border border-foil/50 text-foil px-2 py-1 text-xs font-bold hover:bg-foil/15 disabled:opacity-30"
                         disabled={l.qtyHit >= l.qty}
+                        title={stream.itemsReturned ? "Mark a hit on a closed show - the unit comes off the shelf" : undefined}
                         onClick={() => setHit(l.id, l.qtyHit + 1)}
                         aria-label={`Mark one ${l.name} hit`}
                       >
                         +1
                       </button>
                     </div>
+                    )}
                   </td>
                   <td>{Math.max(l.qty - l.qtyHit, 0)}</td>
                   <td>{$(Math.max(l.qty - l.qtyHit, 0) * l.market)}</td>
