@@ -42,6 +42,10 @@ type LineT = {
   id: string; name: string; qty: number; qtyHit: number;
   market: number; isGiveaway: boolean; isHit: boolean; isGraded?: boolean; tcgUrl?: string; image?: string; buy?: number;
   singleRecId?: string; salePrice?: number | null; slot?: number | null; holdOut?: boolean;
+  // Built server side for the Whatnot paste. Separate from `name`, which stays
+  // the app's own display text and keeps the set name so the set table can be
+  // searched by it.
+  exportTitle?: string; exportDescription?: string;
 };
 
 export default function StreamEditor({ id, isAdmin = false }: { id: string; isAdmin?: boolean }) {
@@ -750,7 +754,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             <span className="text-dim text-sm ml-3">Packaging: {stream.managerName}</span>
           )}
         </div>
-        <CopyShowSet lines={(lines as any[]).filter((l) => !l.isStore).map((l) => ({ qty: l.qty, name: l.name, market: l.market, isHit: l.isHit }))} streamTitle={stream.title || "show-set"} />
+        <CopyShowSet lines={(lines as any[]).filter((l) => !l.isStore).map((l) => ({ qty: l.qty, name: l.name, exportTitle: l.exportTitle, exportDescription: l.exportDescription, market: l.market, isHit: l.isHit }))} streamTitle={stream.title || "show-set"} />
       </div>
 
       {(stream.status === "Planned" || stream.status === "Live") && !stream.itemsReturned && (
