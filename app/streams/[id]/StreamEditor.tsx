@@ -1226,6 +1226,13 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               aria-label="Filter the show set"
               className="input !py-1 !w-60 text-sm"
             />
+            {/* Labelled, because "Add from" above has its own Singles and
+                Sealed buttons and two unlabelled pairs on one page that do
+                different things is a trap. That one picks what the add box
+                searches; this one picks what the table below shows. */}
+            {setCounts.hasSingles && setCounts.hasSealed && (
+              <span className="t-meta text-dim">Showing</span>
+            )}
             {setCounts.hasSingles && setCounts.hasSealed && (
               <div className="inline-flex rounded-lg border border-edge overflow-hidden t-meta">
                 {([["all", "All"], ["singles", "Singles"], ["sealed", "Sealed"]] as const).map(([k, label]) => (
