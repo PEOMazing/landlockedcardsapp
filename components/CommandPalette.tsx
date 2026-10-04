@@ -42,6 +42,7 @@ const PAGES: { label: string; sub: string; href: string; manager?: boolean; admi
 
 const ACTIONS: { label: string; sub: string; href: string; manager?: boolean }[] = [
   { label: "New show", sub: "build a set for tonight", href: "/streams/new" },
+  { label: "Quick set", sub: "generate a set and a pull list", href: "/streams/quick", manager: true },
   { label: "Print labels", sub: "stickers for the current selection", href: "/singles/labels", manager: true },
 ];
 
