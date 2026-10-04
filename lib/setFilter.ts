@@ -44,6 +44,65 @@ export function matchesSetQuery(l: SetLineish, query: string): boolean {
   return tokens.every((t) => hay.includes(t));
 }
 
+// ---------------------------------------------------------------------------
+// Collapsing copies of the same card
+//
+// A wheel carries 23 Leafeons as 23 separate lines, because each one is a
+// distinct physical card with its own binder slot, its own hit state and its
+// own row in the CSV export. That is right in the data and miserable on
+// screen. Grouping happens here, in the rendering, and nowhere near the
+// exports: those read the raw line list and keep one row per card.
+
+/** Two lines are copies of each other when their names match once the binder
+ *  slot is off the front. Condition and set are part of the name, so a NM and
+ *  a LP of the same card stay apart, and so do two printings. */
+export const groupKeyOf = (l: SetLineish): string =>
+  withoutCardNo(l.name).trim().toLowerCase();
+
+export type SetRender<T> =
+  | { kind: "line"; key: string; line: T }
+  | { kind: "group"; key: string; lines: T[] };
+
+/** The render list for the set table: copies collapse once there are enough of
+ *  them to be worth collapsing, everything else stays a plain row. A group
+ *  takes the position of its first member, so whatever sort the table is in
+ *  still decides the order. */
+export function groupSetRows<T extends SetLineish & { id: string }>(
+  rows: T[],
+  minGroup = 3,
+): SetRender<T>[] {
+  const counts = new Map<string, number>();
+  for (const l of rows) counts.set(groupKeyOf(l), (counts.get(groupKeyOf(l)) || 0) + 1);
+  const out: SetRender<T>[] = [];
+  const seen = new Set<string>();
+  for (const l of rows) {
+    const k = groupKeyOf(l);
+    if ((counts.get(k) || 0) < minGroup) { out.push({ kind: "line", key: l.id, line: l }); continue; }
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ kind: "group", key: k, lines: rows.filter((r) => groupKeyOf(r) === k) });
+  }
+  return out;
+}
+
+/** What a collapsed row shows instead of its members. */
+export function groupTotals(lines: (SetLineish & { market?: number })[]) {
+  const qty = lines.reduce((a, l) => a + (l.qty || 0), 0);
+  const hit = lines.reduce((a, l) => a + (l.qtyHit || 0), 0);
+  const prices = lines.map((l) => Number(l.market || 0));
+  return {
+    qty,
+    hit,
+    remain: Math.max(qty - hit, 0),
+    // One price box for the whole group only makes sense while the copies
+    // agree. When they do not, the row says so rather than quietly showing one
+    // of them and writing it over the others.
+    market: prices[0] ?? 0,
+    samePrice: prices.every((p) => p === prices[0]),
+    valueLeft: lines.reduce((a, l) => a + Math.max((l.qty || 0) - (l.qtyHit || 0), 0) * Number(l.market || 0), 0),
+  };
+}
+
 export type SetKind = "all" | "singles" | "sealed";
 
 /** The whole predicate the table applies: kind, still-live, then the query. */
