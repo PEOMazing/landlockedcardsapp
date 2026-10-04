@@ -216,23 +216,37 @@ export function generateQuickSet(pool: Candidate[], opts: QuickSetOptions): Quic
   // item gives up one unit and the cheapest thing on the shelf takes its spot.
   // A set that is one prize lighter still reads fine; a set that is nine spots
   // short does not, and deleting was quietly doing the second.
-  const cheapest = eligible
+  // A LIST, not a single item, and that distinction cost four spots on the
+  // first live run. The cheapest thing on the shelf was one $1.08 mini pack.
+  // The filler tier had already taken it, so every swap after that asked for
+  // a unit that was not there, got nothing back, and quietly left the spot
+  // empty: a 119 spot set came out at 115 with three identical complaints in
+  // the warnings. Walk down the shelf instead, taking the cheapest thing that
+  // still has a unit left.
+  const cheapPool = eligible
     .filter((c) => c.kind === "sealed")
-    .sort((a, b) => a.value - b.value)[0];
+    .sort((a, b) => a.value - b.value);
+  const cheapestLeft = () => cheapPool.find((c) => (takenQty.get(c.id) || 0) < c.available);
   let swaps = 0;
+  let stranded = 0;
   while (spent > budget * 1.1 && picks.length > 1 && swaps < spots) {
     const dearest = picks.reduce((b, p) => (p.unitValue > b.unitValue ? p : b), picks[0]);
-    if (cheapest && dearest.unitValue <= cheapest.value) break; // nothing left to gain
+    const cheapest = cheapestLeft();
+    if (!cheapest || dearest.unitValue <= cheapest.value) break; // nothing left to gain
     dearest.qty -= 1;
     spent -= dearest.unitValue;
     if (dearest.qty <= 0) picks.splice(picks.indexOf(dearest), 1);
     else dearest.value = round2(dearest.qty * dearest.unitValue);
-    const back = cheapest ? take(cheapest, 1, "filler") : 0;
-    if (!back) warnings.push(`Dropped a ${dearest.name} and had nothing cheap left to put in its spot`);
+    if (!take(cheapest, 1, "filler")) stranded++;
     swaps++;
   }
   if (swaps) {
     warnings.push(`Swapped ${swaps} dear spot${swaps === 1 ? "" : "s"} down to packs to stay inside the value budget`);
+  }
+  // One line with a count, not one line per spot. The old version pushed the
+  // same sentence three times and buried the tier shortfalls underneath it.
+  if (stranded) {
+    warnings.push(`${stranded} spot${stranded === 1 ? "" : "s"} came off the board with nothing cheap left to refill ${stranded === 1 ? "it" : "them"}`);
   }
 
   const totalSpots = picks.reduce((a, p) => a + p.qty, 0);
