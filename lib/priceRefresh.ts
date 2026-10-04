@@ -328,17 +328,63 @@ export async function recordSnapshot(): Promise<Snapshot> {
     singles: Math.round(singles * 100) / 100,
     items,
   };
+  snap.items = trimSnapItems(items);
+
   const existing = await atList(T.snapshots, { filterByFormula: `{Date} = '${snap.date}'` }).catch(() => []);
-  const fields = {
+  const totals = {
     "Date": snap.date,
     "Total Market": snap.total,
     "Sealed Market": snap.sealed,
     "Singles Market": snap.singles,
-    "Items": JSON.stringify(snap.items),
   };
-  if (existing[0]) await atUpdate(T.snapshots, existing[0].id, fields);
-  else await atCreate(T.snapshots, fields);
+  const write = (fields: Record<string, any>) =>
+    existing[0] ? atUpdate(T.snapshots, existing[0].id, fields) : atCreate(T.snapshots, fields);
+  try {
+    await write({ ...totals, "Items": JSON.stringify(snap.items) });
+  } catch {
+    // The four numbers ARE the chart. If the item map is refused for any
+    // reason the day's value still gets recorded, rather than the whole
+    // refresh failing and the caller seeing a 502 over a movers list.
+    await write(totals);
+    snap.items = {};
+  }
   return snap;
+}
+
+// Airtable caps a long text cell at 100,000 characters and the item map
+// outgrew it: 760 singles and 338 products, each carrying a name and an image
+// URL, came to well past the limit. Every refresh then died on this write.
+// Prices had already been saved by that point, so the damage was quiet - the
+// shelf repriced, the portfolio chart stopped recording, and the button just
+// returned an error.
+const ITEMS_BUDGET = 90000;
+
+/** Fit the item map inside one cell, dearest first.
+ *
+ *  Items exists for one caller, topMovers, and a mover is by definition
+ *  something worth noticing. A $2 pack that shifted ten cents was never going
+ *  to make the top three, so when the map does not fit it is the cheap tail
+ *  that goes. Trimming by value also keeps the SAME items present in
+ *  consecutive snapshots, which is what topMovers needs to compare at all. */
+export function trimSnapItems(
+  items: Record<string, SnapItem>,
+  budget = ITEMS_BUDGET,
+): Record<string, SnapItem> {
+  const cost = (k: string, v: SnapItem) => JSON.stringify(k).length + JSON.stringify(v).length + 2;
+  const entries = Object.entries(items);
+  let total = 2;
+  for (const [k, v] of entries) total += cost(k, v);
+  if (total <= budget) return items;
+
+  const out: Record<string, SnapItem> = {};
+  let used = 2;
+  for (const [k, v] of entries.slice().sort((a, b) => b[1].p - a[1].p)) {
+    const c = cost(k, v);
+    if (used + c > budget) break;
+    out[k] = v;
+    used += c;
+  }
+  return out;
 }
 
 export async function getSnapshots(n = 30): Promise<Snapshot[]> {
