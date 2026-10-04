@@ -21,6 +21,7 @@ const I = {
   analytics: <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   movers: <path d="M3 17l6-6 4 4 8-8M21 7h-5M21 7v5" />,
   insights: <path d="M12 2a7 7 0 0 1 4 12.7V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.3A7 7 0 0 1 12 2zM9 21h6" />,
+  quick: <path d="M5 3v4M3 5h4M6 16v4M4 18h4M14 3l2.4 6.1L22 11l-5.6 1.9L14 19l-2.4-6.1L6 11l5.6-1.9L14 3z" />,
   settings: <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.5-2.3 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.06-.4.1-.8.1-1.2z" />,
 };
 
@@ -56,6 +57,7 @@ const GROUPS: Group[] = [
       { href: "/graded", label: "Graded", icon: I.singles },
       { href: "/show", label: "Card Show", icon: I.show },
       { href: "/quote", label: "Quote", icon: I.pay, manager: true },
+      { href: "/streams/quick", label: "Quick Set", icon: I.quick, manager: true, stream: true },
       { href: "/admin/streams", label: "All Streams", icon: I.streams, manager: true, stream: true },
     ],
   },
