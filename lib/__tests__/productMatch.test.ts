@@ -104,6 +104,34 @@ test("inactive or nameless records do not throw", () => {
   assert.equal(matchProduct("", []).kind, "none");
 });
 
+// What the add-product guard stands on.
+//
+// Add product had no duplicate check at all, and quick-add had one written as
+// an Airtable formula over ACTIVE records and their CURRENT name only. Both
+// holes made the same thing: a second copy of a product already owned, at $0
+// market, which then prices every show it lands on wrong. 57 products in the
+// real table had one. Both routes now gate on an exact matchProduct hit over
+// the whole table, so these two cases are the guard.
+test("a retired product is found by name, so it is revived rather than duplicated", () => {
+  const inv = [p("Journey Together Booster Bundle", { "Active": false, "Qty On Hand": 0 })];
+  const m = matchProduct("journey together booster bundle", inv);
+  assert.equal(m.kind, "exact");
+  assert.equal(matchedProduct(m)?.id, inv[0].id);
+});
+
+test("a name the product was renamed away from still finds it", () => {
+  const inv = [p("Perfect order booster bundle", { "Former Names": "Perfect Order\nperfect order bundle" })];
+  assert.equal(matchProduct("Perfect Order", inv).kind, "exact");
+  assert.equal(matchProduct("perfect order bundle", inv).kind, "exact");
+});
+
+test("a genuinely new product is still allowed through", () => {
+  // The guard must not reach for the fuzzy match. These two share every word
+  // but one and are different things on the shelf.
+  const inv = [p("Mega Evolution Booster Pack")];
+  assert.notEqual(matchProduct("Mega Evolution Booster Box", inv).kind, "exact");
+});
+
 // The other half of the same route: taking the stock off the shelf.
 test("the same product on two pasted lines comes off the shelf twice", () => {
   // Both lines used to be computed from the original on-hand, so the second
