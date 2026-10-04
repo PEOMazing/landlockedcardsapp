@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { cardNoOf, withoutCardNo, matchesSetQuery, keepSetLine, type SetLineish } from "../setFilter";
+import { cardNoOf, withoutCardNo, matchesSetQuery, keepSetLine, groupKeyOf, groupSetRows, groupTotals, type SetLineish } from "../setFilter";
 
 // The real shapes off a wheel, because the whole point of this filter is the
 // case where every row reads the same.
@@ -93,5 +93,75 @@ describe("the kind and still-live switches", () => {
 
   it("all with nothing set keeps the whole set", () => {
     assert.equal(keep({ kind: "all", unhitOnly: false, query: "" }).length, 4);
+  });
+});
+
+// Collapsing copies. The export path never sees any of this: it maps the raw
+// line list, so a card grouped on screen is still its own row in the CSV.
+type Row = SetLineish & { id: string; market?: number };
+const card = (slot: number, over: Partial<Row> = {}): Row => ({
+  id: `rec${slot}`,
+  name: `[${String(slot).padStart(4, "0")}] NM Leafeon - 170 (Cosmos Holo) #170 SV: Scarlet & Violet Promo Cards`,
+  qty: 1,
+  qtyHit: 0,
+  slot,
+  singleRecId: `sing${slot}`,
+  market: 2,
+  ...over,
+});
+const sealed = (id: string, name: string, over: Partial<Row> = {}): Row =>
+  ({ id, name, qty: 1, qtyHit: 0, slot: null, market: 10, ...over });
+
+describe("collapsing copies of the same card", () => {
+  it("groups copies and leaves everything else alone", () => {
+    const rows = [card(236), sealed("p", "Brilliant Fantasy pack", { qty: 160 }), card(238), card(240)];
+    const out = groupSetRows(rows);
+    assert.deepEqual(out.map((g) => g.kind), ["group", "line"]);
+    assert.equal(out[0].kind === "group" && out[0].lines.length, 3);
+  });
+
+  it("takes the position of its first member, so the sort still decides order", () => {
+    const rows = [sealed("p", "Brilliant Fantasy pack"), card(236), card(238), card(240)];
+    const out = groupSetRows(rows);
+    assert.deepEqual(out.map((g) => g.kind), ["line", "group"]);
+  });
+
+  it("leaves a pair uncollapsed, because two rows are not a scrolling problem", () => {
+    const out = groupSetRows([card(236), card(238)]);
+    assert.deepEqual(out.map((g) => g.kind), ["line", "line"]);
+  });
+
+  it("keeps different conditions and different cards apart", () => {
+    const lp = card(999, { name: "[0999] LP Leafeon - 170 (Cosmos Holo) #170 SV: Scarlet & Violet Promo Cards" });
+    const out = groupSetRows([card(236), card(238), card(240), lp]);
+    assert.deepEqual(out.map((g) => g.kind), ["group", "line"]);
+    assert.notEqual(groupKeyOf(lp), groupKeyOf(card(236)));
+  });
+
+  it("a high enough minimum collapses nothing, which is how a filtered table stays flat", () => {
+    const out = groupSetRows([card(236), card(238), card(240)], Number.MAX_SAFE_INTEGER);
+    assert.deepEqual(out.map((g) => g.kind), ["line", "line", "line"]);
+  });
+
+  it("totals a group the way the collapsed row reads it", () => {
+    const t = groupTotals([card(236, { qtyHit: 1 }), card(238), card(240)]);
+    assert.equal(t.qty, 3);
+    assert.equal(t.hit, 1);
+    assert.equal(t.remain, 2);
+    assert.equal(t.market, 2);
+    assert.equal(t.samePrice, true);
+    assert.equal(t.valueLeft, 4);
+  });
+
+  it("flags a group whose copies are priced differently instead of hiding it", () => {
+    const t = groupTotals([card(236, { market: 2 }), card(238, { market: 9 }), card(240, { market: 2 })]);
+    assert.equal(t.samePrice, false);
+    assert.equal(t.valueLeft, 13);
+  });
+
+  it("every line survives grouping exactly once", () => {
+    const rows = [card(236), card(238), card(240), sealed("p", "Brilliant Fantasy pack"), card(999, { name: "[0999] NM Eevee #116/128 ME: 30th Celebration" })];
+    const flat = groupSetRows(rows).flatMap((g) => (g.kind === "line" ? [g.line] : g.lines));
+    assert.deepEqual(flat.map((l) => l.id).sort(), rows.map((l) => l.id).sort());
   });
 });
