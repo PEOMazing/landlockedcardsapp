@@ -1,4 +1,5 @@
-import { atList, atUpdate, T } from "./airtable";
+import { atGet, atList, atUpdate, T } from "./airtable";
+import { getSettings } from "./settings";
 
 // "20:00" + "01:30" -> 5.5 hrs (rolls past midnight when end <= start)
 export function computeHours(start: string, end: string): number {
@@ -34,9 +35,10 @@ export function fmt12(t: string): string {
 //   Packing entries by the stream manager -> Manager Packing Hours
 //   Packing entries by anyone else -> Packing Hours (streamer)
 export async function recomputeStreamHours(streamId: string, managerRecId: string | null) {
-  const entries = await atList(T.time, {
-    filterByFormula: `{Stream Rec Id} = '${streamId}'`,
-  });
+  const [entries, settings] = await Promise.all([
+    atList(T.time, { filterByFormula: `{Stream Rec Id} = '${streamId}'` }),
+    getSettings(),
+  ]);
   let streaming = 0, streamerPacking = 0, managerPacking = 0;
   for (const e of entries) {
     const hrs = e.fields["Hours"] || 0;
@@ -44,9 +46,22 @@ export async function recomputeStreamHours(streamId: string, managerRecId: strin
     else if (managerRecId && e.fields["Person Rec Id"] === managerRecId) managerPacking += hrs;
     else streamerPacking += hrs;
   }
-  await atUpdate(T.streams, streamId, {
+  const fields: Record<string, any> = {
     "Hours Streamed": Math.round(streaming * 100) / 100,
     "Packing Hours": Math.round(streamerPacking * 100) / 100,
     "Manager Packing Hours": Math.round(managerPacking * 100) / 100,
-  });
+  };
+  // pr-v2: stamp the packing rate the first time any packing lands on this
+  // show, so the money is fixed to when the work was done. Never overwritten:
+  // a later rate change must not re-price a show that is already packed.
+  if (streamerPacking + managerPacking > 0) {
+    try {
+      const st = await atGet(T.streams, streamId);
+      if (!(Number(st.fields["Packing Rate"]) > 0)) fields["Packing Rate"] = settings.packing_rate;
+    } catch {
+      // if the read fails, leave it blank: blank reads as the current rate,
+      // which is the right answer today and recoverable tomorrow
+    }
+  }
+  await atUpdate(T.streams, streamId, fields);
 }

@@ -671,7 +671,11 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const productBack = Math.max(0, m.totalValue - m.hitValueDelivered - m.givvyValue);
   const grossProfit = afterFeesNum - productSold - m.storeMarket;
 
-  const packingPay = data?.pay ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * data.pay.packingRate : 0;
+  // pr-v2: the server prices this from the show's own snapshotted rate, so a
+  // later rate change never moves a show that has already been packed.
+  const packingPay = data?.pay?.packingCost ?? (data?.pay
+    ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * data.pay.packingRate
+    : 0);
   // streaming labor at the streamer's hourly rate. Weekly settlement pays the
   // higher of hourly or commission, so this is the floor of true labor cost.
   const streamPay = data?.pay?.hourlyRate ? (stream?.hours || 0) * data.pay.hourlyRate : 0;
@@ -1234,7 +1238,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         streamDate={stream.date || ""}
         streamerName={stream.streamerName || ""}
         closed={!!stream.itemsReturned}
-        lines={(lines as any[]).map((l) => ({ id: l.id, name: l.name, qty: l.qty, qtyHit: l.qtyHit, isStore: !!l.isStore, isGiveaway: !!l.isGiveaway }))}
+        lines={(lines as any[]).map((l) => ({ id: l.id, name: l.name, qty: l.qty, qtyHit: l.qtyHit, isStore: !!l.isStore, isGiveaway: !!l.isGiveaway, exportTitle: l.exportTitle }))}
         current={{ spotsSold: stream.spotsSold ?? null, giveaways: stream.giveaways ?? null, singlesGiveaways: stream.singlesGiveaways ?? null }}
         onFile={setWhatnotFile}
         onApplied={load}

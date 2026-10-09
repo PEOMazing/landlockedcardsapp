@@ -89,6 +89,38 @@ export function splitByKind(
   return out;
 }
 
+// ---- what an hour of packing costs ----
+//
+// pr-v2. Packing used to be one flat rate read live out of settings. That
+// meant changing the number silently re-priced every show that had already
+// been paid: dropping $20 to $15 moved three months of settled history and
+// made the payroll page disagree with the money that actually went out.
+//
+// So the rate is snapshotted on the stream, the same way Market Price Snapshot
+// and Buy Price Snapshot already work on the lines. The show remembers what
+// packing cost when it was packed and later changes leave it alone. Blank
+// falls back to the current settings rate, which is what a show reads before
+// anyone has clocked packing on it.
+//
+// Deliberately NOT a per-person rate. The rate is a property of WHEN the work
+// happened, not of who did it: packing went from $20 to $15 on 2026-10-05, and
+// somebody who packed on both sides of that line is owed both rates.
+export function packingRate(stream: { packingRate?: number | null }, s: Settings): number {
+  const r = Number(stream?.packingRate);
+  return Number.isFinite(r) && r > 0 ? r : s.packing_rate;
+}
+
+/** What one show's packing labor costs: both sides of its clock at its own rate. */
+export function streamPackingCost(
+  r: { packingHours?: number | null; managerPackingHours?: number | null; packingRate?: number | null },
+  s: Settings,
+): number {
+  const hrs = (Number(r.packingHours) || 0) + (Number(r.managerPackingHours) || 0);
+  return hrs * packingRate(r, s);
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 // ---- progressive commission tiers ----
 // Streamer commission is a flat percentage of commissionable profit
 // (settings key commission_pct, default 20%). The old three-tier ladder is
@@ -136,6 +168,9 @@ export type StreamRow = {
   hours: number;
   packingHours: number;
   managerPackingHours: number;
+  // pr-v2: the rate this show's packing hours are paid at, snapshotted on the
+  // stream. Null or 0 falls back to settings.packing_rate.
+  packingRate?: number | null;
   // managerId  = who PACKED the show (their packing hours are paid to them)
   // overrideId = who EARNS THE OVERRIDE on it (admin only, Airtable "Override Rec Id").
   // Blank override means nobody earns one here. Packing no longer grants the override.
@@ -158,6 +193,9 @@ export type WeekPay = {
   profit: number;           // OVER MARKET: sum of (afterFees - promotion - productMarketCost); tips are outside the P&L, paid through separately
   buyProfit: number;        // OVER BUY: sum of (afterFees - promotion - productCost); tips never touch profit
   packingPay: number;
+  // pr-v2: what this person's packing actually averaged out to, for the UI to
+  // show. A weighted average when their week spans shows at different rates.
+  packingRate: number;
   commissionable: number;   // profit - packing (market basis)
   hours: number;
   hourlyRate: number;
@@ -175,16 +213,26 @@ export type WeekPay = {
 // Built from Time Entries joined to their COMPLETE streams (the stream's date
 // decides the week, matching the "belongs to whoever completes it" rule).
 // Manager packing stays out - buildManagerPay pays that separately.
-export type PersonHours = Record<string, { streaming: number; packing: number; tips: number }>;
+export type PersonHours = Record<
+  string,
+  // pr-v2: packingPay is accumulated here rather than derived later, because
+  // the rate belongs to the SHOW and this is the only pass that still knows
+  // which show each clocked hour came from.
+  { streaming: number; packing: number; packingPay: number; tips: number }
+>;
 
 export function buildPersonHours(
-  streams: Array<{ id: string; date: string; status: string; managerId?: string | null; streamerId?: string; tips?: number }>,
-  entries: Array<{ streamId: string; personId: string; type: string; hours: number }>
+  streams: Array<{
+    id: string; date: string; status: string; managerId?: string | null;
+    streamerId?: string; tips?: number; packingRate?: number | null;
+  }>,
+  entries: Array<{ streamId: string; personId: string; type: string; hours: number }>,
+  s: Settings
 ): PersonHours {
   const streamById = new Map(streams.map((st) => [st.id, st]));
   const out: PersonHours = {};
   const bump = (key: string) => {
-    if (!out[key]) out[key] = { streaming: 0, packing: 0, tips: 0 };
+    if (!out[key]) out[key] = { streaming: 0, packing: 0, packingPay: 0, tips: 0 };
     return out[key];
   };
   // who actually STREAMED each show, from the timeclock
@@ -197,7 +245,11 @@ export function buildPersonHours(
       bump(key).streaming += e.hours;
       if (!streamersOnStream.has(st.id)) streamersOnStream.set(st.id, new Set());
       streamersOnStream.get(st.id)!.add(e.personId);
-    } else if (e.personId !== (st.managerId || null)) bump(key).packing += e.hours;
+    } else if (e.personId !== (st.managerId || null)) {
+      const b = bump(key);
+      b.packing += e.hours;
+      b.packingPay += e.hours * packingRate(st, s);   // priced at THIS show's rate
+    }
   }
   // tips split EVENLY among the streamers who clocked on the show (per Gabe
   // 2026-08-11); a show with no clocked streamers falls back to its streamer
@@ -213,6 +265,7 @@ export function buildPersonHours(
   for (const k of Object.keys(out)) {
     out[k].streaming = Math.round(out[k].streaming * 100) / 100;
     out[k].packing = Math.round(out[k].packing * 100) / 100;
+    out[k].packingPay = Math.round(out[k].packingPay * 100) / 100;
     out[k].tips = Math.round(out[k].tips * 100) / 100;
   }
   return out;
@@ -248,7 +301,6 @@ export function buildWeekPay(
     const profit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - (r.shipAdj || 0) - giveawayCost(r) - r.productMarketCost), 0);
     const buyProfit = rows.reduce((a, r) => a + (r.afterFees - r.promotion - (r.shipAdj || 0) - giveawayCost(r) - r.productCost), 0);
     const packingHours = rows.reduce((a, r) => a + r.packingHours, 0);
-    const managerPackingHours = rows.reduce((a, r) => a + (r.managerPackingHours || 0), 0);
     // hp-v1: PAY-side hours are the person's own clocked time; COST-side
     // packing (subtracted from the commission base) stays the streams' full
     // packing, whoever clocked it - the labor happened on these streams.
@@ -260,9 +312,13 @@ export function buildWeekPay(
     // on; the stream-lump sum otherwise
     const tips = opts?.personHours ? (own?.tips ?? 0) : rows.reduce((a, r) => a + r.tips, 0);
     const payPackingHours = opts?.personHours ? (own?.packing ?? 0) : packingHours;
-    const packingPay = payPackingHours * s.packing_rate;        // person's own packing, paid to them
-    const costPackingPay = packingHours * s.packing_rate;       // the streams' full streamer-side packing cost
-    const managerPackingPay = managerPackingHours * s.packing_rate; // manager's packing, a stream cost
+    // pr-v2: every figure below is summed per show at that show's own rate, so
+    // a week that straddles a rate change prices each show correctly instead of
+    // applying one number to the whole week.
+    const costPackingPay = rows.reduce((a, r) => a + (r.packingHours || 0) * packingRate(r, s), 0);
+    const managerPackingPay = rows.reduce((a, r) => a + (r.managerPackingHours || 0) * packingRate(r, s), 0);
+    // person's own packing, paid to them, already priced per show upstream
+    const packingPay = opts?.personHours ? (own?.packingPay ?? 0) : costPackingPay;
     const commissionable = profit - costPackingPay - managerPackingPay;
     const hourlyRate = ratesByStreamer[streamerId] ?? s.default_hourly_rate;
     const optionA = hours * hourlyRate;
@@ -276,6 +332,7 @@ export function buildWeekPay(
       streamerName: rows[0].streamerName,
       streams: rows.sort((a, b) => a.date.localeCompare(b.date)),
       profit, buyProfit, packingPay, commissionable, hours, hourlyRate,
+      packingRate: payPackingHours > 0 ? round2(packingPay / payPackingHours) : s.packing_rate,
       optionA, optionB, streamPay,
       winner: optionA >= optionB ? "hourly" : "commission",
       tips,
@@ -296,7 +353,7 @@ export function buildWeekPay(
       if (!(own.streaming > 0 || own.packing > 0 || own.tips > 0)) continue;
       const hourlyRate = ratesByStreamer[personId] ?? s.default_hourly_rate;
       const streamPay = own.streaming * hourlyRate;
-      const packingPay = own.packing * s.packing_rate;
+      const packingPay = own.packingPay;   // already priced per show
       out.push({
         weekStart,
         weekLabel: weekLabel(weekStart),
@@ -304,6 +361,7 @@ export function buildWeekPay(
         streamerName: opts.namesById?.[personId] || "Streamer",
         streams: [],
         profit: 0, buyProfit: 0, packingPay,
+        packingRate: own.packing > 0 ? round2(own.packingPay / own.packing) : s.packing_rate,
         commissionable: 0,
         hours: own.streaming, hourlyRate,
         optionA: streamPay, optionB: 0, streamPay,
@@ -339,6 +397,7 @@ export type ManagerWeekPay = {
   overridePct: number;
   overridePay: number;
   packingHours: number;
+  packingRate: number;   // effective rate across the shows they packed
   packingPay: number;
   totalPay: number;
 };
@@ -368,13 +427,14 @@ export function buildManagerPay(
     commissionable: number;
     streamerPay: number;
     packingHours: number;
+    packingPay: number;
     packedCount: number;
     earnsOverride: boolean;
   };
   const byManagerWeek = new Map<string, Agg>();
   const touch = (key: string): Agg => {
     const a = byManagerWeek.get(key) || {
-      rows: [], commissionable: 0, streamerPay: 0, packingHours: 0, packedCount: 0, earnsOverride: false,
+      rows: [], commissionable: 0, streamerPay: 0, packingHours: 0, packingPay: 0, packedCount: 0, earnsOverride: false,
     };
     byManagerWeek.set(key, a);
     return a;
@@ -391,7 +451,7 @@ export function buildManagerPay(
           : a +
             (r.afterFees - r.promotion - (r.shipAdj || 0) - (r.giveaways || 0) * s.giveaway_cost
               - (r.singlesGiveaways || 0) * s.singles_giveaway_cost - r.productMarketCost) -
-            (r.packingHours + (r.managerPackingHours || 0)) * s.packing_rate,
+            streamPackingCost(r, s),
       0
     );
     // the streamer's pay on these streams: same greater-of rule (hours x rate vs tiers)
@@ -414,6 +474,7 @@ export function buildManagerPay(
     if (hrs <= 0) continue;
     const agg = touch(`${weekStartOf(st.date)}|${st.managerId}`);
     agg.packingHours += hrs;
+    agg.packingPay += hrs * packingRate(st, s);   // this show's own rate
     agg.packedCount += 1;
     if (!agg.rows.some((r) => r.id === st.id)) agg.rows.push(st);
   }
@@ -424,7 +485,7 @@ export function buildManagerPay(
     const overridePct = overrideByManager[managerId] || 0;
     const overrideBase = Math.max(agg.commissionable - agg.streamerPay, 0);
     const overridePay = overrideBase * overridePct;
-    const packingPay = agg.packingHours * s.packing_rate;
+    const packingPay = round2(agg.packingPay);
     out.push({
       weekStart,
       weekLabel: weekLabel(weekStart),
@@ -440,6 +501,7 @@ export function buildManagerPay(
       overridePct,
       overridePay,
       packingHours: agg.packingHours,
+      packingRate: agg.packingHours > 0 ? round2(packingPay / agg.packingHours) : s.packing_rate,
       packingPay,
       totalPay: overridePay + packingPay,
     });

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
-import { toLine, isHitLine } from "@/lib/calc";
+import { toLine, isHitLine, packingRate, streamPackingCost } from "@/lib/calc";
 import { syncWheelSinglePrices } from "@/lib/streamSingles";
 import { whatnotDescription, whatnotTitle } from "@/lib/showSetTitle";
 
@@ -292,7 +292,16 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       })(),
     },
     pay: {
-      packingRate: settings.packing_rate,
+      // pr-v2: this show's own snapshotted rate, not the current settings value
+      packingRate: packingRate({ packingRate: stream.fields["Packing Rate"] }, settings),
+      packingCost: streamPackingCost(
+        {
+          packingHours: stream.fields["Packing Hours"],
+          managerPackingHours: stream.fields["Manager Packing Hours"],
+          packingRate: stream.fields["Packing Rate"],
+        },
+        settings,
+      ),
       hourlyRate: (() => {
         const sid = stream.fields["Streamer Rec Id"];
         if (!sid) return settings.default_hourly_rate;

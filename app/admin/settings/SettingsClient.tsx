@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 const FIELDS: { key: string; label: string; hint: string; pct?: boolean }[] = [
   { key: "default_hourly_rate", label: "Default hourly rate ($/hr)", hint: "Used unless a streamer has their own rate" },
-  { key: "packing_rate", label: "Packing rate ($/hr)", hint: "Paid on top, deducted before commission" },
+  { key: "packing_rate", label: "Packing rate ($/hr)", hint: "Stamped onto a show when packing is first clocked; changing it leaves packed shows alone" },
   { key: "support_pct", label: "Stream support %", hint: "Share of profit after streamer pay", pct: true },
   { key: "breakeven_mult", label: "Break-even multiplier", hint: "Value per spot x this = break-even price" },
   { key: "hit_threshold", label: "Hit threshold ($)", hint: "Items over this market price count as hits" },
@@ -19,6 +19,7 @@ const FIELDS: { key: string; label: string; hint: string; pct?: boolean }[] = [
 type Profile = {
   id: string; name: string; email: string; role: string;
   hourlyRate: number | null; overridePct: number | null; active: boolean; linked: boolean;
+  deactivatedAt?: string | null;
 };
 
 export default function SettingsClient() {
@@ -30,6 +31,7 @@ export default function SettingsClient() {
   const [pSaved, setPSaved] = useState("");
   const [adding, setAdding] = useState({ name: "", email: "", role: "streamer", hourlyRate: "", overridePct: "" });
   const [addErr, setAddErr] = useState("");
+  const [notice, setNotice] = useState("");
   const [addBusy, setAddBusy] = useState(false);
 
   async function loadProfiles() {
@@ -60,6 +62,36 @@ export default function SettingsClient() {
     setPSaveErr(null);
     setPSaved(id);
     setTimeout(() => setPSaved(""), 1500);
+    await loadProfiles();
+  }
+
+  // da-v1: deactivating is not an ordinary field edit. It switches off every
+  // role power at once and pulls the person off shows that have not settled,
+  // so it confirms first and then says what it actually did.
+  async function toggleDeactivated(p: Profile) {
+    const off = p.active;   // currently active, so this turns them off
+    if (off && !confirm(
+      `Deactivate ${p.name}?\n\nThey keep their record, hours and past pay, and nothing already completed changes. ` +
+      `What they lose is access: next time they open the app they get an access-removed page.\n\n` +
+      `They will also be taken off any show that is not finished yet, so they stop earning packing and override on it.`
+    )) return;
+    const r = await fetch(`/api/streamers/${p.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deactivated: off }),
+    }).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok) {
+      setPSaveErr({ id: p.id, msg: d.error || "Not saved" });
+      await loadProfiles();
+      return;
+    }
+    setPSaveErr(null);
+    if (off && Array.isArray(d.cleared) && d.cleared.length > 0) {
+      setNotice(`${d.name} deactivated. Taken off ${d.cleared.length} unfinished show${d.cleared.length === 1 ? "" : "s"}: ${d.cleared.join(", ")}`);
+    } else {
+      setNotice(off ? `${d.name} deactivated.` : `${d.name} is active again. Stream roles were not restored.`);
+    }
     await loadProfiles();
   }
 
@@ -147,7 +179,9 @@ export default function SettingsClient() {
       <h1 className="t-page">Streamer profiles</h1>
       <p className="text-dim text-sm">
         Add a profile with the person&apos;s email and they are connected automatically the first time they sign in
-        with it. No further linking needed.
+        with it. No further linking needed. Deactivating someone switches off every bit of access and takes them off
+        unfinished shows, while keeping their record, their hours and every week of pay they have already earned.
+        You cannot deactivate yourself or the last admin.
       </p>
       <div className="card divide-y divide-edge">
         {profiles.map((p) => (
@@ -183,14 +217,19 @@ export default function SettingsClient() {
                 placeholder="0.10 = 10%"
                 onBlur={(e) => e.target.value !== String(p.overridePct ?? "") && saveProfile(p.id, { overridePct: e.target.value })} />
             </div>
-            <div className="flex items-center gap-3 pb-2">
-              <span className={`text-xs font-semibold ${p.linked ? "text-win" : "text-dim"}`}>
-                {p.linked ? "Linked" : "Awaiting sign-in"}
+            <div className="flex items-center gap-3 pb-2 flex-wrap">
+              <span className={`text-xs font-semibold ${!p.active ? "text-bad" : p.linked ? "text-win" : "text-dim"}`}>
+                {!p.active ? "No access" : p.linked ? "Linked" : "Awaiting sign-in"}
               </span>
-              <label className="flex items-center gap-1 text-xs text-dim cursor-pointer">
-                <input type="checkbox" checked={p.active} onChange={(e) => saveProfile(p.id, { active: e.target.checked })} />
-                Active
-              </label>
+              <button
+                className={p.active ? "btn-ghost !py-1 !text-xs" : "btn-foil !py-1 !text-xs"}
+                onClick={() => toggleDeactivated(p)}
+                title={p.active
+                  ? "Switch off all access. Record, hours and past pay are kept."
+                  : `Deactivated ${String(p.deactivatedAt || "").slice(0, 10)}. Give access back.`}
+              >
+                {p.active ? "Deactivate" : "Reactivate"}
+              </button>
               {pSaved === p.id && <span className="text-win text-xs">Saved</span>}
               {pSaveErr?.id === p.id && <span className="text-bad text-xs">{pSaveErr.msg}</span>}
             </div>
@@ -231,6 +270,12 @@ export default function SettingsClient() {
         </div>
       </div>
       {addErr && <div className="text-bad text-sm">{addErr}</div>}
+      {notice && (
+        <div className="card p-3 text-sm flex items-start justify-between gap-4">
+          <span>{notice}</span>
+          <button className="text-dim text-xs hover:text-body" onClick={() => setNotice("")}>dismiss</button>
+        </div>
+      )}
       <section className="card p-4 flex items-center justify-between gap-4 flex-wrap">
         <div>
           <div className="font-semibold">Full business backup</div>

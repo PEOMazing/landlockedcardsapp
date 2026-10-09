@@ -72,6 +72,7 @@ export default async function Dashboard() {
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
+    packingRate: r.fields["Packing Rate"] ?? null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
@@ -101,11 +102,13 @@ export default async function Dashboard() {
       managerId: r.fields["Manager Rec Id"] || null,
       streamerId: r.fields["Streamer Rec Id"] || undefined,
       tips: r.fields["Tips"] || 0,
+      packingRate: r.fields["Packing Rate"] ?? null,
     })),
     (myTimeRows as any[]).map((e) => ({
       streamId: e.fields["Stream Rec Id"] || "", personId: e.fields["Person Rec Id"] || "",
       type: e.fields["Type"] || "", hours: e.fields["Hours"] || 0,
-    }))
+    })),
+    settings
   );
   const weeks = buildWeekPay(ownRows, settings, { [me.streamer.id]: rate }, {
     personHours, namesById: { [me.streamer.id]: name }, onlyPersonId: me.streamer.id,
@@ -179,7 +182,7 @@ export default async function Dashboard() {
                 </div>
                 <div className="mt-3 text-xs text-dim space-y-1">
                   <div className="flex justify-between"><span>Week net profit (tips removed, losses net)</span><span className="num">{money(w.profit)}</span></div>
-                  <div className="flex justify-between"><span>Packing pay ({w.streams.reduce((a, s) => a + s.packingHours, 0).toFixed(1)} hrs)</span><span className="num">+{money(w.packingPay)}</span></div>
+                  <div className="flex justify-between"><span>Packing pay ({w.streams.reduce((a, s) => a + s.packingHours, 0).toFixed(1)} hrs at {money(w.packingRate)}/h)</span><span className="num">+{money(w.packingPay)}</span></div>
                   <div className="flex justify-between"><span>Tips</span><span className="num">+{money(w.tips)}</span></div>
                 </div>
               </div>
@@ -213,7 +216,7 @@ export default async function Dashboard() {
                       <span className="num">{money(w.overridePay)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Packing ({w.packingHours.toFixed(1)} hrs)</span>
+                      <span>Packing ({w.packingHours.toFixed(1)} hrs at {money(w.packingRate)}/h)</span>
                       <span className="num">+{money(w.packingPay)}</span>
                     </div>
                     <div className="flex justify-between">

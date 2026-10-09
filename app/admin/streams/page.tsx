@@ -4,7 +4,7 @@ import Nav from "@/components/Nav";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { toLine } from "@/lib/calc";
+import { toLine, streamPackingCost } from "@/lib/calc";
 import { listDeletedAndPurge, GRACE_HOURS } from "@/lib/streamsTrash";
 import StreamsAdminClient, { DeletedRowT, StreamRowT } from "./StreamsAdminClient";
 
@@ -49,7 +49,14 @@ export default async function AllStreamsPage() {
   const toRow = (r: any): StreamRowT => {
     const afterFees = r.fields["After Fees"] ?? null;
     const hours = r.fields["Hours Streamed"] || 0;
-    const packing = ((r.fields["Packing Hours"] || 0) + (r.fields["Manager Packing Hours"] || 0)) * settings.packing_rate;
+    const packing = streamPackingCost(
+      {
+        packingHours: r.fields["Packing Hours"],
+        managerPackingHours: r.fields["Manager Packing Hours"],
+        packingRate: r.fields["Packing Rate"],
+      },
+      settings,
+    );
     const hourlyEst = hours * (rateById[r.fields["Streamer Rec Id"]] ?? settings.default_hourly_rate);
     const tips = r.fields["Tips"] || 0;
     const payroll = hourlyEst + packing + tips;

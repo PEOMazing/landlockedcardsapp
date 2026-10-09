@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 export default async function StreamPage({ params }: { params: { id: string } }) {
   const me = await getMe();
   if (!me) redirect("/sign-in");
+  // da-v1: the data behind this page is gated already, but there is no reason
+  // to hand a deactivated person the shell and an empty editor.
+  if (me.isDeactivated) redirect("/welcome");
   return (
     <>
       <Nav isAdmin={me.isAdmin} isManager={me.isManager} name={me.streamer?.fields?.["Name"]} />

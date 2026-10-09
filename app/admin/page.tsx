@@ -55,6 +55,7 @@ export default async function AdminDashboard() {
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
+    packingRate: r.fields["Packing Rate"] ?? null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
@@ -65,11 +66,12 @@ export default async function AdminDashboard() {
 
   // hp-v1: pay follows the person who clocked the hours (shared shows split)
   const personHours = buildPersonHours(
-    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips })),
+    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips, packingRate: r.packingRate })),
     (timeRows as any[]).map((e) => ({
       streamId: e.fields["Stream Rec Id"] || "", personId: e.fields["Person Rec Id"] || "",
       type: e.fields["Type"] || "", hours: e.fields["Hours"] || 0,
-    }))
+    })),
+    settings
   );
   const weeks = buildWeekPay(rows, settings, rateById, { personHours, namesById: nameById });
   const managerWeeks = buildManagerPay(rows, settings, overrideById, nameById, rateById);

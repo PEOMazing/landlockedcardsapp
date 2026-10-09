@@ -17,6 +17,31 @@ export default async function WelcomePage() {
     </div>
   );
 
+  // da-v1: a deactivated person lands here, because getMe switches off every
+  // role boolean and the router sends anyone without one to /welcome. This
+  // branch has to come before the onboarding form, or a former employee gets
+  // handed a signup form instead of an answer.
+  //
+  // No reason given and nothing to click. Whether somebody was let go, quit,
+  // or is briefly switched off is not this page's business, and inventing a
+  // reason here would put it in front of the wrong person.
+  if (me.isDeactivated) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-6 p-6">
+        {wordmark}
+        <div className="card p-8 max-w-md text-center space-y-3">
+          <div className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+            Access removed
+          </div>
+          <p className="text-dim text-sm">
+            This account no longer has access to the workspace. If you think that is a mistake,
+            contact the business owner.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   // no profile yet: collect it
   if (!me.streamer) {
     return (

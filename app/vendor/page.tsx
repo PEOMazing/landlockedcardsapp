@@ -6,7 +6,7 @@ import Thumb from "@/components/Thumb";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { buildWeekPay, buildManagerPay, StreamRow, toLine, weekStartOf } from "@/lib/calc";
+import { buildWeekPay, buildManagerPay, StreamRow, toLine, weekStartOf, streamPackingCost } from "@/lib/calc";
 import { toSingle } from "@/lib/singles";
 import { getSnapshots } from "@/lib/priceRefresh";
 import { HeroCard, TopMovers, TrendChart, ValueDelta } from "@/components/PortfolioPulse";
@@ -115,6 +115,7 @@ export default async function VendorDashboard() {
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
+    packingRate: r.fields["Packing Rate"] ?? null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
@@ -131,7 +132,7 @@ export default async function VendorDashboard() {
   const streamProfit30 = recent.reduce((a, r) => {
     const sold = (hitDeliveredByStream[r.id] || 0) + (r.giveaways || 0) * settings.giveaway_cost
       + (r.singlesGiveaways || 0) * settings.singles_giveaway_cost;
-    const packing = (r.packingHours + (r.managerPackingHours || 0)) * settings.packing_rate;
+    const packing = streamPackingCost(r, settings);
     return a + (r.afterFees - sold - packing - r.promotion - (r.shipAdj || 0));
   }, 0);
   const planned = rows.filter((r) => r.status !== "Complete").length;

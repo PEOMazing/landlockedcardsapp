@@ -58,6 +58,7 @@ export default async function InsightsPage() {
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
+    packingRate: r.fields["Packing Rate"] ?? null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,

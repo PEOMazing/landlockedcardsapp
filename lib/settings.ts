@@ -10,7 +10,11 @@ export type Settings = {
 };
 
 const DEFAULTS: Settings = {
-  packing_rate: 20, support_pct: 0.1, breakeven_mult: 1.5,
+  // pr-v2: the rate NEW shows get stamped with when packing is first clocked
+  // on them. Shows that already carry a Packing Rate keep it, so changing this
+  // never moves a show that has been packed. Packing pays $15 from 2026-10-05;
+  // shows up to 2026-10-04 were stamped at the old $20.
+  packing_rate: 15, support_pct: 0.1, breakeven_mult: 1.5,
   tier1_limit: 500, tier1_rate: 0.15, tier2_limit: 1000, tier2_rate: 0.2,
   tier3_rate: 0.25, default_hourly_rate: 20, hit_threshold: 10,
   giveaway_cost: 2.5,

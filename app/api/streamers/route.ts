@@ -9,7 +9,15 @@ export async function GET(req: Request) {
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!me.isManager) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const full = new URL(req.url).searchParams.get("full") === "1" && me.isAdmin;
-  const rows = await atList(T.streamers, full ? {} : { filterByFormula: "{Active} = TRUE()" });
+  // da-v1: the picker lists people a show can be assigned to, so it wants the
+  // team minus anyone deactivated. It used to filter on {Active} = TRUE(),
+  // which also hid every record that simply never had the box ticked.
+  const rows = await atList(
+    T.streamers,
+    full
+      ? {}
+      : { filterByFormula: "AND({Deactivated At} = BLANK(), OR({Role} = 'admin', {Role} = 'manager', {Role} = 'streamer'))" },
+  );
   if (!full) {
     return NextResponse.json({
       streamers: rows.map((r) => ({ id: r.id, name: r.fields["Name"] || "Streamer" })),
@@ -23,7 +31,8 @@ export async function GET(req: Request) {
       role: r.fields["Role"] || "streamer",
       hourlyRate: r.fields["Hourly Rate"] ?? null,
       overridePct: r.fields["Override %"] ?? null,
-      active: !!r.fields["Active"],
+      active: !r.fields["Deactivated At"],
+      deactivatedAt: r.fields["Deactivated At"] || null,
       linked: !!r.fields["Clerk User ID"],
     })),
   });

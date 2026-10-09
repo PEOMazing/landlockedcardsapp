@@ -4,7 +4,7 @@ import MarkPaidButton from "./MarkPaidButton";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { buildWeekPay, buildManagerPay, buildPersonHours, money, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
+import { buildWeekPay, buildManagerPay, buildPersonHours, money, packingRate, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
 import PaidToggle from "./PaidToggle";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +63,7 @@ export default async function PayrollPage() {
     hours: r.fields["Hours Streamed"] || 0,
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
+    packingRate: r.fields["Packing Rate"] ?? null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
@@ -74,13 +75,14 @@ export default async function PayrollPage() {
   // hp-v1: pay follows the person who clocked the hours, not the stream of
   // record - a shared show pays each streamer their own timeclock.
   const personHours = buildPersonHours(
-    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips })),
+    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips, packingRate: r.packingRate })),
     (timeRows as any[]).map((e) => ({
       streamId: e.fields["Stream Rec Id"] || "",
       personId: e.fields["Person Rec Id"] || "",
       type: e.fields["Type"] || "",
       hours: e.fields["Hours"] || 0,
-    }))
+    })),
+    settings
   );
   // per (stream, person) split for the per-stream breakdown lines
   const perStreamOwn: Record<string, { streaming: number; packing: number }> = {};
@@ -118,7 +120,7 @@ export default async function PayrollPage() {
     const breakdown: PayLine[] = w.streams.map((r, i) => {
       // hp-v1: each line shows THIS person's own clocked time on the stream
       const own = perStreamOwn[`${r.id}|${w.streamerId}`] || { streaming: 0, packing: 0 };
-      const packing = own.packing * settings.packing_rate;
+      const packing = own.packing * packingRate(r, settings);
       const base = w.winner === "hourly"
         ? own.streaming * w.hourlyRate
         : posTotal > 0 ? (posProfit[i] / posTotal) * w.streamPay : w.streamPay / w.streams.length;
@@ -144,7 +146,7 @@ export default async function PayrollPage() {
     push(w.weekStart, {
       name: w.streamerName,
       role: "Streamer",
-      detail: `${w.hours.toFixed(1)}h - paid by ${w.winner === "hourly" ? `hourly (${money(w.hourlyRate)}/h)` : "commission"}${w.packingPay > 0 ? ` + packing ${money(w.packingPay)}` : ""}${w.tips > 0 ? ` + tips ${money(w.tips)}` : ""}`,
+      detail: `${w.hours.toFixed(1)}h - paid by ${w.winner === "hourly" ? `hourly (${money(w.hourlyRate)}/h)` : "commission"}${w.packingPay > 0 ? ` + packing ${money(w.packingPay)} (${money(w.packingRate)}/h)` : ""}${w.tips > 0 ? ` + tips ${money(w.tips)}` : ""}`,
       amount: w.totalPay,
       breakdown,
       personId: w.streamerId,
@@ -155,7 +157,7 @@ export default async function PayrollPage() {
     const breakdown: PayLine[] = mw.streams.map((r) => {
       // packing pay only counts here if THIS person actually packed the show
       const packed = r.managerId === mw.managerId;
-      const packing = packed ? (r.managerPackingHours || 0) * settings.packing_rate : 0;
+      const packing = packed ? (r.managerPackingHours || 0) * packingRate(r, settings) : 0;
       const isEarner = r.overrideId === mw.managerId;
       const bits: string[] = [];
       if (isEarner && !r.overrideExcluded) bits.push(`profit ${money(streamProfit(r))} in override base`);
@@ -173,7 +175,7 @@ export default async function PayrollPage() {
       role: mw.earnsOverride ? "Manager" : "Packing",
       detail: [
         mw.earnsOverride ? `override ${(mw.overridePct * 100).toFixed(0)}% on ${money(mw.overrideBase)}` : "",
-        mw.packingPay > 0 ? `packing ${mw.packingHours.toFixed(1)}h on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}` : "",
+        mw.packingPay > 0 ? `packing ${mw.packingHours.toFixed(1)}h at ${money(mw.packingRate)}/h on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}` : "",
       ].filter(Boolean).join(" + ") || "manager pay",
       amount: mw.totalPay,
       breakdown,

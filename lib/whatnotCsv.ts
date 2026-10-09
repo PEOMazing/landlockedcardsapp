@@ -154,7 +154,10 @@ export function tokens(s: string): string[] {
     .split(" ")
     .flatMap((w) => ABBR[w] || [w])
     .map(singular)
-    .filter((w) => w && !FILLER.has(w));
+    // "10x", "225x": how many, not what. A set line is stored with its count
+    // in front of it ("225x Brilliant Fantasy pack"), and no listing will ever
+    // contain the word "225x", so leaving it in made that line unmatchable.
+    .filter((w) => w && !FILLER.has(w) && !/^\d{1,3}x$/.test(w));
 }
 
 // Shorthand used in listing titles, spelled out so they match product names.
@@ -386,7 +389,13 @@ export function suggestShow(shows: WhatnotShow[], stream: { date: string; stream
 // of the stream, not on the show set, so they never touch spin stats.
 
 /** "5x Darkness Ablaze Booster Packs" is 5 packs. The number up front is how
- *  many units one order takes off the shelf. */
+ *  many units one order takes off the shelf.
+ *
+ *  Only ever asked of a listing that is already known not to be a wheel spin,
+ *  because a show can be named "10x POKEMON CENTER EXCLUSIVES w/ CASES" and
+ *  that 10 is the odds on offer, not a count of anything on a shelf. The
+ *  dash cannot be used to skip the show's name here: a shelf listing has its
+ *  own ("5x Obsidian Flames Packs - Ripped Live"). */
 export function packMultiplier(title: string): number {
   const m = String(title || "").match(/^\s*(\d{1,2})\s*x\s/i);
   const n = m ? parseInt(m[1]) : 1;
@@ -416,10 +425,17 @@ export type StoreRow = {
 export function isStoreSale(s: WhatnotSale, hasFormat: boolean, wheelPrefixes?: Set<string>): boolean {
   if (s.giveaway || s.price <= 0 || isShippingLine(s.title)) return false;
   if (hasFormat) return /buy.?it.?now/i.test(s.format || "");
-  if (packMultiplier(s.title) > 1) return true;
   const pre = wheelPrefix(s.title);
+  // A prefix the show reused order after order is the wheel, and that settles
+  // it before anything is guessed from the words. It has to be asked first:
+  // the pack-count guess below was reading the "10x" out of the show's own
+  // name and calling all 199 spins shelf sales, so the wheel came back empty
+  // and the set recorded no hits at all.
+  if (pre && wheelPrefixes?.has(pre)) return false;
+  if (packMultiplier(s.title) > 1) return true;
   if (!pre) return true;
-  return wheelPrefixes ? !wheelPrefixes.has(pre) : false;
+  // a prefix nobody else used is a one-off listing, not a wheel
+  return !!wheelPrefixes;
 }
 
 const wheelPrefix = (title: string) => {
@@ -479,7 +495,24 @@ export function pickShow(shows: WhatnotShow[], stream: { title: string; date: st
 // spots sold. Store sales (Buy It Now) are left out here - they have their
 // own section.
 
-export type SetLine = { id: string; name: string; qty: number; qtyHit: number; isStore?: boolean; isGiveaway?: boolean };
+export type SetLine = {
+  id: string; name: string; qty: number; qtyHit: number;
+  isStore?: boolean; isGiveaway?: boolean;
+  /** The title this line was pasted into Whatnot as. The strongest thing to
+   *  match a sale on, because it is the same string on both ends. */
+  exportTitle?: string;
+};
+
+/** A title stripped down to the part Whatnot cannot change: letters and digits
+ *  only, upper case.
+ *
+ *  Whatnot rewrites a listing title on its way out - it uppercases it, drops
+ *  parentheses, and appends dots to tell two listings of the same thing apart,
+ *  so one set line comes back as "[Sealed] Brilliant Fantasy pack.",
+ *  "[Sealed] Brilliant Fantasy pack..", "[Sealed]. Brilliant Fantasy pack."
+ *  and so on. Folded, all of those are one string again. Emoji wrappers fall
+ *  out for free, since they are not letters or digits. */
+export const foldTitle = (s: string) => String(s || "").toUpperCase().replace(/[^A-Z0-9]+/g, "");
 
 export type SetPlan = {
   spins: number; // paid wheel orders = spots sold
@@ -515,6 +548,22 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[]): SetP
   }
   const catalog: Product[] = [...groups.keys()].map((k) => ({ id: k, name: groups.get(k)![0].name }));
 
+  // Folded pasted title -> group. The app wrote the listing title itself, so
+  // when it survives the round trip this is an identity, not a guess. First
+  // writer wins, so a line whose own name collides with another line's pasted
+  // title cannot steal it.
+  // Pasted titles are claimed before plain names, so a line's own name can
+  // never take a fold that another line was actually listed under.
+  const byFold = new Map<string, string>();
+  for (const pick of [(l: SetLine) => l.exportTitle, (l: SetLine) => l.name]) {
+    for (const [k, ls] of groups) {
+      for (const l of ls) {
+        const f = foldTitle(pick(l) || "");
+        if (f && !byFold.has(f)) byFold.set(f, k);
+      }
+    }
+  }
+
   const sold = new Map<string, number>();
   const missing = new Map<string, { title: string; sold: number; revenue: number }>();
   let count = 0;
@@ -523,6 +572,11 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[]): SetP
     count += s.qty;
     gross += s.price;
     const item = spinItem(s.title);
+    // The pasted title first, then the word match. Reading the title we wrote
+    // is exact where the word match has to infer, and it is the only thing
+    // that reliably tells two near-identical lines apart.
+    const hit = byFold.get(foldTitle(item));
+    if (hit) { sold.set(hit, (sold.get(hit) || 0) + s.qty); continue; }
     const m = matchProduct({ title: item, description: "" }, catalog);
     if (m) { sold.set(m.id, (sold.get(m.id) || 0) + s.qty); continue; }
     const k = item.toLowerCase();
