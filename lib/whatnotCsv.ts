@@ -253,7 +253,16 @@ export function matchProduct(
       if (core.length >= 2 && core.length < full.length && core.every((w) => hay.has(w))) score = core.length + 0.5;
       // "CN BRILLIANT FANTASY" is still the Brilliant Fantasy pack
       const named = full.filter((w) => !GENERIC.has(w));
-      if (!score && named.length >= 2 && named.length < full.length && named.every((w) => hay.has(w))) score = named.length - 0.5;
+      if (!score && named.length >= 2 && named.length < full.length && named.every((w) => hay.has(w))) {
+        // Dropping "booster pack" off the product leaves the set name, which
+        // every product in that set shares, so this must not fire when the
+        // listing names a different form. "Mega Evolution Pokemon Center
+        // [Mega Lucario]" was being counted as a hit on the Mega Evolution
+        // Booster Pack: both named words match, and the only thing saying
+        // otherwise is the word "center".
+        const otherForm = [...hay].some((w) => FORM.has(w) && !full.includes(w));
+        if (!otherForm) score = named.length - 0.5;
+      }
     }
     if (prefer.has(p.id) && score >= 1.5 && score > bestOnSetScore) {
       bestOnSet = p;
@@ -275,6 +284,13 @@ export function matchProduct(
 
 // Words that describe the format rather than the product.
 const GENERIC = new Set(["pack", "booster"]);
+
+/** Words that say what shape of thing a listing is selling. Two products from
+ *  one set differ by exactly this, so a form word in the listing that the
+ *  product does not have is evidence against, not noise. */
+const FORM = new Set([
+  "pack", "booster", "bundle", "box", "tin", "collection", "blister", "center", "case", "display",
+]);
 
 export type CheckRow = {
   key: string; // product id, or the listing title when nothing matched
@@ -501,6 +517,15 @@ export type SetLine = {
   /** The title this line was pasted into Whatnot as. The strongest thing to
    *  match a sale on, because it is the same string on both ends. */
   exportTitle?: string;
+  /** Other titles this line is known by: the product's Former Names and the
+   *  Whatnot listing titles somebody has mapped to it by hand before. This is
+   *  what makes a mapping stick, so the same oddly-titled listing is not
+   *  flagged again on the next show. */
+  aliases?: string[];
+  /** The Inventory record behind this line, when there is one. Mapping a
+   *  listing title to this line remembers it against this product. Blank on a
+   *  single card. */
+  productId?: string;
 };
 
 /** A title stripped down to the part Whatnot cannot change: letters and digits
@@ -521,7 +546,64 @@ export type SetPlan = {
   freeSingles: number;
   lines: { lineId: string; name: string; qty: number; was: number; now: number }[];
   over: { name: string; sold: number; onSet: number }[]; // more hit than was on the set
-  notOnSet: { title: string; sold: number; revenue: number }[]; // spins that match nothing on the set
+  /** Spins that match nothing on the set. `fold` is the handle to map one by:
+   *  pass it back in `mapTo` or `asStore` and the plan re-reads accordingly. */
+  notOnSet: { title: string; fold: string; sold: number; revenue: number }[];
+  /** What the operator sent to the store-sales section instead, ready to book:
+   *  these are out of `spins` and out of `gross` already.
+   *
+   *  `orders` keeps each Whatnot order separately even though the row shows a
+   *  total, because the store booking dedupes on order id. Aggregating them
+   *  away would let the same file, uploaded twice, book the sale twice and
+   *  take the stock off the shelf twice. */
+  toStore: {
+    title: string; fold: string; units: number; price: number; productId: string;
+    orders: { orderId: string; units: number; price: number }[];
+  }[];
+};
+
+// Slot vocabulary. A break does not list products on the wheel, it lists the
+// thing you are buying a share of: an energy type, a team, a numbered spot.
+// The same words come back show after show meaning something different each
+// time, which is exactly what must not be remembered.
+const SLOT_WORDS = new Set([
+  "energy", "psychic", "fire", "water", "grass", "lightning", "electric", "fighting",
+  "darkness", "dark", "metal", "steel", "fairy", "dragon", "colorless", "normal",
+  "slot", "spot", "pick", "team", "random", "spin", "mystery", "hit", "share", "break",
+]);
+
+/** Whether a listing title is too generic to be worth remembering.
+ *
+ *  Mapping "ENERGY" to a line is right for the show in front of you and wrong
+ *  forever after, because the next energy break uses the same word for a
+ *  different box. A title like this is still mappable; it just must not be
+ *  written onto a product as an alias, so the UI warns instead of offering it
+ *  as a good idea. */
+export function looksGeneric(title: string): boolean {
+  const t = String(title || "")
+    // [Sealed] and [0236] say nothing about which product this is
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/[^A-Za-z0-9]+/g, " ")
+    .trim();
+  if (!t) return true;
+  const words = t.split(" ").filter((w) => w && !/^\d+$/.test(w));
+  if (words.length <= 1) return true; // ENERGY, PSYCHIC, "#1", "SLOT 3"
+  return words.every((w) => SLOT_WORDS.has(w.toLowerCase())); // PSYCHIC ENERGY
+}
+
+/** What somebody decided about the titles the matcher could not place.
+ *
+ *  Both are keyed by foldTitle, because that is the only form of the listing
+ *  title that is stable across uploads: Whatnot's trailing dots and
+ *  uppercasing differ run to run, so storing the raw string would make a
+ *  mapping stop working on the next report. */
+export type SetDecisions = {
+  /** folded listing title -> the set line's id it really is */
+  mapTo?: Record<string, string>;
+  /** folded listing title -> the Inventory product it sold off the shelf as.
+   *  These come out of spins and out of spin gross: a shelf sale was never a
+   *  wheel spin, so leaving it in would overstate spots sold. */
+  asStore?: Record<string, string>;
 };
 
 /** "BANGERS ALL NIGHT!! - 🔥ZARUDE 2-PACK BLISTER🔥" -> "🔥ZARUDE 2-PACK BLISTER🔥" */
@@ -533,7 +615,7 @@ export const spinItem = (title: string) => {
 
 const lineKey = (name: string) => String(name || "").replace(/\s*\(store\)\s*$/i, "").toLowerCase().replace(/\s+/g, " ").trim();
 
-export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[]): SetPlan {
+export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[], decisions: SetDecisions = {}): SetPlan {
   const hasFormat = sales.some((s) => s.format);
   const wheels = hasFormat ? undefined : wheelPrefixesIn(sales);
   const g = splitGiveaways(sales);
@@ -554,36 +636,67 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[]): SetP
   // title cannot steal it.
   // Pasted titles are claimed before plain names, so a line's own name can
   // never take a fold that another line was actually listed under.
+  // Aliases are claimed last of the automatic sources: a title somebody mapped
+  // by hand should not be able to take a fold that a line was really listed
+  // under, but it beats having to map the same listing again every show.
   const byFold = new Map<string, string>();
-  for (const pick of [(l: SetLine) => l.exportTitle, (l: SetLine) => l.name]) {
+  const sources: ((l: SetLine) => string | string[] | undefined)[] = [
+    (l) => l.exportTitle, (l) => l.name, (l) => l.aliases,
+  ];
+  for (const pick of sources) {
     for (const [k, ls] of groups) {
       for (const l of ls) {
-        const f = foldTitle(pick(l) || "");
-        if (f && !byFold.has(f)) byFold.set(f, k);
+        const got = pick(l);
+        for (const t of Array.isArray(got) ? got : [got]) {
+          const f = foldTitle(t || "");
+          if (f && !byFold.has(f)) byFold.set(f, k);
+        }
       }
     }
   }
 
+  // A decision made in the UI outranks everything above. mapTo names a line
+  // id; the line may be one of several sharing a name, so it resolves to that
+  // line's group and the hits spread over the pool as usual.
+  const groupOfLine = new Map<string, string>();
+  for (const [k, ls] of groups) for (const l of ls) groupOfLine.set(l.id, k);
+  for (const [fold, lineId] of Object.entries(decisions.mapTo || {})) {
+    const k = groupOfLine.get(lineId);
+    if (fold && k) byFold.set(fold, k);
+  }
+  const asStore = decisions.asStore || {};
+
   const sold = new Map<string, number>();
-  const missing = new Map<string, { title: string; sold: number; revenue: number }>();
+  const missing = new Map<string, { title: string; fold: string; sold: number; revenue: number }>();
+  const store = new Map<string, SetPlan["toStore"][number]>();
   let count = 0;
   let gross = 0;
   for (const s of spins) {
+    const item = spinItem(s.title);
+    const fold = foldTitle(item);
+    // Sent to the shelf: not a spin at all, so it is kept out of both the
+    // count and the gross before either is touched.
+    if (asStore[fold]) {
+      const cur = store.get(fold) || { title: item, fold, units: 0, price: 0, productId: asStore[fold], orders: [] };
+      cur.units += s.qty;
+      cur.price += s.price;
+      cur.orders.push({ orderId: s.orderId || "", units: s.qty, price: s.price });
+      store.set(fold, cur);
+      continue;
+    }
     count += s.qty;
     gross += s.price;
-    const item = spinItem(s.title);
     // The pasted title first, then the word match. Reading the title we wrote
     // is exact where the word match has to infer, and it is the only thing
     // that reliably tells two near-identical lines apart.
-    const hit = byFold.get(foldTitle(item));
+    const hit = byFold.get(fold);
     if (hit) { sold.set(hit, (sold.get(hit) || 0) + s.qty); continue; }
     const m = matchProduct({ title: item, description: "" }, catalog);
     if (m) { sold.set(m.id, (sold.get(m.id) || 0) + s.qty); continue; }
-    const k = item.toLowerCase();
-    const cur = missing.get(k) || { title: item, sold: 0, revenue: 0 };
+    const cur = missing.get(fold) || { title: item, fold, sold: 0, revenue: 0 };
     cur.sold += s.qty;
     cur.revenue += s.price;
-    missing.set(k, cur);
+    missing.set(fold, cur);
   }
 
   const lines: SetPlan["lines"] = [];
@@ -606,5 +719,8 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[]): SetP
     lines,
     over,
     notOnSet: [...missing.values()].sort((a, b) => b.sold - a.sold),
+    toStore: [...store.values()]
+      .map((r) => ({ ...r, price: Math.round(r.price * 100) / 100 }))
+      .sort((a, b) => b.units - a.units),
   };
 }

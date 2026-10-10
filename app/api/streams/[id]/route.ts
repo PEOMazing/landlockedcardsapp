@@ -43,7 +43,7 @@ async function histStreams(): Promise<any[]> {
 // and the cost of being a minute stale is a thumbnail or a category label
 // lagging behind an edit made in another tab.
 const PRODUCT_TTL = 60 * 1000;
-const PRODUCT_FIELDS = ["Category", "TCGplayer URL", "Image URL"];
+const PRODUCT_FIELDS = ["Category", "TCGplayer URL", "Image URL", "Former Names", "Whatnot Names"];
 let productCache: { at: number; rows: any[] } | undefined;
 
 async function productLookupRows(): Promise<any[]> {
@@ -83,10 +83,19 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const categoryByProduct: Record<string, string> = {};
   const tcgByProduct: Record<string, string> = {};
   const imageByProduct: Record<string, string> = {};
+  // Other titles a product answers to: names it used to have, plus Whatnot
+  // listing titles somebody mapped to it by hand on an earlier show. The
+  // report matcher reads these, which is what makes a mapping stick.
+  const aliasesByProduct: Record<string, string[]> = {};
   for (const inv of inventoryRows) {
     categoryByProduct[inv.id] = inv.fields["Category"]?.name || inv.fields["Category"] || "";
     if (inv.fields["TCGplayer URL"]) tcgByProduct[inv.id] = inv.fields["TCGplayer URL"];
     if (inv.fields["Image URL"]) imageByProduct[inv.id] = inv.fields["Image URL"];
+    const alias = [
+      ...String(inv.fields["Former Names"] || "").split("\n"),
+      ...String(inv.fields["Whatnot Names"] || "").split("\n"),
+    ].map((s: string) => s.trim()).filter(Boolean);
+    if (alias.length) aliasesByProduct[inv.id] = alias;
   }
   // Card art for single-card lines, which keep it on the Singles record rather
   // than on an Inventory product. Without this every card on a wheel came back
@@ -223,6 +232,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       soldPrice: lineRows[i].fields["Sold Price"] || 0,
       orderId: lineRows[i].fields["Whatnot Order Id"] || "",
       productId: lineRows[i].fields["Product"]?.[0] || "",
+      aliases: aliasesByProduct[lineRows[i].fields["Product"]?.[0]] || [],
       isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
       tcgUrl: tcgByProduct[lineRows[i].fields["Product"]?.[0]] || "",
       image:

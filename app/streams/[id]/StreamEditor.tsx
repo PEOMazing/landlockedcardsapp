@@ -1238,7 +1238,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         streamDate={stream.date || ""}
         streamerName={stream.streamerName || ""}
         closed={!!stream.itemsReturned}
-        lines={(lines as any[]).map((l) => ({ id: l.id, name: l.name, qty: l.qty, qtyHit: l.qtyHit, isStore: !!l.isStore, isGiveaway: !!l.isGiveaway, exportTitle: l.exportTitle }))}
+        lines={(lines as any[]).map((l) => ({ id: l.id, name: l.name, qty: l.qty, qtyHit: l.qtyHit, isStore: !!l.isStore, isGiveaway: !!l.isGiveaway, exportTitle: l.exportTitle, aliases: l.aliases, productId: l.productId }))}
         current={{ spotsSold: stream.spotsSold ?? null, giveaways: stream.giveaways ?? null, singlesGiveaways: stream.singlesGiveaways ?? null }}
         onFile={setWhatnotFile}
         onApplied={load}

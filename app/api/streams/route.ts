@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { atList, atCreate, atGet, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
+import { defaultManagerId } from "@/lib/defaultManager";
 
 export async function GET() {
   const me = await getMe();
@@ -68,6 +69,22 @@ export async function POST(req: Request) {
   }
   if (me.isAdmin && b.overrideRecId !== undefined) {
     fields["Override Rec Id"] = b.overrideRecId || "";
+  }
+  // dm-v1: nobody named a manager, so fall back to whoever is ticked Default
+  // Manager on the Streamers table. Shows were being created with no manager
+  // of record at all, which left packing hours with nowhere to land and no
+  // one holding the show in the admin lists.
+  //
+  // Deliberately does not set Override Rec Id. The default is the owner, and
+  // an owner taking an override on his own profit is a number moving from one
+  // of his pockets to the other, which would only add a phantom manager row
+  // to payroll. An explicit manager assignment above still sets it.
+  if (!fields["Manager Rec Id"]) {
+    const fallback = await defaultManagerId();
+    if (fallback) {
+      fields["Manager"] = [fallback];
+      fields["Manager Rec Id"] = fallback;
+    }
   }
   const rec = await atCreate(T.streams, fields);
   return NextResponse.json({ id: rec.id });

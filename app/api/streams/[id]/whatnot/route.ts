@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
+import { rememberWhatnotName } from "@/lib/storeSales";
 
 // Fill in a stream's show set from a Whatnot show report. The report is read
 // in the browser and turned into hit counts per set line (planSetFromShow);
@@ -9,11 +10,17 @@ import { getMe, ownsStream } from "@/lib/auth";
 //
 // Once items have been returned the unhit stock is already back on the shelf,
 // so hits are locked - same rule as marking hits by hand.
+// `remember` is how a mapping sticks. When somebody tells the sync that an
+// unrecognised listing title is really a given set line, that title is written
+// onto the line's Inventory product as a Whatnot Name, and the matcher reads
+// those on every later show. Without it the same odd title has to be mapped
+// again every single week, which was the complaint.
 type Body = {
   hits?: { lineId: string; qtyHit: number }[];
   spotsSold?: number;
   giveaways?: number;
   singlesGiveaways?: number;
+  remember?: { productId: string; listing: string }[];
 };
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -49,5 +56,17 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (b.singlesGiveaways !== undefined) fields["Singles Giveaways Run"] = n(b.singlesGiveaways);
   if (Object.keys(fields).length) await atUpdate(T.streams, params.id, fields);
 
-  return NextResponse.json({ ok: true, changed, errors });
+  // Learn the titles. Never fatal: the hits above are the point of the call,
+  // and a show whose hits landed but whose alias did not is merely one that
+  // has to be mapped again, not one that is wrong.
+  let learned = 0;
+  for (const r of (b.remember || []).slice(0, 100)) {
+    if (!isRecId(String(r.productId)) || !String(r.listing || "").trim()) continue;
+    const product = await atGet(T.inventory, r.productId).catch(() => null);
+    if (!product) continue;
+    await rememberWhatnotName(product, String(r.listing));
+    learned++;
+  }
+
+  return NextResponse.json({ ok: true, changed, learned, errors });
 }

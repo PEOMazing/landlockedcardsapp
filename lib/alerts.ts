@@ -69,13 +69,27 @@ export async function recordAlertOnceADay(
   return true;
 }
 
+/** Tell someone stock moved, and say what moved it.
+ *
+ *  Every one of these used to open with "Whatnot sync:" and bury the real
+ *  cause in brackets at the end, which was wrong on all of them: none of the
+ *  callers is a Whatnot sync. They are set builds, store sales, returns and
+ *  hand corrections, and which one it was is the first thing you want to know
+ *  when a count looks wrong. So the cause leads. */
+export function stockAlertTitle(
+  items: { name: string; qtyNow: number; delta: number }[],
+  source: string,
+): string {
+  const what = String(source || "").trim() || "stock change";
+  const lead = what.charAt(0).toUpperCase() + what.slice(1);
+  if (items.length !== 1) return `${lead}: ${items.length} listings changed`;
+  const name = String(items[0]?.name || "").trim() || "an item";
+  return `${lead}: ${name} now ${Number(items[0]?.qtyNow) || 0} on hand`;
+}
+
 export async function stockAlert(items: { name: string; qtyNow: number; delta: number }[], source: string) {
   if (items.length === 0) return;
-  const title =
-    items.length === 1
-      ? `Whatnot sync: ${items[0].name} now ${items[0].qtyNow} on hand (${source})`
-      : `Whatnot sync: ${items.length} listings changed (${source})`;
-  await recordAlert("stock", title, { source, items });
+  await recordAlert("stock", stockAlertTitle(items, source), { source, items });
 }
 
 export async function openAlerts(days = 3) {

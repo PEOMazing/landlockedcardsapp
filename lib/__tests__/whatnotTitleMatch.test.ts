@@ -213,6 +213,28 @@ describe("the pasted title beats the word match", () => {
     assert.equal(plan.lines.find((l) => l.lineId === "l1")!.now, 0);
   });
 
+  it("does not hand one set's booster pack the spins for another product in it", () => {
+    // Mega Evolution Pokemon Center [Mega Lucario] is a Pokemon Center box,
+    // not the Mega Evolution Booster Pack. The word match drops "booster
+    // pack" off the product name to cope with short listings, which leaves
+    // just the set name, and both of these carry it. Two of these were being
+    // counted as hits on a set line that nothing landed on.
+    const set = [line("Mega Evolution Booster Pack", 3)];
+    const plan = planSetFromShow(withWheel(
+      "\u{1F525}[Sealed] Mega Evolution Pokemon Center [Mega Lucario]\u{1F525}",
+      "\u{1F525}[Sealed] Mega Evolution Pokemon Center  [Mega Gardevoir]\u{1F525}",
+    ), set);
+    assert.equal(plan.lines[0].now, 0);
+    assert.equal(plan.notOnSet.reduce((a, m) => a + m.sold, 0), 2 + 3, "both, plus the padding");
+  });
+
+  it("still matches a listing that only shortens the name", () => {
+    // the reason the relaxation exists, and it has to keep working
+    const set: SetLine[] = [{ id: "l1", name: "Brilliant Fantasy pack", qty: 10, qtyHit: 0 }];
+    const plan = planSetFromShow(withWheel("CN BRILLIANT FANTASY"), set);
+    assert.equal(plan.lines[0].now, 1);
+  });
+
   it("reports more hit than was on the set rather than hiding it", () => {
     const set = [line("Brilliant Fantasy pack", 2)];
     const plan = planSetFromShow(
