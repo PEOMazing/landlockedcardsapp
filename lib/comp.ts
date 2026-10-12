@@ -64,29 +64,42 @@ export const EST_MARKER = "est.";
 export const SOLDS_MARKER = "solds";
 export const LISTING_MARKER = "lowest";
 
-export function soldsCompSource(cond: string, count: number, range = ""): string {
-  return `TCGplayer ${SOLDS_MARKER} (${cond}, median of ${count} in last 30d${range ? `, ${range}` : ""})`;
+/** How a sold-derived comp is written down.
+ *
+ *  `printing` leads the bracket for the same reason the listing source names
+ *  it: a Normal and a Reverse Holofoil share one productId, so "which card
+ *  did this price come from" is a real question. Leaving it off is what let a
+ *  Reverse Metapod carry a comp built from Normal sales without anything on
+ *  the record saying so. Optional, so every existing caller and its tests
+ *  read exactly as before. */
+export function condLabel(cond: string, printing = ""): string {
+  const p = String(printing || "").trim();
+  return p ? `${p} ${cond}` : cond;
+}
+
+export function soldsCompSource(cond: string, count: number, range = "", printing = ""): string {
+  return `TCGplayer ${SOLDS_MARKER} (${condLabel(cond, printing)}, median of ${count} in last 30d${range ? `, ${range}` : ""})`;
 }
 
 // Stale but sales-derived, so it keeps the solds marker: what changed is
 // which sale answered, not where the number came from.
-export function lastSaleCompSource(cond: string, date: string): string {
-  return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date}, none in 30d)`;
+export function lastSaleCompSource(cond: string, date: string, printing = ""): string {
+  return `TCGplayer ${SOLDS_MARKER} (${condLabel(cond, printing)}, last sale ${date}, none in 30d)`;
 }
 
 // The newest sale beat the median and set the price. Says both numbers,
 // because a comp above every other sale in the window is the one a person is
 // most likely to want to check.
-export function risingSaleCompSource(cond: string, date: string, median: number, count: number): string {
-  return `TCGplayer ${SOLDS_MARKER} (${cond}, last sale ${date} above the ${money(median)} median of ${count} in last 30d)`;
+export function risingSaleCompSource(cond: string, date: string, median: number, count: number, printing = ""): string {
+  return `TCGplayer ${SOLDS_MARKER} (${condLabel(cond, printing)}, last sale ${date} above the ${money(median)} median of ${count} in last 30d)`;
 }
 
 // A recent sale was thrown out for disagreeing with every older one. Names the
 // price that was rejected as well as the one that won, because this is a comp
 // that deliberately ignores the most recent thing that happened to the card
 // and anyone looking at it deserves to see that written down.
-export function outlierCompSource(cond: string, dropped: number, median: number, peers: number): string {
-  return `TCGplayer ${SOLDS_MARKER} (${cond}, ${money(dropped)} sale set aside as an outlier, ${money(median)} median of ${peers} earlier sales)`;
+export function outlierCompSource(cond: string, dropped: number, median: number, peers: number, printing = ""): string {
+  return `TCGplayer ${SOLDS_MARKER} (${condLabel(cond, printing)}, ${money(dropped)} sale set aside as an outlier, ${money(median)} median of ${peers} earlier sales)`;
 }
 
 export function listingCompSource(cond: string, printing: string, count: number, note = ""): string {
@@ -413,9 +426,18 @@ export type RecompOpts = {
    *  scanned at the table, a card going onto a stream - where "live" has to
    *  actually mean live. The background rotation leaves this off. */
   live?: boolean;
+  /** Re-comp even a locked card. Only for somebody deliberately asking for it
+   *  from the card page, never for the background rotation. */
+  force?: boolean;
 };
 
 export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promise<CompResult> {
+  // Belt and braces behind the query filter. Every other path into this
+  // function - the scan page, to-stream, a quote - would otherwise overwrite
+  // a price somebody set by hand on purpose.
+  if (rec.fields["Comp Locked"] && !opts.force) {
+    return { ok: false, reason: "comp is locked - untick Comp Locked to let the reprice have it back" };
+  }
   const cond = String(rec.fields["Condition"] || "Raw");
   const mult = CONDITION_MULT[cond];
   if (mult === undefined) {
@@ -454,7 +476,7 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
   // Both condition-specific lookups run together: the floor is wanted for
   // display whether or not it ends up being the comp.
   const [sold, floor] = await Promise.all([
-    parsed ? conditionSoldComp(parsed.productId, cond) : Promise.resolve(null),
+    parsed ? conditionSoldComp(parsed.productId, cond, printing) : Promise.resolve(null),
     parsed ? conditionFloor(parsed.productId, printing, cond, opts.live === true) : Promise.resolve(null),
   ]);
 
@@ -493,14 +515,14 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
       floorLift = pick.priceFromSales > 0 ? pick.price / pick.priceFromSales : 0;
     } else if (pick.demotedOutlier) {
       fields["Comp Source"] = outlierCompSource(
-        cond, pick.droppedPrice || 0, pick.peerMedian || 0, pick.peerCount || 0,
+        cond, pick.droppedPrice || 0, pick.peerMedian || 0, pick.peerCount || 0, printing,
       );
     } else if (pick.staleSales) {
-      fields["Comp Source"] = lastSaleCompSource(cond, pick.latestDate);
+      fields["Comp Source"] = lastSaleCompSource(cond, pick.latestDate, printing);
     } else if (pick.usedLastSale) {
-      fields["Comp Source"] = risingSaleCompSource(cond, pick.latestDate, pick.priceFromSales, pick.freshCount);
+      fields["Comp Source"] = risingSaleCompSource(cond, pick.latestDate, pick.priceFromSales, pick.freshCount, printing);
     } else {
-      fields["Comp Source"] = soldsCompSource(cond, pick.freshCount, pick.freshRange);
+      fields["Comp Source"] = soldsCompSource(cond, pick.freshCount, pick.freshRange, printing);
     }
     fields["Comp Detail"] = JSON.stringify(sold.detail);
   } else if (floor) {

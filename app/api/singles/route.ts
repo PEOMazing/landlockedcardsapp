@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atList, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
-import { conditionSoldComp, getTcgcsvCard, tcgProductIdFromCardId } from "@/lib/tcgcsvCards";
+import { conditionSoldComp, getTcgcsvCard, subTypeForVariant, tcgProductIdFromCardId } from "@/lib/tcgcsvCards";
 import { toSingle } from "@/lib/singles";
 import { claimSlot, slotFields } from "@/lib/slots";
 import { roundUpDollar } from "@/lib/salesWindow";
@@ -114,7 +114,10 @@ export async function POST(req: Request) {
     if (mult !== undefined) {
       // best comp: median of recent TCGplayer sales in this exact condition
       const pid = tcgProductIdFromCardId(String(b.cardId));
-      const sold = pid ? await conditionSoldComp(pid, cond) : null;
+      // the printing has to go in, or a Reverse card gets comped off the
+      // Normal printing's sales - they share a productId
+      const printing = subTypeForVariant(String(fields["Variant"] || ""), String(fields["Rarity"] || ""));
+      const sold = pid ? await conditionSoldComp(pid, cond, printing) : null;
       if (sold) {
         // whole dollars on every comp the tool works out, same as the rolling
         // reprice - a card entered at $94.24 and stickered before the next

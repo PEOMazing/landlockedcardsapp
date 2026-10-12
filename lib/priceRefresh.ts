@@ -250,9 +250,17 @@ export async function refreshSingleComps(cap = 50): Promise<{ updated: number; c
     // rotation that runs four times an hour - every card done today sorts
     // equal and the job never reaches the back of the collection. Empty sorts
     // first in Airtable, so never-checked cards lead, which is what we want.
+    //
+    // Comp Locked cards are left out at the query, not skipped afterwards, so
+    // a hand-priced card does not eat a slot in the batch every rotation.
+    // These are the cards the free feeds price badly - a thin market where one
+    // odd sale swings the number, or something valuable enough to be worth
+    // pricing off eBay solds. Leafeon LV.X is the case: one TCGplayer sale at
+    // $745 against a real market near $1,900, and the reprice would have
+    // walked a hand-set price back within the hour.
     const raws = RAW_CONDITIONS.map((c) => `{Condition} = '${c}'`).join(", ");
     rows = await atList(T.singles, {
-      filterByFormula: `AND({Status} = 'In Stock', OR(${raws}))`,
+      filterByFormula: `AND({Status} = 'In Stock', NOT({Comp Locked}), OR(${raws}))`,
       "sort[0][field]": "Comp Checked",
       "sort[0][direction]": "asc",
       maxRecords: String(cap),

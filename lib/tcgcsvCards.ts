@@ -454,9 +454,44 @@ const MAX_SALE_AGE_DAYS = 90; // older sales are too stale to anchor a comp
 
 export type SoldSale = { date: string; price: number; qty: number };
 
+/** The printing a sold row is for, or "" when the row does not say.
+ *
+ *  TCGplayer has moved this field around and it is not in their docs, so every
+ *  name it has been seen under is checked rather than betting on one. */
+export function saleVariant(x: any): string {
+  for (const k of ["variant", "variantName", "subTypeName", "printing", "productConditionName"]) {
+    const v = String(x?.[k] || "").trim();
+    if (v) return v;
+  }
+  return "";
+}
+
+/** Keep only the sales for the printing we actually hold.
+ *
+ *  A Normal and a Reverse Holofoil share one productId, so an unfiltered sold
+ *  list mixes two cards that trade at completely different prices. On HS
+ *  Metapod that meant four regular sales around $2.76 drowning the one real
+ *  Reverse sale at $20, and the Reverse sale then being thrown out as an
+ *  outlier - a $3 comp on a card whose own printing was listing at $19.
+ *
+ *  If not one row carries a printing, the shape has changed and filtering
+ *  would silently discard every sale, so the rows are passed through. Wrong
+ *  in the old way beats pricing nothing at all, and the health canary is what
+ *  is meant to catch that case. */
+export function salesForPrinting(rows: any[], printing: string): any[] {
+  const want = subSlug(printing || "");
+  if (!want) return rows;
+  if (!rows.some((x) => saleVariant(x))) return rows;
+  return rows.filter((x) => {
+    const got = saleVariant(x);
+    return got ? subSlug(got) === want : false;
+  });
+}
+
 export async function conditionSoldComp(
   productId: number,
-  condition: string
+  condition: string,
+  printing = ""
 ): Promise<{ price: number; sales: number; detail: SoldSale[] } | null> {
   const condId = CONDITION_IDS[condition];
   if (!condId) return null;
@@ -470,12 +505,15 @@ export async function conditionSoldComp(
     if (!res.ok) return null;
     const d = await res.json();
     const cutoff = Date.now() - MAX_SALE_AGE_DAYS * 24 * 60 * 60 * 1000;
-    const recent: SoldSale[] = (d?.data || [])
+    const recent: SoldSale[] = salesForPrinting(d?.data || [], printing)
       .filter((x: any) =>
         typeof x.purchasePrice === "number" && x.purchasePrice > 0 &&
         x.orderDate && new Date(x.orderDate).getTime() >= cutoff)
       .slice(0, 10)
       .map((x: any) => ({ date: String(x.orderDate).slice(0, 10), price: x.purchasePrice, qty: x.quantity || 1 }));
+    // No sale of this printing is not the same as no sale. Returning null
+    // sends the comp to the live floor, which IS printing-aware, instead of
+    // to the other printing's sales.
     if (recent.length === 0) return null;
     const sorted = recent.map((x) => x.price).sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
