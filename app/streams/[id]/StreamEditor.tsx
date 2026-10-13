@@ -676,6 +676,9 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const packingPay = data?.pay?.packingCost ?? (data?.pay
     ? ((stream?.packingHours || 0) + (stream?.managerPackingHours || 0)) * data.pay.packingRate
     : 0);
+  // pk-v3: set means this show is on the flat fee rather than the clock, which
+  // changes what the page should be asking for and what it should be showing.
+  const flatPackingFee = Number(stream?.packingFee) || 0;
   // streaming labor at the streamer's hourly rate. Weekly settlement pays the
   // higher of hourly or commission, so this is the floor of true labor cost.
   const streamPay = data?.pay?.hourlyRate ? (stream?.hours || 0) * data.pay.hourlyRate : 0;
@@ -938,7 +941,14 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               <span className="num">-{$(streamPay)}</span>
             </div>
             <div className="flex justify-between gap-6">
-              <span className="text-dim">Packing time</span>
+              {/* pk-v3: a flat-fee show has no packing time to report, and
+                  calling the line "time" on one invites somebody to go looking
+                  for hours that were never meant to exist. */}
+              <span className="text-dim">
+                {flatPackingFee > 0
+                  ? `Packing fee${stream?.managerName ? ` (${stream.managerName})` : " (nobody assigned)"}`
+                  : "Packing time"}
+              </span>
               <span className="num">-{$(packingPay)}</span>
             </div>
             <div className="flex justify-between gap-6">
@@ -1001,6 +1011,13 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           Stream time: {stream.hours ? `${stream.hours}h streamed` : "no hours logged"}
           {(stream.packingHours || 0) > 0 && ` + ${stream.packingHours}h packing`}
           {(stream.managerPackingHours || 0) > 0 && ` + ${stream.managerPackingHours}h manager packing`}
+          {/* pk-v3: packing is a flat fee on this show, so say who is owed it
+              rather than leaving the line looking like nobody packed it. */}
+          {flatPackingFee > 0 && (
+            stream.managerName
+              ? ` - packing is a flat ${$(flatPackingFee)} to ${stream.managerName}`
+              : ` - packing is a flat ${$(flatPackingFee)}, nobody assigned yet`
+          )}
         </div>
       </section>
 
@@ -1014,6 +1031,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         streamerPacking={stream.packingHours || 0}
         managerPacking={stream.managerPackingHours || 0}
         hasManager={!!stream.managerName}
+        packingFee={flatPackingFee}
+        packerName={stream.managerName || ""}
         canAssign={canManage}
         people={(team.length ? team : [
           stream.streamerRecId ? { id: stream.streamerRecId, name: stream.streamerName || "Streamer" } : null,

@@ -201,6 +201,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       // commission on that profit has already left the bank.
       paidOut: !!stream.fields["Paid Out"],
       managerPackingHours: stream.fields["Manager Packing Hours"] ?? null,
+      // pk-v3: set means this show pays its packer a flat fee and the hours
+      // above are history. The editor reads it to decide which of the two it
+      // should even show you.
+      packingFee: stream.fields["Packing Fee"] ?? null,
       managerName,
       streamerName,
       streamerRecId,
@@ -309,6 +313,10 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
           packingHours: stream.fields["Packing Hours"],
           managerPackingHours: stream.fields["Manager Packing Hours"],
           packingRate: stream.fields["Packing Rate"],
+          // pk-v3: both of these, or a flat-fee show prices itself by the hour
+          // here and disagrees with the payroll page about the same show
+          packingFee: stream.fields["Packing Fee"],
+          managerId: managerId || null,
         },
         settings,
       ),
@@ -330,6 +338,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const stream = await atGet(T.streams, params.id);
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const b = await req.json();
+  // pk-v3: needed to stamp the packing fee when a packer is assigned below
+  const settings = await getSettings();
   const fields: Record<string, any> = {};
   // rename or move a show - managers only
   if (b.title !== undefined || b.date !== undefined) {
@@ -376,6 +386,23 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (!isRecId(String(b.managerId))) return NextResponse.json({ error: "bad person id" }, { status: 400 });
       try { await atGet(T.streamers, b.managerId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
       fields["Manager Rec Id"] = b.managerId;
+
+      // pk-v3: assigning the packer is what puts a show on the flat fee, so the
+      // fee is stamped here, from settings, at the moment of assignment.
+      //
+      // Three things this deliberately does NOT do. It does not re-stamp a show
+      // that already carries a fee, so reassigning the packer on a show packed
+      // last month still pays last month's fee. It does not touch a show that
+      // has packing hours clocked on it, because that show was paid by the hour
+      // and quietly moving it to a fee would rewrite settled pay. And it does
+      // not stamp at stream creation, because a show nobody has been assigned
+      // has not been packed and should not read as a $35 cost.
+      const already = Number(stream.fields["Packing Fee"]) > 0;
+      const hourly = (Number(stream.fields["Packing Hours"]) || 0) +
+        (Number(stream.fields["Manager Packing Hours"]) || 0) > 0;
+      if (!already && !hourly && settings.packing_fee > 0) {
+        fields["Packing Fee"] = settings.packing_fee;
+      }
     }
   }
   // who earns the override on this show - ADMIN ONLY, separate from packaging above

@@ -1,7 +1,7 @@
 import { atList, T } from "./airtable";
 
 export type Settings = {
-  packing_rate: number; support_pct: number; breakeven_mult: number;
+  packing_rate: number; packing_fee: number; support_pct: number; breakeven_mult: number;
   tier1_limit: number; tier1_rate: number; tier2_limit: number; tier2_rate: number;
   tier3_rate: number; default_hourly_rate: number; hit_threshold: number;
   giveaway_cost: number;
@@ -14,7 +14,14 @@ const DEFAULTS: Settings = {
   // on them. Shows that already carry a Packing Rate keep it, so changing this
   // never moves a show that has been packed. Packing pays $15 from 2026-10-05;
   // shows up to 2026-10-04 were stamped at the old $20.
-  packing_rate: 15, support_pct: 0.1, breakeven_mult: 1.5,
+  packing_rate: 15,
+  // pk-v3: packing is a flat fee per show from 2026-10-12 - one person is
+  // assigned the show and gets this whether it was six orders or sixty. The
+  // hourly rate above is kept only to price shows packed before the switch.
+  // Like packing_rate, this is the number a show gets STAMPED with when a
+  // packer is assigned, so changing it here never moves a show already packed.
+  packing_fee: 35,
+  support_pct: 0.1, breakeven_mult: 1.5,
   tier1_limit: 500, tier1_rate: 0.15, tier2_limit: 1000, tier2_rate: 0.2,
   tier3_rate: 0.25, default_hourly_rate: 20, hit_threshold: 10,
   giveaway_cost: 2.5,

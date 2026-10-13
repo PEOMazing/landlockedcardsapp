@@ -18,6 +18,10 @@ export default function Timeclock({
   streamerPacking,
   managerPacking,
   hasManager,
+  // pk-v3: the flat packing fee this show pays, or 0 if it is still hourly.
+  // Set means there are no packing hours to clock here at all.
+  packingFee = 0,
+  packerName = "",
   people = [],
   canAssign = false,
 }: {
@@ -29,9 +33,14 @@ export default function Timeclock({
   streamerPacking: number;
   managerPacking: number;
   hasManager: boolean;
+  packingFee?: number;
+  packerName?: string;
   people?: { id: string; name: string }[];
   canAssign?: boolean;
 }) {
+  const flatPacking = Number(packingFee) > 0;
+  // On a flat-fee show Streaming is the only kind of time there is, so the
+  // selector must not be able to sit on Packing even for a moment.
   const [type, setType] = useState<"Streaming" | "Packing">("Streaming");
   const [who, setWho] = useState("");
   const [date, setDate] = useState(streamDate || new Date().toISOString().slice(0, 10));
@@ -73,11 +82,21 @@ export default function Timeclock({
         <div className="text-xs text-dim num">
           Streamed <span className="text-body font-semibold">{hoursStreamed.toFixed(2)} hrs</span>
           <span className="mx-2">|</span>
-          Packing <span className="text-body font-semibold">{streamerPacking.toFixed(2)} hrs</span>
-          {hasManager && (
+          {flatPacking ? (
             <>
-              <span className="mx-2">|</span>
-              Manager packing <span className="text-body font-semibold">{managerPacking.toFixed(2)} hrs</span>
+              Packing <span className="text-body font-semibold">
+                flat ${Number(packingFee).toFixed(2)}{packerName ? ` to ${packerName}` : ", unassigned"}
+              </span>
+            </>
+          ) : (
+            <>
+              Packing <span className="text-body font-semibold">{streamerPacking.toFixed(2)} hrs</span>
+              {hasManager && (
+                <>
+                  <span className="mx-2">|</span>
+                  Manager packing <span className="text-body font-semibold">{managerPacking.toFixed(2)} hrs</span>
+                </>
+              )}
             </>
           )}
         </div>
@@ -99,7 +118,10 @@ export default function Timeclock({
           <label className="label">Type</label>
           <select className="input mt-1" value={type} onChange={(e) => setType(e.target.value as any)}>
             <option>Streaming</option>
-            <option>Packing</option>
+            {/* pk-v3: no Packing option on a flat-fee show. The endpoint
+                refuses it too, but an option you can pick and then be told off
+                for picking is worse than one that was never there. */}
+            {!flatPacking && <option>Packing</option>}
           </select>
         </div>
         <div>

@@ -14,7 +14,7 @@ import type { Settings } from "../settings";
 // show, and these tests are written against that sentence.
 
 const S: Settings = {
-  packing_rate: 15, support_pct: 0.1, breakeven_mult: 1.5,
+  packing_rate: 15, packing_fee: 35, support_pct: 0.1, breakeven_mult: 1.5,
   tier1_limit: 500, tier1_rate: 0.15, tier2_limit: 1000, tier2_rate: 0.2,
   tier3_rate: 0.25, default_hourly_rate: 20, hit_threshold: 10,
   giveaway_cost: 3, singles_giveaway_cost: 1, commission_pct: 0.2,

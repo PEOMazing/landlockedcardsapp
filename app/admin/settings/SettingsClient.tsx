@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 
 const FIELDS: { key: string; label: string; hint: string; pct?: boolean }[] = [
   { key: "default_hourly_rate", label: "Default hourly rate ($/hr)", hint: "Used unless a streamer has their own rate" },
-  { key: "packing_rate", label: "Packing rate ($/hr)", hint: "Stamped onto a show when packing is first clocked; changing it leaves packed shows alone" },
+  { key: "packing_fee", label: "Packing fee ($ per show)", hint: "Flat, whatever the show's size. Stamped onto a show when you assign its packer; changing it leaves shows already packed alone" },
+  { key: "packing_rate", label: "Packing rate ($/hr, retired)", hint: "Only prices shows packed before the flat fee came in on 2026-10-12. Leave it alone unless you are correcting old pay" },
   { key: "support_pct", label: "Stream support %", hint: "Share of profit after streamer pay", pct: true },
   { key: "breakeven_mult", label: "Break-even multiplier", hint: "Value per spot x this = break-even price" },
   { key: "hit_threshold", label: "Hit threshold ($)", hint: "Items over this market price count as hits" },

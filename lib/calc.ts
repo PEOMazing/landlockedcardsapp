@@ -110,11 +110,38 @@ export function packingRate(stream: { packingRate?: number | null }, s: Settings
   return Number.isFinite(r) && r > 0 ? r : s.packing_rate;
 }
 
-/** What one show's packing labor costs: both sides of its clock at its own rate. */
+// ---- the flat packing fee ----
+//
+// pk-v3. Packing stopped being hourly on 2026-10-12. One person is assigned a
+// show and is paid a flat fee for it, big show or small, and nobody clocks
+// packing time any more.
+//
+// A show is on the flat deal if it carries a Packing Fee, which is stamped on
+// it the moment a packer is assigned - the same snapshot trick packingRate
+// already uses, and for the same reason: changing the fee in settings must not
+// re-price a show that has already been packed and paid.
+//
+// Blank fee means the show predates the switch and is still priced by the hour.
+// That is what keeps the hundreds of shows already in the table exactly as they
+// were, with no date arithmetic anywhere: the absence of a fee IS the history.
+export function isFlatPacking(r: { packingFee?: number | null }): boolean {
+  return Number(r?.packingFee) > 0;
+}
+
+/** What one show's packing costs: a flat fee if it is on the new deal, else
+ *  both sides of its clock at its own hourly rate.
+ *
+ *  A flat-fee show with nobody assigned costs nothing. That is not a guard
+ *  against bad data, it is the rule: the fee is owed to a person, so with no
+ *  packer there is no packing and no cost. */
 export function streamPackingCost(
-  r: { packingHours?: number | null; managerPackingHours?: number | null; packingRate?: number | null },
+  r: {
+    packingHours?: number | null; managerPackingHours?: number | null;
+    packingRate?: number | null; packingFee?: number | null; managerId?: string | null;
+  },
   s: Settings,
 ): number {
+  if (isFlatPacking(r)) return r.managerId ? Number(r.packingFee) : 0;
   const hrs = (Number(r.packingHours) || 0) + (Number(r.managerPackingHours) || 0);
   return hrs * packingRate(r, s);
 }
@@ -171,6 +198,10 @@ export type StreamRow = {
   // pr-v2: the rate this show's packing hours are paid at, snapshotted on the
   // stream. Null or 0 falls back to settings.packing_rate.
   packingRate?: number | null;
+  // pk-v3: the flat fee this show's packer is owed, snapshotted when they were
+  // assigned. Set means the show is on the flat deal and the hours above are
+  // ignored; blank means it predates the switch and is still priced hourly.
+  packingFee?: number | null;
   // managerId  = who PACKED the show (their packing hours are paid to them)
   // overrideId = who EARNS THE OVERRIDE on it (admin only, Airtable "Override Rec Id").
   // Blank override means nobody earns one here. Packing no longer grants the override.
@@ -225,6 +256,7 @@ export function buildPersonHours(
   streams: Array<{
     id: string; date: string; status: string; managerId?: string | null;
     streamerId?: string; tips?: number; packingRate?: number | null;
+    packingFee?: number | null;
   }>,
   entries: Array<{ streamId: string; personId: string; type: string; hours: number }>,
   s: Settings
@@ -245,7 +277,12 @@ export function buildPersonHours(
       bump(key).streaming += e.hours;
       if (!streamersOnStream.has(st.id)) streamersOnStream.set(st.id, new Set());
       streamersOnStream.get(st.id)!.add(e.personId);
-    } else if (e.personId !== (st.managerId || null)) {
+    } else if (e.personId !== (st.managerId || null) && !isFlatPacking(st)) {
+      // pk-v3: a flat-fee show pays its assigned packer and nobody else, so a
+      // packing entry on one earns nothing. Skipped outright rather than
+      // counted at $0, because hours that show up next to no money read as a
+      // bug. Clocking packing on these shows is blocked at the clock too; this
+      // is the backstop for entries made before the switch landed.
       const b = bump(key);
       b.packing += e.hours;
       b.packingPay += e.hours * packingRate(st, s);   // priced at THIS show's rate
@@ -315,11 +352,17 @@ export function buildWeekPay(
     // pr-v2: every figure below is summed per show at that show's own rate, so
     // a week that straddles a rate change prices each show correctly instead of
     // applying one number to the whole week.
-    const costPackingPay = rows.reduce((a, r) => a + (r.packingHours || 0) * packingRate(r, s), 0);
-    const managerPackingPay = rows.reduce((a, r) => a + (r.managerPackingHours || 0) * packingRate(r, s), 0);
+    // pk-v3: on a flat-fee show the streamer earns no packing pay at all - the
+    // whole fee belongs to the assigned packer - so only hourly shows feed this.
+    const costPackingPay = rows.reduce(
+      (a, r) => a + (isFlatPacking(r) ? 0 : (r.packingHours || 0) * packingRate(r, s)), 0);
     // person's own packing, paid to them, already priced per show upstream
     const packingPay = opts?.personHours ? (own?.packingPay ?? 0) : costPackingPay;
-    const commissionable = profit - costPackingPay - managerPackingPay;
+    // The commission base loses the show's whole packing cost whoever it went
+    // to, which streamPackingCost already knows how to price either way. For an
+    // hourly show this is exactly the old (packingHours + managerPackingHours)
+    // x rate; for a flat one it is the fee.
+    const commissionable = profit - rows.reduce((a, r) => a + streamPackingCost(r, s), 0);
     const hourlyRate = ratesByStreamer[streamerId] ?? s.default_hourly_rate;
     const optionA = hours * hourlyRate;
     const optionB = tierCommission(commissionable, s);
@@ -339,7 +382,9 @@ export function buildWeekPay(
       totalPay: streamPay + packingPay + tips,
       supportPay,
       // company profit runs on REAL cost (buy): what actually remains after paying everyone
-      companyProfit: (buyProfit - costPackingPay - managerPackingPay) - streamPay - supportPay, // before manager override
+      // pk-v3: one packing figure now, priced per show by streamPackingCost,
+      // which covers both the hourly and the flat-fee deal.
+      companyProfit: (buyProfit - rows.reduce((a, r) => a + streamPackingCost(r, s), 0)) - streamPay - supportPay, // before manager override
     });
   }
   // hp-v1: hourly-only rows for people who clocked time on someone else's
@@ -399,6 +444,8 @@ export type ManagerWeekPay = {
   packingHours: number;
   packingRate: number;   // effective rate across the shows they packed
   packingPay: number;
+  // pk-v3: of packedCount, how many were paid as a flat fee rather than hourly
+  flatPacked: number;
   totalPay: number;
 };
 
@@ -429,12 +476,14 @@ export function buildManagerPay(
     packingHours: number;
     packingPay: number;
     packedCount: number;
+    flatPacked: number;
     earnsOverride: boolean;
   };
   const byManagerWeek = new Map<string, Agg>();
   const touch = (key: string): Agg => {
     const a = byManagerWeek.get(key) || {
-      rows: [], commissionable: 0, streamerPay: 0, packingHours: 0, packingPay: 0, packedCount: 0, earnsOverride: false,
+      rows: [], commissionable: 0, streamerPay: 0, packingHours: 0, packingPay: 0,
+      packedCount: 0, flatPacked: 0, earnsOverride: false,
     };
     byManagerWeek.set(key, a);
     return a;
@@ -466,10 +515,24 @@ export function buildManagerPay(
     agg.earnsOverride = true;
   }
 
-  // PACKING side, keyed on whoever actually packed the show. Packing is hourly and
-  // belongs to the packer whether or not they earn the override on it.
+  // PACKING side, keyed on whoever packed the show. Packing belongs to the
+  // packer whether or not they earn the override on it.
+  //
+  // pk-v3: two deals live here. A show with a Packing Fee pays that fee for
+  // being assigned, with no hours involved - that is the whole point of a flat
+  // fee, so a packer who was assigned the show is owed it even though they
+  // clocked nothing. Older shows are still paid by the hour, and a show with
+  // neither a fee nor any hours was not packed by anybody.
   for (const st of streams) {
     if (st.status !== "Complete" || !st.managerId) continue;
+    if (isFlatPacking(st)) {
+      const agg = touch(`${weekStartOf(st.date)}|${st.managerId}`);
+      agg.packingPay += Number(st.packingFee);
+      agg.packedCount += 1;
+      agg.flatPacked += 1;
+      if (!agg.rows.some((r) => r.id === st.id)) agg.rows.push(st);
+      continue;
+    }
     const hrs = st.managerPackingHours || 0;
     if (hrs <= 0) continue;
     const agg = touch(`${weekStartOf(st.date)}|${st.managerId}`);
@@ -503,6 +566,10 @@ export function buildManagerPay(
       packingHours: agg.packingHours,
       packingRate: agg.packingHours > 0 ? round2(packingPay / agg.packingHours) : s.packing_rate,
       packingPay,
+      // pk-v3: how many of the shows packed this week were on the flat fee, so
+      // the payroll page can say "3 shows x $35" instead of inventing an hourly
+      // rate for work nobody timed.
+      flatPacked: agg.flatPacked,
       totalPay: overridePay + packingPay,
     });
   }

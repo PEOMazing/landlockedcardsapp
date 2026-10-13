@@ -11,6 +11,16 @@ export async function POST(req: Request) {
   if (!isRecId(String(b.streamId || ""))) return NextResponse.json({ error: "bad stream id" }, { status: 400 });
   const stream = await atGet(T.streams, b.streamId);
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // pk-v3: packing is a flat fee per show now, so clocking packing time on a
+  // show that carries a fee would record hours that earn nothing and make the
+  // stream page and the payroll page tell different stories. Refused with the
+  // reason, rather than accepted and silently worth $0.
+  if (b.type === "Packing" && Number(stream.fields["Packing Fee"]) > 0) {
+    return NextResponse.json(
+      { error: "this show pays a flat packing fee, so there are no packing hours to clock" },
+      { status: 400 },
+    );
+  }
   if (!b.start || !b.end || !b.date || !["Streaming", "Packing"].includes(b.type)) {
     return NextResponse.json({ error: "type, date, start, and end are required" }, { status: 400 });
   }
