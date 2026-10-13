@@ -3,9 +3,11 @@ import { altCheckUrl } from "@/lib/alt";
 import QRCode from "qrcode";
 import { formatCardNo, parseCardNo, bucketFor, bucketRange, bucketDrifted } from "@/lib/cardNo";
 import { isThinComp } from "@/lib/salesWindow";
+import { SLAB_CONDITIONS } from "@/lib/slab";
 import { priceBound, inPriceRange, rangeBackwards } from "@/lib/priceRange";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
+import GradedSales from "@/components/GradedSales";
 import EditCell from "@/components/EditCell";
 import DeltaHover from "@/components/DeltaHover";
 import { toast } from "@/components/Toaster";
@@ -18,7 +20,10 @@ import PageHeader from "@/components/ui/PageHeader";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
-const GRADED = ["PSA 10", "PSA 9", "PSA 8", "CGC 10", "CGC 9.5", "BGS 9.5", "Other"];
+// lb-v2: the graded split now comes from lib/slots, the same list the slot
+// pool refuses to give pockets to, so the view and the binder cannot drift
+// apart again. Adds "Other Graded", which this list had always missed.
+const GRADED = SLAB_CONDITIONS;
 // The ungraded ladder, and the only conditions the row menu offers. A graded
 // card's comp is manual by design, so flipping one to PSA 10 from a dropdown
 // would silently strip its price with nothing to replace it.
@@ -907,23 +912,41 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     return base.filter((s) => s.comp === null && (mode === "graded" ? GRADED.includes(s.condition) : !GRADED.includes(s.condition))).length;
   }, [singles, statusFilter, mode, priceOn]);
 
-  const restickerCount = useMemo(
-    () => singles.filter((s) => bucketDrifted(s.comp, s.printedBucket || "")).length,
+  // lb-v2. A sticker is a binder thing: it carries a pocket number and goes in
+  // the pocket. A slab has no pocket, so it is never owed one of these labels
+  // and must not be counted as owing one.
+  //
+  // Both chips below used to count the whole table while the list they filter
+  // applied the raw/graded split. That is how the raw view came to say 37
+  // labels had never been printed when all 37 were graded slabs: the number
+  // was real, the cards behind it were not reachable from that view, and
+  // turning the chip on showed an empty list. The missing-price count above
+  // already scoped itself this way; these two never did.
+  const stickerPool = useMemo(
+    () => singles.filter((s) => s.status === "In Stock" && !GRADED.includes(s.condition)),
     [singles]
+  );
+
+  const restickerCount = useMemo(
+    () => stickerPool.filter((s) => bucketDrifted(s.comp, s.printedBucket || "")).length,
+    [stickerPool]
   );
 
   // Only In Stock: a card already on a stream or sold does not need a sticker,
   // and counting them would make the chip look permanently unfinished.
   const neverPrintedCount = useMemo(
-    () => singles.filter((s) => !s.labelPrinted && s.status === "In Stock").length,
-    [singles]
+    () => stickerPool.filter((s) => !s.labelPrinted).length,
+    [stickerPool]
   );
 
   // In Stock only, same reasoning as never-printed: a sold card's comp is
-  // history and re-examining it changes nothing.
+  // history and re-examining it changes nothing. Scoped to the half of the page
+  // you are looking at, for the same reason as the two above.
   const thinCount = useMemo(
-    () => singles.filter((s) => s.status === "In Stock" && s.comp !== null && isThinComp(s.compSales)).length,
-    [singles]
+    () => singles.filter((s) =>
+      s.status === "In Stock" && s.comp !== null && isThinComp(s.compSales) &&
+      (mode === "graded" ? GRADED.includes(s.condition) : !GRADED.includes(s.condition))).length,
+    [singles, mode]
   );
 
   const stockValue = singles.filter((s) => s.status === "In Stock").reduce((a, s) => a + (s.comp || 0) * (s.qty || 1), 0);
@@ -1338,7 +1361,10 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             {isManager && (
               <button className="btn-ghost !py-1.5 text-xs" onClick={assignLocations} title="Number every card currently shown, in the order shown">Assign locations</button>
             )}
-            {neverPrintedCount > 0 && (
+            {/* lb-v2: both sticker chips belong to the raw half of the page.
+                A slab gets no binder label, so on the graded view these are not
+                just empty, they are the wrong question. */}
+            {mode !== "graded" && neverPrintedCount > 0 && (
               <button
                 type="button"
                 aria-pressed={neverPrinted}
@@ -1364,7 +1390,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 Thin data <span className="num ml-1 opacity-70">{thinCount}</span>
               </button>
             )}
-            {restickerCount > 0 && (
+            {mode !== "graded" && restickerCount > 0 && (
               <button
                 type="button"
                 aria-pressed={needsResticker}
@@ -1730,6 +1756,11 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                       )}
                       <DeltaHover current={s.comp} entry={s.entryComp} date={s.dateAdded} />
                       {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
+                      {/* gs-v1: only on raw cards, and only in the raw view.
+                          A slab already has a grade and its own comp. */}
+                      {mode !== "graded" && !GRADED.includes(s.condition) && (
+                        <GradedSales cardId={s.id} rawComp={s.comp} />
+                      )}
                       {!s.compDetail && s.comp !== null && s.compSource.includes("est.") && (
                         <span
                           className="text-warn text-xs cursor-help whitespace-nowrap underline decoration-dotted"

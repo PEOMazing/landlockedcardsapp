@@ -5,6 +5,8 @@ import {
   CONDITIONS, PRINTINGS, chunk, cleanNumber, cleanText,
   needsPrinting, quoteTotal, toQuoteRows, type ScanRow,
 } from "@/lib/scan";
+import { GRADE_LOOKUP_FLOOR, worthGradedLookup } from "@/lib/gradedSales";
+import GradeStrip, { type GradedData } from "@/components/GradeStrip";
 
 // Photograph a pile, get a price for it.
 //
@@ -42,6 +44,10 @@ export default function ScanClient() {
   const [priced, setPriced] = useState<Record<string, Priced>>({});
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
+  // gs-v1: what each row last sold for graded, keyed by row. Filled when the
+  // pile is priced, because raw and graded are one question when you are
+  // standing over somebody's binder deciding what to offer.
+  const [graded, setGraded] = useState<Record<string, GradedData>>({});
   const [noVision, setNoVision] = useState(false);
   const [fault, setFault] = useState("");
   const seq = useRef(0);
@@ -87,6 +93,52 @@ export default function ScanClient() {
     }
   }
 
+
+  // gs-v1. What each card last sold for graded, fetched one card at a time
+  // because the feed has no batch endpoint: a grade comes parsed off each
+  // listing title, so one request covers PSA 6 through 10 for a card, but
+  // nothing covers two cards at once.
+  //
+  // Four at a time. Forty sequential requests over a card-show wifi is a
+  // minute of standing there, and forty at once is a rate limit.
+  //
+  // Cards under the floor are skipped without spending a request. Grading costs
+  // money per card, so a 70 cent common is not a candidate however good its
+  // PSA 10 looks, and a deep pile would otherwise spend most of the month's
+  // quota proving that.
+  async function loadGraded(rows: Row[], priced: Record<string, Priced>) {
+    const jobs = rows.filter((r) => cleanText(r.name));
+    const out: Record<string, GradedData> = {};
+    const queue = [...jobs];
+    const worker = async () => {
+      for (;;) {
+        const r = queue.shift();
+        if (!r) return;
+        const comp = priced[r.key]?.price ?? null;
+        if (!worthGradedLookup(comp, GRADE_LOOKUP_FLOOR)) {
+          out[r.key] = { configured: true, skipped: "cheap" };
+          setGraded((prev) => ({ ...prev, [r.key]: out[r.key] }));
+          continue;
+        }
+        const q = new URLSearchParams({
+          name: r.name, setName: r.setName, number: r.number,
+          language: "English", printing: r.variant || "",
+          ...(comp ? { comp: String(comp) } : {}),
+        });
+        try {
+          const res = await fetch(`/api/singles/graded-sales?${q}`);
+          out[r.key] = await res.json();
+        } catch {
+          out[r.key] = { configured: true, error: "could not reach the server" };
+        }
+        // Set as each one lands rather than at the end, so the rows fill in
+        // behind you instead of the whole pile appearing at once.
+        setGraded((prev) => ({ ...prev, [r.key]: out[r.key] }));
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+  }
+
   async function priceAll() {
     const { ready, held } = toQuoteRows(rows);
     if (ready.length === 0) {
@@ -122,6 +174,9 @@ export default function ScanClient() {
         });
       }
       setPriced(out);
+      // Graded runs after the raw prices land, because the floor that decides
+      // which cards are worth a lookup is the raw price.
+      loadGraded(readyRows, out);
       const t = quoteTotal(Object.values(out).map((p) => ({
         matched: p.matched, price: p.price, qty: rows.find((r) => r.key === p.key)?.qty || 1,
       })));
@@ -258,8 +313,17 @@ export default function ScanClient() {
               {p && (
                 <div className="text-xs num">
                   {p.matched && p.price != null
-                    ? <>{$(p.price)}{r.qty > 1 ? ` x${r.qty} = ${$(p.price * r.qty)}` : ""}</>
+                    ? <>raw {$(p.price)}{r.qty > 1 ? ` x${r.qty} = ${$(p.price * r.qty)}` : ""}</>
                     : <span className="text-bad">not priced{p.reason ? ` (${p.reason})` : ""}</span>}
+                </div>
+              )}
+
+              {/* gs-v1: what it last sold for graded, under the raw price. The
+                  raw number is what the card is worth as it sits; these are
+                  what it could be worth sent off, which is a different offer. */}
+              {graded[r.key] && (
+                <div className="pt-1.5 border-t border-edge">
+                  <GradeStrip data={graded[r.key]} compact />
                 </div>
               )}
             </div>

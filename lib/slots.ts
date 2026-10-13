@@ -1,4 +1,8 @@
 import { atList, T } from "./airtable";
+// lb-v2: the slab rule lives in its own importless module so a client
+// component can read it too; re-exported here so slot callers find it where
+// they already look.
+export { SLAB_CONDITIONS, isSlab } from "./slab";
 
 // Where a card physically sits in the binder.
 //

@@ -4,7 +4,7 @@ import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
 import { conditionSoldComp, getTcgcsvCard, subTypeForVariant, tcgProductIdFromCardId } from "@/lib/tcgcsvCards";
 import { toSingle } from "@/lib/singles";
-import { claimSlot, slotFields } from "@/lib/slots";
+import { claimSlot, isSlab, slotFields } from "@/lib/slots";
 import { roundUpDollar } from "@/lib/salesWindow";
 
 export const dynamic = "force-dynamic";
@@ -158,7 +158,14 @@ export async function POST(req: Request) {
   // File it in the lowest empty pocket, which is a gap a sold card left before
   // it is the end of the binder. A collector's card is not in the company
   // binder, so it is not given one of its pockets.
-  if (!me.isCollector) {
+  //
+  // lb-v2: nor is a slab. A graded card lives in a case, not a sleeve, so a
+  // pocket number on it is a number for a pocket that does not exist. 37 slabs
+  // entered on 2026-09-26 took pockets 853 to 889 this way, which is why the
+  // binder appeared to skip from 852 to 890 and why those 37 sat in the
+  // never-printed queue forever: a label was owed for a sticker that could
+  // never be stuck anywhere.
+  if (!me.isCollector && !isSlab(fields["Condition"] as string)) {
     const slot = await claimSlot();
     if (slot) Object.assign(fields, slotFields(slot));
   }
