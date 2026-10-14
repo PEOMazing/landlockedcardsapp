@@ -8,6 +8,11 @@ const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractio
 
 export type StreamRowT = {
   id: string; date: string; title: string; streamer: string; manager: string;
+  /** who packed it, as an id, so the row can edit the assignment in place */
+  managerRecId?: string;
+  /** pk-v4: set means this show is on the flat deal, and the number is the
+   *  fee it was stamped with rather than the current setting */
+  packingFee?: number | null;
   overrideRecId?: string; overrideName?: string; overrideExcluded?: boolean;
   status: string; afterFees: number | null; hours: number | null; packingHours?: number; tips?: number | null; spots: number | null;
   payroll: number | null; netProfit: number | null;
@@ -84,15 +89,28 @@ export default function StreamsAdminClient({
   const [editing, setEditing] = useState<string>("");
   const [eTitle, setETitle] = useState("");
   const [eDate, setEDate] = useState("");
-  async function saveMeta(id: string) {
+  // pk-v4: the packer is editable from this row now. It used to be a greyed
+  // read-only name, which meant tagging a packer - the one action that puts a
+  // show on the flat fee and gets somebody paid - was only reachable by
+  // opening the show and finding the edit link next to its title.
+  const [eManager, setEManager] = useState("");
+  async function saveMeta(id: string, wasManager: string) {
     setBusy(id);
     const r = await fetch(`/api/streams/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: eTitle.trim(), date: eDate }),
+      // managerId only when it actually changed: sending it unchanged is
+      // harmless today but it is the field that stamps the fee, and a write
+      // that does nothing is not worth aiming at it
+      body: JSON.stringify({
+        title: eTitle.trim(),
+        date: eDate,
+        ...(eManager !== wasManager ? { managerId: eManager || null } : {}),
+      }),
     });
     setBusy("");
-    if (r.ok) { setEditing(""); router.refresh(); }
+    if (!r.ok) { setErr("Could not save that show - it is unchanged"); return; }
+    setEditing(""); router.refresh();
   }
   // titles carry the date already, and the date column repeats it - show the clean name
   const displayTitle = (r: StreamRowT) => r.title.replace(/^\d{4}-\d{2}-\d{2}\s*-\s*/, "");
@@ -110,8 +128,13 @@ export default function StreamsAdminClient({
         <table className="w-full">
           <thead>
             <tr>
-              <th>Date</th><th>Title</th><th>Streamer</th><th title="Who packed this show - their packing hours are paid to them">Packaging</th><th title="Who earns the commission override on this show. Independent of who packed it.">Override</th>
-              <th>Status</th><th>After fees</th><th>Hours</th><th title="Packing + manager packing hours">Packing</th><th title="Tips paid through to the streamer">Tips</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
+              <th>Date</th><th>Title</th><th>Streamer</th><th title="Who packed this show. Assigning somebody puts the show on the flat packing fee - hit edit on the row to change it.">Packaging</th><th title="Who earns the commission override on this show. Independent of who packed it.">Override</th>
+              {/* pk-v4: the Packing hours column is gone. Packing is a flat fee
+                  per show now and nobody clocks hours against it, so the column
+                  was a dash on every modern show sitting next to Packaging and
+                  reading like a second version of it. The fee itself shows up
+                  in Payroll, where the money is. */}
+              <th>Status</th><th>After fees</th><th>Hours</th><th title="Tips paid through to the streamer">Tips</th><th title="Streamer hourly estimate + packing + tips paid through">Payroll</th><th title="Market-basis profit after payroll - matches the stream page waterfall">Net profit</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -123,7 +146,7 @@ export default function StreamsAdminClient({
                     <td>
                       <span className="flex items-center gap-2">
                         <input className="input !py-1 text-sm w-56" value={eTitle} onChange={(e) => setETitle(e.target.value)} />
-                        <button className="text-win text-xs hover:underline disabled:opacity-40" disabled={busy === r.id || !eTitle.trim() || !eDate} onClick={() => saveMeta(r.id)}>save</button>
+                        <button className="text-win text-xs hover:underline disabled:opacity-40" disabled={busy === r.id || !eTitle.trim() || !eDate} onClick={() => saveMeta(r.id, r.managerRecId || "")}>save</button>
                         <button className="text-dim text-xs hover:underline" onClick={() => setEditing("")}>cancel</button>
                       </span>
                     </td>
@@ -132,11 +155,17 @@ export default function StreamsAdminClient({
                   <>
                     <td className="whitespace-nowrap">{r.date}</td>
                     <td className="!font-medium">
-                      {displayTitle(r)}
+                      {/* The title opens the show. There is an Open link at the
+                          far right too, but on a table this wide that meant
+                          scrolling sideways just to get into a stream. */}
+                      <Link className="hover:text-foil" href={`/streams/${r.id}`}>{displayTitle(r)}</Link>
                       <button
                         className="text-dim hover:text-foil text-xs ml-2"
-                        title="Edit the title or move the date"
-                        onClick={() => { setEditing(r.id); setETitle(displayTitle(r)); setEDate(r.date); }}
+                        title="Edit the title, move the date, or assign who packed it"
+                        onClick={() => {
+                          setEditing(r.id); setETitle(displayTitle(r)); setEDate(r.date);
+                          setEManager(r.managerRecId || "");
+                        }}
                       >
                         edit
                       </button>
@@ -144,7 +173,22 @@ export default function StreamsAdminClient({
                   </>
                 )}
                 <td>{r.streamer || "-"}</td>
-                <td className="text-dim">{r.manager || "-"}</td>
+                <td>
+                  {editing === r.id ? (
+                    <select
+                      className="input !py-1 !px-1 text-sm !w-28"
+                      value={eManager}
+                      disabled={busy === r.id}
+                      onChange={(e) => setEManager(e.target.value)}
+                      title="Who packed this show. Assigning somebody puts the show on the flat packing fee."
+                    >
+                      <option value="">nobody</option>
+                      {team.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                    </select>
+                  ) : (
+                    <span className="text-dim">{r.manager || "-"}</span>
+                  )}
+                </td>
                 <td>
                   {isAdmin ? (
                     <select className="input !py-1 !px-1 text-sm !w-28" value={r.overrideRecId || ""}
@@ -164,7 +208,6 @@ export default function StreamsAdminClient({
                 </td>
                 <td>{r.afterFees !== null ? $(r.afterFees) : "-"}</td>
                 <td>{r.hours !== null ? r.hours.toFixed(1) : "-"}</td>
-                <td>{r.packingHours ? r.packingHours.toFixed(1) : "-"}</td>
                 <td>{r.tips ? $(r.tips) : "-"}</td>
                 <td>{r.payroll !== null && r.payroll > 0 ? $(r.payroll) : "-"}</td>
                 <td>{r.netProfit === null ? "-" : <span className={r.netProfit >= 0 ? "text-win" : "text-bad"}>{$(r.netProfit)}</span>}</td>

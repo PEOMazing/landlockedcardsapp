@@ -3,6 +3,7 @@ import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { toLine, isHitLine, packingRate, streamPackingCost } from "@/lib/calc";
+import { packingFeeToStamp } from "@/lib/packingFee";
 import { syncWheelSinglePrices } from "@/lib/streamSingles";
 import { whatnotDescription, whatnotTitle } from "@/lib/showSetTitle";
 
@@ -387,22 +388,18 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       try { await atGet(T.streamers, b.managerId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
       fields["Manager Rec Id"] = b.managerId;
 
-      // pk-v3: assigning the packer is what puts a show on the flat fee, so the
-      // fee is stamped here, from settings, at the moment of assignment.
-      //
-      // Three things this deliberately does NOT do. It does not re-stamp a show
-      // that already carries a fee, so reassigning the packer on a show packed
-      // last month still pays last month's fee. It does not touch a show that
-      // has packing hours clocked on it, because that show was paid by the hour
-      // and quietly moving it to a fee would rewrite settled pay. And it does
-      // not stamp at stream creation, because a show nobody has been assigned
-      // has not been packed and should not read as a $35 cost.
-      const already = Number(stream.fields["Packing Fee"]) > 0;
-      const hourly = (Number(stream.fields["Packing Hours"]) || 0) +
-        (Number(stream.fields["Manager Packing Hours"]) || 0) > 0;
-      if (!already && !hourly && settings.packing_fee > 0) {
-        fields["Packing Fee"] = settings.packing_fee;
-      }
+      // pk-v4: assigning the packer is what puts a show on the flat fee. The
+      // rule itself lives in lib/packingFee so the create path stamps on
+      // exactly the same terms - it did not, which is why every show born
+      // after the switch quietly stayed hourly.
+      const fee = packingFeeToStamp({
+        hasManager: true,
+        existingFee: stream.fields["Packing Fee"],
+        packingHours: stream.fields["Packing Hours"],
+        managerPackingHours: stream.fields["Manager Packing Hours"],
+        settingFee: settings.packing_fee,
+      });
+      if (fee !== null) fields["Packing Fee"] = fee;
     }
   }
   // who earns the override on this show - ADMIN ONLY, separate from packaging above

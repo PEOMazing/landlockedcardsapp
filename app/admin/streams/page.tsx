@@ -49,11 +49,16 @@ export default async function AllStreamsPage() {
   const toRow = (r: any): StreamRowT => {
     const afterFees = r.fields["After Fees"] ?? null;
     const hours = r.fields["Hours Streamed"] || 0;
+    // pk-v4: packingFee and managerId both have to go in, or a flat show
+    // prices itself by the hour here - which on a flat show means zero - and
+    // this table quietly disagrees with the payroll page about the same show.
     const packing = streamPackingCost(
       {
         packingHours: r.fields["Packing Hours"],
         managerPackingHours: r.fields["Manager Packing Hours"],
         packingRate: r.fields["Packing Rate"],
+        packingFee: r.fields["Packing Fee"],
+        managerId: r.fields["Manager Rec Id"] || null,
       },
       settings,
     );
@@ -70,6 +75,10 @@ export default async function AllStreamsPage() {
       title: r.fields["Title"] || "",
       streamer: nameById[r.fields["Streamer Rec Id"]] || "",
       manager: nameById[r.fields["Manager Rec Id"]] || "",
+      // sent so the row can offer a packer dropdown in edit mode, and so the
+      // Packing column can show the fee a show is actually on
+      managerRecId: r.fields["Manager Rec Id"] || "",
+      packingFee: r.fields["Packing Fee"] ?? null,
       overrideRecId: r.fields["Override Rec Id"] || "",
       overrideName: nameById[r.fields["Override Rec Id"]] || "",
       overrideExcluded: !!r.fields["Override Excluded"],
