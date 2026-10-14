@@ -4,7 +4,7 @@ import MarkPaidButton from "./MarkPaidButton";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { buildWeekPay, buildManagerPay, buildPersonHours, money, packingRate, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
+import { buildWeekPay, buildManagerPay, buildPersonHours, isFlatPacking, money, packingRate, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
 import PaidToggle from "./PaidToggle";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +64,12 @@ export default async function PayrollPage() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     packingRate: r.fields["Packing Rate"] ?? null,
+    // pk-v5: this page never read Packing Fee, so isFlatPacking was false for
+    // every row and the flat branch of buildManagerPay never ran. The engine
+    // has handled the flat deal since it shipped; payroll simply never handed
+    // it the field, so no packer has been paid a fee on any show.
+    packingFee: r.fields["Packing Fee"] ?? null,
+    packerId: r.fields["Packer Rec Id"] || null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
@@ -75,7 +81,7 @@ export default async function PayrollPage() {
   // hp-v1: pay follows the person who clocked the hours, not the stream of
   // record - a shared show pays each streamer their own timeclock.
   const personHours = buildPersonHours(
-    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips, packingRate: r.packingRate })),
+    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, packerId: r.packerId, streamerId: r.streamerId, tips: r.tips, packingRate: r.packingRate, packingFee: r.packingFee })),
     (timeRows as any[]).map((e) => ({
       streamId: e.fields["Stream Rec Id"] || "",
       personId: e.fields["Person Rec Id"] || "",
@@ -155,9 +161,13 @@ export default async function PayrollPage() {
   for (const mw of managerWeeks) {
     if (mw.totalPay <= 0) continue;
     const breakdown: PayLine[] = mw.streams.map((r) => {
-      // packing pay only counts here if THIS person actually packed the show
-      const packed = r.managerId === mw.managerId;
-      const packing = packed ? (r.managerPackingHours || 0) * packingRate(r, settings) : 0;
+      // packing pay only counts here if THIS person actually packed the show.
+      // pk-v5: packerId, and a flat show owes the fee rather than hours x rate -
+      // this line priced flat shows at zero even once the fee was being read.
+      const packed = r.packerId === mw.managerId;
+      const packing = !packed ? 0
+        : isFlatPacking(r) ? Number(r.packingFee)
+        : (r.managerPackingHours || 0) * packingRate(r, settings);
       const isEarner = r.overrideId === mw.managerId;
       const bits: string[] = [];
       if (isEarner && !r.overrideExcluded) bits.push(`profit ${money(streamProfit(r))} in override base`);
@@ -175,7 +185,13 @@ export default async function PayrollPage() {
       role: mw.earnsOverride ? "Manager" : "Packing",
       detail: [
         mw.earnsOverride ? `override ${(mw.overridePct * 100).toFixed(0)}% on ${money(mw.overrideBase)}` : "",
-        mw.packingPay > 0 ? `packing ${mw.packingHours.toFixed(1)}h at ${money(mw.packingRate)}/h on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}` : "",
+        // pk-v5: a flat week has no hours to quote, and "0.0h at $15/h" next to
+        // real money reads as a bug rather than a deal
+        mw.packingPay > 0
+          ? (mw.flatPacked === mw.packedCount
+              ? `packing ${money(mw.packingPay)} flat on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}`
+              : `packing ${money(mw.packingPay)} on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}`)
+          : "",
       ].filter(Boolean).join(" + ") || "manager pay",
       amount: mw.totalPay,
       breakdown,

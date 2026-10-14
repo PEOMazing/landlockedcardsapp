@@ -74,6 +74,7 @@ const stream = (over: Partial<StreamRow> = {}): StreamRow => ({
   packingHours: 0,
   managerPackingHours: 0,
   packingRate: null,
+  packerId: DANIEL,
   managerId: DANIEL,
   overrideId: null,
   productCost: 300,
@@ -128,8 +129,8 @@ describe("packing pay from the timeclock", () => {
 
   it("prices each clocked hour at the rate of the show it was on", () => {
     const streams = [
-      { id: "old", date: "2026-10-05", status: "Complete", managerId: DANIEL, packingRate: 20 },
-      { id: "new", date: "2026-10-07", status: "Complete", managerId: DANIEL, packingRate: 15 },
+      { id: "old", date: "2026-10-05", status: "Complete", packerId: DANIEL, packingRate: 20 },
+      { id: "new", date: "2026-10-07", status: "Complete", packerId: DANIEL, packingRate: 15 },
     ];
     const ph = buildPersonHours(streams, [entry("old", "recKara", 2), entry("new", "recKara", 2)], S);
     const own = ph["2026-10-05|recKara"];
@@ -138,7 +139,7 @@ describe("packing pay from the timeclock", () => {
   });
 
   it("keeps the manager's own packing out, since buildManagerPay pays it", () => {
-    const streams = [{ id: "s", date: "2026-10-05", status: "Complete", managerId: DANIEL, packingRate: 20 }];
+    const streams = [{ id: "s", date: "2026-10-05", status: "Complete", packerId: DANIEL, packingRate: 20 }];
     assert.equal(buildPersonHours(streams, [entry("s", DANIEL, 3)], S)["2026-10-05|recDaniel"], undefined);
   });
 

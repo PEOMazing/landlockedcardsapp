@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { atList, atCreate, atGet, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { defaultManagerId } from "@/lib/defaultManager";
-import { getSettings } from "@/lib/settings";
-import { packingFeeToStamp } from "@/lib/packingFee";
 
 export async function GET() {
   const me = await getMe();
@@ -15,7 +13,7 @@ export async function GET() {
   };
   if (!me.isAdmin && !me.isManager) {
     if (!me.streamer) return NextResponse.json({ streams: [] });
-    params.filterByFormula = `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`;
+    params.filterByFormula = `AND(OR({Streamer Rec Id} = '${me.streamer.id}', {Manager Rec Id} = '${me.streamer.id}', {Packer Rec Id} = '${me.streamer.id}'), {Deleted At} = BLANK())`;
   }
   const rows = await atList(T.streams, params);
   return NextResponse.json({
@@ -88,20 +86,13 @@ export async function POST(req: Request) {
       fields["Manager Rec Id"] = fallback;
     }
   }
-  // pk-v4: a packer landed on this show, so it is on the flat deal from birth.
+  // pk-v5: no fee at creation any more, and this time for the right reason.
   //
-  // This was the hole. The fee used to be stamped only when a packer was
-  // ASSIGNED through PATCH, on the reasoning that a new show has no packer
-  // yet - but dm-v1 above gives every new show the Default Manager, so the
-  // packer arrives here and that PATCH never happens. The result was a show
-  // with a packer and a blank fee, which reads everywhere in the app as a
-  // pre-switch hourly show: packing clock offered, "Packing time" in the P&L,
-  // and nothing paid to the person who actually packed it.
-  const fee = packingFeeToStamp({
-    hasManager: !!fields["Manager Rec Id"],
-    settingFee: (await getSettings()).packing_fee,
-  });
-  if (fee !== null) fields["Packing Fee"] = fee;
+  // pk-v4 stamped here because the Default Manager landed on every new show and
+  // manager meant packer, so a show really did arrive already packed-by. Now
+  // that the packer has its own field, a new show has a manager of record and
+  // NO packer, which is the truth: nobody has packed it yet. The fee is stamped
+  // when somebody is actually tagged, in the PATCH.
   const rec = await atCreate(T.streams, fields);
   return NextResponse.json({ id: rec.id });
 }

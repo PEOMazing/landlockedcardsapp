@@ -30,7 +30,7 @@ const row = (over: Partial<StreamRow> = {}): StreamRow => ({
   id: "rec1", title: "Show", date: "2026-10-13", streamerId: DESTINEE, streamerName: "Destinee",
   afterFees: 1000, promotion: 0, tips: 0, giveaways: 0, singlesGiveaways: 0,
   hours: 4, packingHours: 0, managerPackingHours: 0,
-  managerId: DANIEL, productCost: 200, productMarketCost: 400, status: "Complete",
+  packerId: DANIEL, managerId: DANIEL, productCost: 200, productMarketCost: 400, status: "Complete",
   ...over,
 });
 
@@ -50,8 +50,8 @@ describe("telling the two packing deals apart", () => {
 
 describe("what one show's packing costs", () => {
   it("costs the fee on a flat show, whatever the show's size", () => {
-    const small = streamPackingCost({ packingFee: 35, managerId: DANIEL }, S);
-    const huge = streamPackingCost({ packingFee: 35, managerId: DANIEL }, S);
+    const small = streamPackingCost({ packingFee: 35, packerId: DANIEL }, S);
+    const huge = streamPackingCost({ packingFee: 35, packerId: DANIEL }, S);
     assert.equal(small, 35);
     assert.equal(huge, 35);
   });
@@ -59,13 +59,13 @@ describe("what one show's packing costs", () => {
   it("ignores clocked hours once a show is on the fee", () => {
     // a stray entry must not add to the fee, or a packer gets paid twice
     const cost = streamPackingCost(
-      { packingFee: 35, managerId: DANIEL, packingHours: 3, managerPackingHours: 2, packingRate: 15 }, S);
+      { packingFee: 35, packerId: DANIEL, packingHours: 3, managerPackingHours: 2, packingRate: 15 }, S);
     assert.equal(cost, 35);
   });
 
   it("costs nothing on a flat show with nobody assigned", () => {
     // the fee is owed to a person: no packer means nobody packed it
-    assert.equal(streamPackingCost({ packingFee: 35, managerId: null }, S), 0);
+    assert.equal(streamPackingCost({ packingFee: 35, packerId: null }, S), 0);
   });
 
   it("still prices a pre-switch show by its own snapshotted hourly rate", () => {
@@ -109,7 +109,7 @@ describe("paying the packer", () => {
   });
 
   it("pays nothing for a flat show nobody was assigned", () => {
-    const out = buildManagerPay([row({ packingFee: 35, managerId: null })], S, {}, {}, {});
+    const out = buildManagerPay([row({ packingFee: 35, packerId: null, managerId: null })], S, {}, {}, {});
     assert.equal(out.reduce((a, w) => a + w.packingPay, 0), 0);
   });
 
@@ -150,7 +150,7 @@ describe("what the fee does to the commission base", () => {
   });
 
   it("takes nothing out when nobody is assigned to collect it", () => {
-    const out = buildWeekPay([row({ packingFee: 35, managerId: null })], S, {});
+    const out = buildWeekPay([row({ packingFee: 35, packerId: null, managerId: null })], S, {});
     assert.equal(out[0].commissionable, 600);
   });
 

@@ -9,7 +9,7 @@ const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractio
 export type StreamRowT = {
   id: string; date: string; title: string; streamer: string; manager: string;
   /** who packed it, as an id, so the row can edit the assignment in place */
-  managerRecId?: string;
+  packerRecId?: string;
   /** pk-v4: set means this show is on the flat deal, and the number is the
    *  fee it was stamped with rather than the current setting */
   packingFee?: number | null;
@@ -89,6 +89,8 @@ export default function StreamsAdminClient({
   const [editing, setEditing] = useState<string>("");
   const [eTitle, setETitle] = useState("");
   const [eDate, setEDate] = useState("");
+  // pk-v5: writes Packer Rec Id. Assigning a packer no longer also makes
+  // them manager of record, which used to come with access to the show.
   // pk-v4: the packer is editable from this row now. It used to be a greyed
   // read-only name, which meant tagging a packer - the one action that puts a
   // show on the flat fee and gets somebody paid - was only reachable by
@@ -105,7 +107,7 @@ export default function StreamsAdminClient({
       body: JSON.stringify({
         title: eTitle.trim(),
         date: eDate,
-        ...(eManager !== wasManager ? { managerId: eManager || null } : {}),
+        ...(eManager !== wasManager ? { packerId: eManager || null } : {}),
       }),
     });
     setBusy("");
@@ -146,7 +148,7 @@ export default function StreamsAdminClient({
                     <td>
                       <span className="flex items-center gap-2">
                         <input className="input !py-1 text-sm w-56" value={eTitle} onChange={(e) => setETitle(e.target.value)} />
-                        <button className="text-win text-xs hover:underline disabled:opacity-40" disabled={busy === r.id || !eTitle.trim() || !eDate} onClick={() => saveMeta(r.id, r.managerRecId || "")}>save</button>
+                        <button className="text-win text-xs hover:underline disabled:opacity-40" disabled={busy === r.id || !eTitle.trim() || !eDate} onClick={() => saveMeta(r.id, r.packerRecId || "")}>save</button>
                         <button className="text-dim text-xs hover:underline" onClick={() => setEditing("")}>cancel</button>
                       </span>
                     </td>
@@ -164,7 +166,7 @@ export default function StreamsAdminClient({
                         title="Edit the title, move the date, or assign who packed it"
                         onClick={() => {
                           setEditing(r.id); setETitle(displayTitle(r)); setEDate(r.date);
-                          setEManager(r.managerRecId || "");
+                          setEManager(r.packerRecId || "");
                         }}
                       >
                         edit

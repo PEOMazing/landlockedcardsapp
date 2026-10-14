@@ -58,7 +58,7 @@ export default async function AllStreamsPage() {
         managerPackingHours: r.fields["Manager Packing Hours"],
         packingRate: r.fields["Packing Rate"],
         packingFee: r.fields["Packing Fee"],
-        managerId: r.fields["Manager Rec Id"] || null,
+        packerId: r.fields["Packer Rec Id"] || null,
       },
       settings,
     );
@@ -74,10 +74,10 @@ export default async function AllStreamsPage() {
       date: r.fields["Stream Date"] || "",
       title: r.fields["Title"] || "",
       streamer: nameById[r.fields["Streamer Rec Id"]] || "",
-      manager: nameById[r.fields["Manager Rec Id"]] || "",
-      // sent so the row can offer a packer dropdown in edit mode, and so the
-      // Packing column can show the fee a show is actually on
-      managerRecId: r.fields["Manager Rec Id"] || "",
+      manager: nameById[r.fields["Packer Rec Id"]] || "",
+      // pk-v5: the Packaging column shows the PACKER. Manager of record is a
+      // different person now and is not what this column was ever about.
+      packerRecId: r.fields["Packer Rec Id"] || "",
       packingFee: r.fields["Packing Fee"] ?? null,
       overrideRecId: r.fields["Override Rec Id"] || "",
       overrideName: nameById[r.fields["Override Rec Id"]] || "",

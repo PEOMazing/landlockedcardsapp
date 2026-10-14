@@ -116,6 +116,7 @@ export default async function VendorDashboard() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     packingRate: r.fields["Packing Rate"] ?? null,
+    packerId: r.fields["Packer Rec Id"] || null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,

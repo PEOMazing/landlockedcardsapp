@@ -151,9 +151,12 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const histDeliveryRate = histPool > 0 ? histDelivered / histPool : null;
 
   let managerName = "";
+  let packerName = "";
   let streamerName = "";
   let overrideName = "";
   const managerId = stream.fields["Manager Rec Id"];
+  // pk-v5: who packed it, now its own field and its own person
+  const packerRecId = stream.fields["Packer Rec Id"] || null;
   const overrideId = stream.fields["Override Rec Id"] || null;
   const streamerRecId = stream.fields["Streamer Rec Id"] || null;
   let streamerRow: any = null;
@@ -163,8 +166,16 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   if (managerId) {
     try { managerName = (await atGet(T.streamers, managerId)).fields["Name"] || ""; } catch {}
   }
+  if (packerRecId) {
+    // the packer is very often the manager or the streamer, so reuse a name we
+    // already paid a round trip for rather than fetching the same row again
+    if (packerRecId === managerId) packerName = managerName;
+    else if (packerRecId === streamerRecId) packerName = streamerName;
+    else { try { packerName = (await atGet(T.streamers, packerRecId)).fields["Name"] || ""; } catch {} }
+  }
   if (overrideId) {
     if (overrideId === managerId) overrideName = managerName;
+    else if (overrideId === packerRecId) overrideName = packerName;
     else { try { overrideName = (await atGet(T.streamers, overrideId)).fields["Name"] || ""; } catch {} }
   }
 
@@ -207,6 +218,8 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       // should even show you.
       packingFee: stream.fields["Packing Fee"] ?? null,
       managerName,
+      packerName,
+      packerRecId,
       streamerName,
       streamerRecId,
       managerRecId: managerId || null,
@@ -317,7 +330,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
           // pk-v3: both of these, or a flat-fee show prices itself by the hour
           // here and disagrees with the payroll page about the same show
           packingFee: stream.fields["Packing Fee"],
-          managerId: managerId || null,
+          packerId: packerRecId || null,
         },
         settings,
       ),
@@ -378,28 +391,40 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     try { await atGet(T.streamers, b.streamerId); } catch { return NextResponse.json({ error: "unknown streamer" }, { status: 400 }); }
     fields["Streamer Rec Id"] = b.streamerId;
   }
-  // assign the packaging person - managers only
-  if (b.managerId !== undefined) {
-    if (!me.isManager && !me.isAdmin) return NextResponse.json({ error: "only managers can assign packaging" }, { status: 403 });
-    if (b.managerId === null || b.managerId === "") {
-      fields["Manager Rec Id"] = "";
+  // pk-v5: assign the PACKER - managers only. Separate from manager of record
+  // below, which is access and carries no pay.
+  if (b.packerId !== undefined) {
+    if (!me.isManager && !me.isAdmin) return NextResponse.json({ error: "only managers can assign packing" }, { status: 403 });
+    if (b.packerId === null || b.packerId === "") {
+      fields["Packer Rec Id"] = "";
     } else {
-      if (!isRecId(String(b.managerId))) return NextResponse.json({ error: "bad person id" }, { status: 400 });
-      try { await atGet(T.streamers, b.managerId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
-      fields["Manager Rec Id"] = b.managerId;
+      if (!isRecId(String(b.packerId))) return NextResponse.json({ error: "bad person id" }, { status: 400 });
+      try { await atGet(T.streamers, b.packerId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
+      fields["Packer Rec Id"] = b.packerId;
 
       // pk-v4: assigning the packer is what puts a show on the flat fee. The
       // rule itself lives in lib/packingFee so the create path stamps on
       // exactly the same terms - it did not, which is why every show born
       // after the switch quietly stayed hourly.
       const fee = packingFeeToStamp({
-        hasManager: true,
+        hasPacker: true,
         existingFee: stream.fields["Packing Fee"],
         packingHours: stream.fields["Packing Hours"],
         managerPackingHours: stream.fields["Manager Packing Hours"],
         settingFee: settings.packing_fee,
       });
       if (fee !== null) fields["Packing Fee"] = fee;
+    }
+  }
+  // manager of record - admin only, and deliberately pays nothing
+  if (b.managerId !== undefined) {
+    if (!me.isAdmin) return NextResponse.json({ error: "only admins can change the manager of record" }, { status: 403 });
+    if (b.managerId === null || b.managerId === "") {
+      fields["Manager Rec Id"] = "";
+    } else {
+      if (!isRecId(String(b.managerId))) return NextResponse.json({ error: "bad person id" }, { status: 400 });
+      try { await atGet(T.streamers, b.managerId); } catch { return NextResponse.json({ error: "unknown person" }, { status: 400 }); }
+      fields["Manager Rec Id"] = b.managerId;
     }
   }
   // who earns the override on this show - ADMIN ONLY, separate from packaging above

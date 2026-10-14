@@ -11,6 +11,6 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
   const stream = await atGet(T.streams, streamId);
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   await atDelete(T.time, params.id);
-  await recomputeStreamHours(streamId, stream.fields["Manager Rec Id"] || null);
+  await recomputeStreamHours(streamId, stream.fields["Packer Rec Id"] || null);
   return NextResponse.json({ ok: true });
 }

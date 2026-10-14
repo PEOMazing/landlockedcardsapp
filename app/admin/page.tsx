@@ -56,6 +56,10 @@ export default async function AdminDashboard() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     packingRate: r.fields["Packing Rate"] ?? null,
+    // pk-v5: without Packing Fee here, isFlatPacking is false and a flat show
+    // prices itself by the hour, which on a flat show is zero.
+    packingFee: r.fields["Packing Fee"] ?? null,
+    packerId: r.fields["Packer Rec Id"] || null,
     managerId: r.fields["Manager Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
@@ -66,7 +70,7 @@ export default async function AdminDashboard() {
 
   // hp-v1: pay follows the person who clocked the hours (shared shows split)
   const personHours = buildPersonHours(
-    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, managerId: r.managerId, streamerId: r.streamerId, tips: r.tips, packingRate: r.packingRate })),
+    rows.map((r) => ({ id: r.id, date: r.date, status: r.status, packerId: r.packerId, streamerId: r.streamerId, tips: r.tips, packingRate: r.packingRate, packingFee: r.packingFee })),
     (timeRows as any[]).map((e) => ({
       streamId: e.fields["Stream Rec Id"] || "", personId: e.fields["Person Rec Id"] || "",
       type: e.fields["Type"] || "", hours: e.fields["Hours"] || 0,

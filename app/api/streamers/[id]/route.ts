@@ -86,6 +86,7 @@ async function clearUnsettledStreamRoles(personId: string): Promise<string[]> {
     if (status === "Complete") continue;   // settled: never rewritten
     const fields: Record<string, any> = {};
     if (r.fields["Manager Rec Id"] === personId) fields["Manager Rec Id"] = "";
+    if (r.fields["Packer Rec Id"] === personId) fields["Packer Rec Id"] = "";
     if (r.fields["Override Rec Id"] === personId) fields["Override Rec Id"] = "";
     if (Object.keys(fields).length === 0) continue;
     await atUpdate(T.streams, r.id, fields);

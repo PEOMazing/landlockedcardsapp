@@ -57,11 +57,14 @@ export async function POST(req: Request) {
   });
   // packing time for someone who is not the streamer makes them the packaging
   // person when the stream has none - hours then attribute to their pay bucket
-  let managerRecId = stream.fields["Manager Rec Id"] || null;
-  if (b.type === "Packing" && personId !== (stream.fields["Streamer Rec Id"] || "") && personId !== "admin" && !managerRecId) {
-    managerRecId = personId;
-    await atUpdate(T.streams, b.streamId, { "Manager Rec Id": personId });
+  // pk-v5: clocking packing on a show nobody has been assigned to makes you its
+  // PACKER. It used to make you manager of record, which also handed you access
+  // to the show - a side effect nobody asked for by punching a clock.
+  let packerRecId = stream.fields["Packer Rec Id"] || null;
+  if (b.type === "Packing" && personId !== (stream.fields["Streamer Rec Id"] || "") && personId !== "admin" && !packerRecId) {
+    packerRecId = personId;
+    await atUpdate(T.streams, b.streamId, { "Packer Rec Id": personId });
   }
-  await recomputeStreamHours(b.streamId, managerRecId);
+  await recomputeStreamHours(b.streamId, packerRecId);
   return NextResponse.json({ ok: true, hours });
 }

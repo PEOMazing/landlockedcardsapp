@@ -18,8 +18,12 @@
 
 export type FeeStampInput = {
   /** Is a packer landing on this record? No packer, no fee - an unassigned
-   *  show has not been packed and must not read as a $35 cost. */
-  hasManager: boolean;
+   *  show has not been packed and must not read as a $35 cost.
+   *
+   *  pk-v5: this is the PACKER, not the manager of record. They were one field
+   *  when this was written, which meant the only way to pay somebody for
+   *  packing was to also make them manager of the show. */
+  hasPacker: boolean;
   /** What the record already carries, if anything. */
   existingFee?: number | null;
   packingHours?: number | null;
@@ -39,7 +43,7 @@ export type FeeStampInput = {
  *  that show was priced by the hour and somebody may already have been paid
  *  for it; quietly moving it to a fee would rewrite settled pay. */
 export function packingFeeToStamp(i: FeeStampInput): number | null {
-  if (!i.hasManager) return null;
+  if (!i.hasPacker) return null;
   if (Number(i.existingFee) > 0) return null;
   const hours = (Number(i.packingHours) || 0) + (Number(i.managerPackingHours) || 0);
   if (hours > 0) return null;

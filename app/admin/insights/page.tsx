@@ -59,7 +59,11 @@ export default async function InsightsPage() {
     packingHours: r.fields["Packing Hours"] || 0,
     managerPackingHours: r.fields["Manager Packing Hours"] || 0,
     packingRate: r.fields["Packing Rate"] ?? null,
-    managerId: r.fields["Manager Rec Id"] || null,
+    // pk-v5: without Packing Fee here, isFlatPacking is false and a flat show
+    // prices itself by the hour, which on a flat show is zero.
+    packingFee: r.fields["Packing Fee"] ?? null,
+    packerId: r.fields["Packer Rec Id"] || null,
+    managerId: r.fields["Packer Rec Id"] || null,
     overrideId: r.fields["Override Rec Id"] || null,
     productCost: costByStream[r.id] || 0,
     productMarketCost: marketCostByStream[r.id] || 0,

@@ -78,6 +78,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const [metaTitle, setMetaTitle] = useState("");
   const [metaDate, setMetaDate] = useState("");
   const [metaStreamer, setMetaStreamer] = useState("");
+  // pk-v5: this select is the PACKER. It used to write Manager Rec Id, which
+  // meant tagging a packer also made them manager of record of the show.
   const [metaManager, setMetaManager] = useState("");
   const [teamOptions, setTeamOptions] = useState<{ id: string; name: string }[]>([]);
   const [team, setTeam] = useState<{ id: string; name: string }[]>([]);
@@ -718,7 +720,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                 disabled={busy || !metaTitle.trim() || !metaDate}
                 onClick={async () => {
                   setBusy(true);
-                  const r = await fetch(`/api/streams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: metaTitle.trim(), date: metaDate, ...(metaStreamer && metaStreamer !== stream.streamerRecId ? { streamerId: metaStreamer } : {}), ...(metaManager !== (stream.managerRecId || "") ? { managerId: metaManager || null } : {}) }) });
+                  const r = await fetch(`/api/streams/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: metaTitle.trim(), date: metaDate, ...(metaStreamer && metaStreamer !== stream.streamerRecId ? { streamerId: metaStreamer } : {}), ...(metaManager !== (stream.packerRecId || "") ? { packerId: metaManager || null } : {}) }) });
                   setBusy(false);
                   if (r.ok) { setEditingMeta(false); await load(); }
                 }}
@@ -736,7 +738,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                   title="Rename or move this show"
                   onClick={async () => {
                     setMetaTitle(stream.title || ""); setMetaDate(stream.date || "");
-                    setMetaStreamer(stream.streamerRecId || ""); setMetaManager(stream.managerRecId || ""); setEditingMeta(true);
+                    setMetaStreamer(stream.streamerRecId || ""); setMetaManager(stream.packerRecId || ""); setEditingMeta(true);
                     try {
                       const r = await fetch("/api/streamers");
                       if (r.ok) {
@@ -757,8 +759,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           <span className="text-dim text-sm ml-3 border border-edge rounded-full px-3 py-0.5">
             {stream.streamType || "Surprise Set"}
           </span>
-          {stream.managerName && (
-            <span className="text-dim text-sm ml-3">Packaging: {stream.managerName}</span>
+          {stream.packerName && (
+            <span className="text-dim text-sm ml-3">Packaging: {stream.packerName}</span>
           )}
         </div>
         <CopyShowSet lines={(lines as any[]).filter((l) => !l.isStore).map((l) => ({ qty: l.qty, name: l.name, exportTitle: l.exportTitle, exportDescription: l.exportDescription, market: l.market, isHit: l.isHit }))} streamTitle={stream.title || "show-set"} />
@@ -946,7 +948,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                   for hours that were never meant to exist. */}
               <span className="text-dim">
                 {flatPackingFee > 0
-                  ? `Packing fee${stream?.managerName ? ` (${stream.managerName})` : " (nobody assigned)"}`
+                  ? `Packing fee${stream?.packerName ? ` (${stream.packerName})` : " (nobody assigned)"}`
                   : "Packing time"}
               </span>
               <span className="num">-{$(packingPay)}</span>
@@ -1014,8 +1016,8 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           {/* pk-v3: packing is a flat fee on this show, so say who is owed it
               rather than leaving the line looking like nobody packed it. */}
           {flatPackingFee > 0 && (
-            stream.managerName
-              ? ` - packing is a flat ${$(flatPackingFee)} to ${stream.managerName}`
+            stream.packerName
+              ? ` - packing is a flat ${$(flatPackingFee)} to ${stream.packerName}`
               : ` - packing is a flat ${$(flatPackingFee)}, nobody assigned yet`
           )}
         </div>
@@ -1030,13 +1032,13 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
         hoursStreamed={stream.hours || 0}
         streamerPacking={stream.packingHours || 0}
         managerPacking={stream.managerPackingHours || 0}
-        hasManager={!!stream.managerName}
+        hasManager={!!stream.packerName}
         packingFee={flatPackingFee}
-        packerName={stream.managerName || ""}
+        packerName={stream.packerName || ""}
         canAssign={canManage}
         people={(team.length ? team : [
           stream.streamerRecId ? { id: stream.streamerRecId, name: stream.streamerName || "Streamer" } : null,
-          stream.managerRecId ? { id: stream.managerRecId, name: (stream.managerName || "Packaging") + " (packaging)" } : null,
+          stream.packerRecId ? { id: stream.packerRecId, name: (stream.packerName || "Packing") + " (packing)" } : null,
         ].filter(Boolean)) as { id: string; name: string }[]}
       />
 
