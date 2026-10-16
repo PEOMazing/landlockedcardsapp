@@ -3,6 +3,7 @@ import { getMe } from "@/lib/auth";
 import { atGet, isRecId, T } from "@/lib/airtable";
 import QuickSell from "./QuickSell";
 import { formatCardNo } from "@/lib/cardNo";
+import { isSlab } from "@/lib/slab";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,12 @@ export default async function LabelPage({ params }: { params: { id: string } }) 
     <QuickSell
       id={params.id}
       isManager={!!me?.isManager}
+      // sl-v4. A slab scans to the same sticker page but prices down a
+      // different pipeline, so the page has to know which it is holding. The
+      // raw auto-pull on mount would be both wrong and wasted on a slab:
+      // /api/singles/[id]/comp goes through recompSingle, which prices off the
+      // TCGplayer raw feed, and that feed has no grade dimension at all.
+      isSlab={isSlab(String(f["Condition"] || ""))}
       card={{
         cardNo: formatCardNo(f["Card No"]),
         name: String(f["Card Name"] || "").replace(/\s*-\s*[\w]+\/[\w]+\s*$/, ""),

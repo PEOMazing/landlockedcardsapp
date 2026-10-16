@@ -678,6 +678,61 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     window.location.href = "/singles/labels";
   }
 
+  // sl-v1. Re-comp slabs from eBay sold prices.
+  //
+  // Its own action rather than a branch inside refreshComps, because it is a
+  // different pipeline end to end: /api/singles/comps prices raw cards off
+  // TCGplayer and lib/priceRefresh locks slabs out of it by design, since the
+  // raw feed has no grade dimension at all.
+  //
+  // One card per request on purpose. Each one is an upstream sold-listings
+  // call against a metered quota, and these are $50 to $2,700 cards where a
+  // comp arriving wrong matters more than a batch arriving fast. Sequential so
+  // a quota wall stops the run instead of firing forty requests into it.
+  async function refreshSlabComps(ids: string[]) {
+    if (ids.length === 0) { toast("Nothing to re-comp", "bad"); return; }
+    setBulkBusy(true); setErr("");
+    let priced = 0, left = 0, thin = 0;
+    const notes: string[] = [];
+    try {
+      for (const id of ids) {
+        const r = await fetch("/api/singles/slab-comp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          // A rejected key or a spent quota is the same for every remaining
+          // card, so stop rather than spend the rest of the run proving it.
+          notes.push(d?.error || `could not re-comp (${r.status})`);
+          break;
+        }
+        if (d.ok) {
+          priced++;
+          // Fewer than three sales is not necessarily wrong, there is just not
+          // much holding it up, and on a four figure slab that is worth saying
+          // out loud rather than leaving to the Thin data chip.
+          if (d.sampleSize > 0 && d.sampleSize < 3) thin++;
+        } else {
+          // No matching sales leaves the hand-entered comp alone, which is the
+          // right outcome and not a failure.
+          left++;
+        }
+      }
+      await load();
+      const bits = [`${priced} re-comped`];
+      if (left > 0) bits.push(`${left} left as-is, no matching sales`);
+      if (thin > 0) bits.push(`${thin} on fewer than three sales - worth a look`);
+      if (notes.length > 0) bits.push(notes[0]);
+      toast(bits.join(". "), notes.length > 0 ? "bad" : "ok");
+    } catch {
+      setErr("Slab re-comp failed");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   // Re-pull prices for a batch of cards.
   //
   // Sticker-safe by construction: this only writes price fields. The QR on a
@@ -932,11 +987,26 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     [stickerPool]
   );
 
+  // sl-v1. Which cards are owed a label, scoped to the half of the page you
+  // are looking at.
+  //
+  // Its own pool rather than stickerPool, which is raw-only and has to stay
+  // that way: re-stickering is about binder price-band boxes and a slab is not
+  // in one. Labelling is now a question on both halves, because a slab gets a
+  // QR on its case even though it gets no pocket. Reading the raw pool here
+  // was why the graded view could not count its own unlabelled slabs.
+  const labelPool = useMemo(
+    () => singles.filter((s) =>
+      s.status === "In Stock" &&
+      (mode === "graded" ? GRADED.includes(s.condition) : !GRADED.includes(s.condition))),
+    [singles, mode]
+  );
+
   // Only In Stock: a card already on a stream or sold does not need a sticker,
   // and counting them would make the chip look permanently unfinished.
   const neverPrintedCount = useMemo(
-    () => stickerPool.filter((s) => !s.labelPrinted).length,
-    [stickerPool]
+    () => labelPool.filter((s) => !s.labelPrinted).length,
+    [labelPool]
   );
 
   // In Stock only, same reasoning as never-printed: a sold card's comp is
@@ -1361,10 +1431,21 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
             {isManager && (
               <button className="btn-ghost !py-1.5 text-xs" onClick={assignLocations} title="Number every card currently shown, in the order shown">Assign locations</button>
             )}
-            {/* lb-v2: both sticker chips belong to the raw half of the page.
-                A slab gets no binder label, so on the graded view these are not
-                just empty, they are the wrong question. */}
-            {mode !== "graded" && neverPrintedCount > 0 && (
+            {/* lb-v2 said both sticker chips belonged to the raw half, because
+                a slab gets no binder pocket and so was owed no sticker.
+
+                sl-v1 keeps half of that. A slab still has no pocket, but it
+                does now get a label: a QR on the case is how a graded card
+                gets scanned to its record at the table, and Print labels has
+                always worked on this view - only the tracking was missing, so
+                there was no way to tell a labelled slab from an unlabelled
+                one. "Never printed" is therefore the right question on both
+                views now.
+
+                Re-sticker stays raw-only. That chip is about a comp crossing a
+                price band and putting a card in the wrong binder box, and a
+                slab in a case is not in a box. */}
+            {neverPrintedCount > 0 && (
               <button
                 type="button"
                 aria-pressed={neverPrinted}
@@ -1434,6 +1515,30 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 title="Re-pull comps and market prices for every card shown. Card numbers and printed QR codes are not affected."
               >
                 {bulkBusy ? "Refreshing..." : `Refresh prices (${shown.length})`}
+              </button>
+            )}
+            {/* sl-v1. Graded view only, because this is the eBay sold pipeline
+                and it has nothing to say about a raw card. The raw Refresh
+                prices button is the mirror of this and skips slabs for the
+                same reason in reverse. */}
+            {isManager && mode === "graded" && shown.length > 0 && (
+              <button
+                className="btn-ghost !py-1.5 text-xs disabled:opacity-40"
+                disabled={bulkBusy}
+                onClick={() => {
+                  if (
+                    !confirm(
+                      `Re-comp ${shown.length} slab${shown.length === 1 ? "" : "s"} from eBay sold prices?\n\n` +
+                        "Median of up to five sales in the last 30 days, with low outliers set aside. " +
+                        "A slab with no matching sales keeps the comp it already has, and a locked comp is left alone. " +
+                        "One upstream call per card, so this is slower than the raw refresh.",
+                    )
+                  ) return;
+                  refreshSlabComps(shown.map((s) => s.id));
+                }}
+                title="Re-comp every slab shown from eBay solds for its exact grader and grade. Cards with no matching sales keep their current comp."
+              >
+                {bulkBusy ? "Re-comping..." : `Re-comp from eBay (${shown.length})`}
               </button>
             )}
             <button className="btn-ghost !py-1.5 text-xs" onClick={exportCsv}>Export CSV</button>

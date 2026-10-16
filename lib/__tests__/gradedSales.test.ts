@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import {
   GRADE_LOOKUP_FLOOR, PSA_GRADES, cardFromParams, foldNumber, gradedParams,
-  gradedQuery, latestByGrade, saleMatches, upside, wantsGradedSales,
+  gradedQuery, latestByGrade, printingKind, saleMatches, upside, wantsGradedSales,
   worthGradedLookup, type CardLike,
 } from "../gradedSales";
 import { isSlab } from "../slab";
@@ -215,6 +215,77 @@ describe("the multiple that makes it a decision", () => {
     assert.equal(upside(null, 420), null);
     assert.equal(upside(0, 420), null);
     assert.equal(upside(20, 0), null);
+  });
+});
+
+describe("telling the print run apart", () => {
+  it("reads 1st Edition out of either field", () => {
+    assert.equal(printingKind({ printing: "1st Edition" }), "first");
+    assert.equal(printingKind({ variant: "1st Edition Holofoil" }), "first");
+  });
+
+  it("reads Unlimited out of either field", () => {
+    assert.equal(printingKind({ printing: "Unlimited" }), "unlimited");
+    assert.equal(printingKind({ variant: "Unlimited Holofoil" }), "unlimited");
+  });
+
+  it("says nothing about a modern card", () => {
+    // no print run to speak of; guessing one would empty the panel
+    assert.equal(printingKind({ variant: "Holofoil" }), "");
+    assert.equal(printingKind({}), "");
+  });
+});
+
+describe("keeping print runs out of each other's prices", () => {
+  // A Gym Heroes Lt. Surge in PSA 10 is a different card in 1st Edition than in
+  // Unlimited. Quoting one against the other overstates the upside by multiples,
+  // which is exactly what happened the first time this shipped.
+  const firstEd = (over: any = {}) =>
+    sale({ card: { graded: true, grader: "PSA", grade: "10", card_number: "017/132", first_edition: true }, ...over });
+  const unlimited = (over: any = {}) =>
+    sale({ card: { graded: true, grader: "PSA", grade: "10", card_number: "017/132", first_edition: false }, ...over });
+  const unlabelled = (over: any = {}) =>
+    sale({ card: { graded: true, grader: "PSA", grade: "10", card_number: "017/132" }, ...over });
+
+  const surge = (run: Partial<CardLike>): CardLike =>
+    ({ name: "Lt. Surge", setName: "Gym Heroes", number: "017/132", ...run });
+
+  it("refuses a 1st Edition sale for an Unlimited card", () => {
+    assert.equal(saleMatches(firstEd(), surge({ variant: "Unlimited Holofoil" })), false);
+  });
+
+  it("takes an unlabelled sale for an Unlimited card", () => {
+    // almost no Unlimited listing says so in the title, so demanding proof
+    // would empty the panel on the cards it matters most for
+    assert.equal(saleMatches(unlabelled(), surge({ variant: "Unlimited Holofoil" })), true);
+    assert.equal(saleMatches(unlimited(), surge({ variant: "Unlimited Holofoil" })), true);
+  });
+
+  it("demands a 1st Edition sale for a 1st Edition card", () => {
+    // the expensive direction to be wrong in: being quoted Unlimited money on
+    // a 1st Edition card reads as "not worth grading" when it very much is
+    assert.equal(saleMatches(firstEd(), surge({ printing: "1st Edition" })), true);
+    assert.equal(saleMatches(unlimited(), surge({ printing: "1st Edition" })), false);
+    assert.equal(saleMatches(unlabelled(), surge({ printing: "1st Edition" })), false);
+  });
+
+  it("takes either when the card does not say", () => {
+    assert.equal(saleMatches(firstEd(), surge({})), true);
+    assert.equal(saleMatches(unlimited(), surge({})), true);
+  });
+
+  it("only narrows upstream for 1st Edition, never for Unlimited", () => {
+    assert.equal(gradedParams(surge({ printing: "1st Edition" })).first_edition, "true");
+    assert.equal(gradedParams(surge({ variant: "Unlimited Holofoil" })).first_edition, undefined);
+    assert.equal(gradedParams(surge({})).first_edition, undefined);
+  });
+
+  it("keeps the two apart in the grade columns", () => {
+    const rows = latestByGrade(
+      [firstEd({ price: 4000 }), unlabelled({ price: 300, last_sold: "2026-10-01T00:00:00Z" })],
+      surge({ variant: "Unlimited Holofoil" }),
+    );
+    assert.equal(rows["10"]!.price, 300, "the 1st Edition sale must not price the Unlimited card");
   });
 });
 

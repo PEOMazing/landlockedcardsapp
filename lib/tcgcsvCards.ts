@@ -60,6 +60,30 @@ async function allGroups(): Promise<any[]> {
   return data;
 }
 
+// Groups that stay searchable no matter their age or their supplemental flag.
+//
+// mc-v1. TCGplayer files stamped prerelease promos in its junk-drawer groups,
+// not with the set they came from: "Umbreon ex - 060/131 (Prismatic Evolutions
+// Stamp)" lives in Miscellaneous Cards & Products. That group is BOTH flagged
+// supplemental and sitting on a low groupId, so the two filters below excluded
+// it twice over and no amount of typing could surface it in the add-a-card box.
+// pokemontcg.io does not carry TCGplayer-only products at all, so the
+// pokemontcg.io fallback in /api/pokemon/cards could not cover the gap either -
+// the card was simply unreachable from search while being perfectly reachable
+// from a CSV import, which goes through resolveSingleToTcg and sees every group.
+//
+// Matched on name rather than a hardcoded groupId so this survives tcgcsv
+// renumbering, and kept to four entries on purpose: every group added here
+// costs two more HTTP fetches on a cold instance, and this route has a 60s
+// budget. The real fix for breadth is a cached name index over all groups
+// rather than a newest-N window; this is the narrow version of that.
+const EVERGREEN_GROUPS = [
+  /^miscellaneous cards/,
+  /^blister exclusives$/,
+  /^deck exclusives$/,
+  /^league and championship cards$/,
+];
+
 async function recentGroups(): Promise<any[]> {
   const groups = await allGroups();
   // publishedOn is unreliable on tcgcsv (ancient sets carry far-future placeholder
@@ -69,10 +93,16 @@ async function recentGroups(): Promise<any[]> {
   // two catalogs interleaved would push English sets out of the newest-16
   // window and change what that box returns. Matching an imported card goes
   // through resolveSingleToTcg, which does see both.
-  return groups
-    .filter((g) => !g.isSupplemental && Number(g.categoryId) === EN_CAT)
+  const en = groups.filter((g) => Number(g.categoryId) === EN_CAT);
+  const newest = en
+    .filter((g) => !g.isSupplemental)
     .sort((a, b) => (b.groupId || 0) - (a.groupId || 0))
     .slice(0, RECENT_SETS);
+  const taken = new Set(newest.map((g) => g.groupId));
+  const evergreen = en.filter(
+    (g) => !taken.has(g.groupId) && EVERGREEN_GROUPS.some((re) => re.test(setKey(g.name))),
+  );
+  return [...newest, ...evergreen];
 }
 
 async function loadGroup(g: any): Promise<GroupCache | null> {
@@ -126,10 +156,19 @@ function toCard(p: any, g: any, market: number | undefined): PokeCard {
 
 const norm = (s: string) => String(s).toLowerCase().replace(/[.,'!]/g, "").replace(/\s+/g, " ").trim();
 
+// TCGplayer's own shorthand for a set, in trailing parens: "(MCAP)", "(PRE)",
+// "(SVP)". It is on screen when you copy a card's title and it exists in no
+// field we hold, so it has to come off the query rather than be searched for.
+const stripSetAbbrev = (s: string) => s.replace(/\(\s*[A-Za-z0-9]{2,6}\s*\)\s*$/, " ");
+
 export async function searchTcgcsvCards(q: string): Promise<PokeCard[]> {
-  const term = norm(q);
+  const term = norm(stripSetAbbrev(q));
   if (!term) return [];
-  const qTokens = term.split(" ").filter(Boolean);
+  // Punctuation-only tokens are dropped. The dash in a pasted title would
+  // otherwise be a token, and "-" happens to be a substring of most product
+  // names, so it matched everything and meant nothing.
+  const qTokens = term.split(" ").filter((t) => /[a-z0-9]/.test(t));
+  if (qTokens.length === 0) return [];
   const groups = await recentGroups();
   const out: PokeCard[] = [];
 
@@ -137,9 +176,18 @@ export async function searchTcgcsvCards(q: string): Promise<PokeCard[]> {
     const chunk = await Promise.all(groups.slice(i, i + 4).map((g) => loadGroup(g).then((d) => ({ g, d }))));
     for (const { g, d } of chunk) {
       if (!d) continue;
+      // Matched against the card name AND its set name. People paste what
+      // TCGplayer showed them, and what TCGplayer shows them is the whole
+      // line: "Umbreon ex - 060/131 (Prismatic Evolutions Stamp) -
+      // Miscellaneous Cards & Products (MCAP)". Against the name alone, every
+      // token past the product name was a token that could never match, so the
+      // more precisely you identified the card the more certain you were to
+      // get nothing back. Searching the set name too also makes "umbreon
+      // prismatic" and "charizard 151" work, which is how people actually type.
+      const setHay = norm(g.name);
       for (const p of d.prods) {
         if (!isCard(p) || String(p.name).startsWith("Code Card")) continue;
-        const n = norm(p.name);
+        const n = `${norm(p.name)} ${setHay}`;
         if (!qTokens.every((t) => n.includes(t))) continue;
         out.push(toCard(p, g, d.market.get(p.productId)));
         if (out.length >= 60) break;

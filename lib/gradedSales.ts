@@ -45,8 +45,29 @@ export type CardLike = {
   number?: string;
   language?: string;
   printing?: string;
+  /** "1st Edition Holofoil", "Unlimited Holofoil", "Reverse Holofoil"... The
+   *  print run hides in here as often as it does in printing, so both are read. */
+  variant?: string;
   condition?: string;
 };
+
+/** Which print run this card is, when we can tell.
+ *
+ *  On a vintage card this is most of the price. A Gym Heroes Lt. Surge in PSA 10
+ *  is a different card in 1st Edition than in Unlimited, and quoting one against
+ *  the other overstates the upside by multiples.
+ *
+ *  Read from Printing and Variant together because the import fills whichever
+ *  the TCGplayer export happened to carry: "1st Edition" lands in Printing,
+ *  "Unlimited Holofoil" in Variant, and plenty of cards have only one of them.
+ *  Blank is a real answer and means do not filter: a modern card has no print
+ *  run to speak of, and guessing one would empty the panel. */
+export function printingKind(card: CardLike): "first" | "unlimited" | "" {
+  const s = `${card.printing || ""} ${card.variant || ""}`.toLowerCase();
+  if (/1st|first edition/.test(s)) return "first";
+  if (/unlimited/.test(s)) return "unlimited";
+  return "";
+}
 
 /** Collector number as the listing would carry it: "4/102" and "004/102" are
  *  the same card, and leading zeros are a set-list convention rather than
@@ -90,6 +111,83 @@ const LANG_CODES: Record<string, string> = {
   spanish: "es", german: "de", french: "fr", italian: "it", portuguese: "pt",
 };
 
+/** The language code a card is, "en" when nothing says otherwise.
+ *
+ *  English is the default because that is what an unlabelled listing is: eBay
+ *  sellers mark the exception, not the rule. */
+export function langOf(card: CardLike): string {
+  return LANG_CODES[String(card.language || "").trim().toLowerCase()] || "en";
+}
+
+/** Words that mean a listing is in a particular language, as sellers write
+ *  them. Checked against the title because the feed does not reliably carry a
+ *  language field, and a title is what a human would have read anyway.
+ *
+ *  Deliberately narrow. "Korean" and "KR" are safe; a bare "K" is not, and
+ *  neither is "CN" inside "CNY". Anything ambiguous is left out, because the
+ *  cost of a false positive here is dropping a real sale and ending up with a
+ *  thinner comp, while the cost of a false negative is the thing being fixed. */
+const LANG_WORDS: Record<string, RegExp> = {
+  ja: /\b(japanese|japan|jpn|jp)\b/i,
+  zh: /\b(chinese|china|chn|simplified|traditional)\b/i,
+  ko: /\b(korean|korea|kor|kr)\b/i,
+  es: /\b(spanish|espa[nñ]ol)\b/i,
+  de: /\b(german|deutsch)\b/i,
+  fr: /\b(french|fran[cç]ais)\b/i,
+  it: /\b(italian|italiano)\b/i,
+  pt: /\b(portuguese|portugu[eê]s)\b/i,
+  en: /\b(english|eng)\b/i,
+};
+
+/** Which language a sold listing is, or "" when nothing in it says.
+ *
+ *  Reads the feed's own field first under every name it has been seen under -
+ *  same approach as saleVariant in lib/tcgcsvCards, and for the same reason:
+ *  the shape is not documented and betting on one spelling is how a filter
+ *  silently stops filtering. Falls back to the title, which is where sellers
+ *  actually put it.
+ *
+ *  Blank is a real answer and means "unmarked", which the caller treats as
+ *  English rather than as unknown. */
+export function saleLanguage(item: any): string {
+  for (const k of ["language", "lang", "card_language"]) {
+    const v = String(item?.[k] ?? item?.card?.[k] ?? "").trim().toLowerCase();
+    if (!v) continue;
+    if (LANG_CODES[v]) return LANG_CODES[v];
+    if (/^[a-z]{2}$/.test(v)) return v;
+  }
+  const title = String(item?.title || "");
+  if (!title) return "";
+  // Non-English first. An English card's title rarely says "English", so a
+  // listing that names Japanese AND English is a Japanese card being compared
+  // to the English one, and the non-English reading is the useful one.
+  for (const code of ["ja", "zh", "ko", "es", "de", "fr", "it", "pt"]) {
+    if (LANG_WORDS[code].test(title)) return code;
+  }
+  return LANG_WORDS.en.test(title) ? "en" : "";
+}
+
+/** Whether a sale's language can answer for this card's.
+ *
+ *  Asymmetric, the same way the print-run check is, and for the same reason:
+ *  the two directions carry different risk.
+ *
+ *  For an English card, a sale that explicitly names another language is
+ *  dropped and an unmarked one is kept, because unmarked is overwhelmingly
+ *  English and requiring proof would throw away nearly every real sale.
+ *
+ *  For a Japanese, Chinese or Korean card, the sale has to say so. An unmarked
+ *  listing is English, and quoting English money on a Japanese card is the
+ *  expensive direction to be wrong in - modern Japanese prints run a fraction
+ *  of their English counterparts, so an unfiltered comp does not drift, it
+ *  multiplies. */
+export function languageMatches(item: any, card: CardLike): boolean {
+  const want = langOf(card);
+  const got = saleLanguage(item);
+  if (want === "en") return got === "" || got === "en";
+  return got === want;
+}
+
 /** The request this card needs: PSA slabs only, all five grades at once, with
  *  the obvious junk excluded. One call per card, not one per grade. */
 export function gradedParams(card: CardLike, days = 365): Record<string, string> {
@@ -108,7 +206,15 @@ export function gradedParams(card: CardLike, days = 365): Record<string, string>
   // Only sent when we know it. Setting it drops titles that name no language,
   // which for an English card is most of them, so English is left unset.
   if (lang && lang !== "en") p.lang = lang;
-  if (/1st/i.test(String(card.printing || ""))) p.first_edition = "true";
+  // Asked for upstream only on a 1st Edition card, where the narrowing is safe:
+  // a 1st Edition slab is labelled as one in all but the worst listings.
+  //
+  // NOT sent as false for an Unlimited card, even though the parameter allows
+  // it. Hardly any Unlimited listing says "Unlimited" in the title, so asking
+  // the feed to prove it would empty the panel on exactly the cards this is
+  // worth most on. Those are filtered on the way back instead, where a sale the
+  // feed could not read an edition off is kept rather than thrown away.
+  if (printingKind(card) === "first") p.first_edition = "true";
   return p;
 }
 
@@ -129,6 +235,29 @@ export function saleMatches(item: any, card: CardLike): boolean {
   const want = foldNumber(card.number);
   const got = foldNumber(c.card_number);
   if (want && got && want !== got) return false;
+
+  // Print run. On a vintage card this is most of the price, so a 1st Edition
+  // sale must never answer for an Unlimited card.
+  //
+  // Asymmetric on purpose, because the two cases carry different risk. For an
+  // Unlimited card only an explicit 1st Edition sale is dropped: an unlabelled
+  // listing is almost certainly Unlimited, since that is the one nobody brags
+  // about in a title. For a 1st Edition card the opposite, the sale has to say
+  // so, because being quoted Unlimited money on a 1st Edition card is the
+  // expensive direction to be wrong in.
+  const run = printingKind(card);
+  if (run === "unlimited" && c.first_edition === true) return false;
+  if (run === "first" && c.first_edition !== true) return false;
+
+  // Language. Checked on the way back, not only in the request: gradedParams
+  // deliberately sends no lang for an English card, because doing so drops
+  // every title that names no language and that is most honest English
+  // listings. The consequence was that an English card's results were never
+  // language filtered at all, so a Japanese PSA 10 could answer for an English
+  // one. Modern Japanese prints trade at a fraction of their English
+  // counterparts, so that is not a drift, it is a multiple.
+  if (!languageMatches(item, card)) return false;
+
   return Number(item?.price) > 0 && !!item?.last_sold;
 }
 
@@ -192,6 +321,7 @@ export function cardFromParams(get: (k: string) => string | null): CardLike {
     number: s("number", 24),
     language: s("language", 24) || "English",
     printing: s("printing", 40),
+    variant: s("variant", 40),
     condition: s("condition", 24) || "Raw",
   };
 }

@@ -124,6 +124,54 @@ export function packingRate(stream: { packingRate?: number | null }, s: Settings
 // Blank fee means the show predates the switch and is still priced by the hour.
 // That is what keeps the hundreds of shows already in the table exactly as they
 // were, with no date arithmetic anywhere: the absence of a fee IS the history.
+/** Who packed a show.
+ *
+ *  pk-v6: the fallback to managerId is deliberately keyed on the FIELD BEING
+ *  ABSENT, not on it being empty. A row built by code that knows about packers
+ *  and says null means "nobody packed this" and must pay nobody - that is the
+ *  whole point of splitting the fields. Only a row from older code, which has
+ *  no packerId key at all, falls back to the manager of record so it keeps its
+ *  previous behaviour instead of silently paying nobody. */
+export function packerOf(r: { packerId?: string | null; managerId?: string | null }): string | null {
+  return "packerId" in r ? (r.packerId || null) : (r.managerId || null);
+}
+
+// ---- flat packing fee: when a show gets stamped ----
+// pk-v6: this lives in calc.ts, not in a module of its own, on purpose. It was
+// its own file and the stream route imported it; if that one new file does not
+// survive an upload, the whole build dies with module_not_found and nothing
+// ships. Everything here already imports calc, so putting it here means the
+// change cannot be broken by a missing file.
+
+export type FeeStampInput = {
+  /** Is a PACKER landing on this record - not the manager of record. They were
+   *  one field once, which meant paying somebody to pack also made them
+   *  manager of the show. No packer, no fee: an unassigned show has not been
+   *  packed and must not read as a $35 cost. */
+  hasPacker: boolean;
+  existingFee?: number | null;
+  packingHours?: number | null;
+  managerPackingHours?: number | null;
+  /** settings.packing_fee. Zero turns the flat deal off entirely. */
+  settingFee: number;
+};
+
+/** The fee to write, or null to leave the field alone.
+ *
+ *  Never re-stamps, so a show already carrying a fee keeps the number it was
+ *  stamped with and changing the setting cannot re-price settled history.
+ *  Never converts a show that already has packing hours clocked on it, because
+ *  that show was priced by the hour and somebody may already have been paid. */
+export function packingFeeToStamp(i: FeeStampInput): number | null {
+  if (!i.hasPacker) return null;
+  if (Number(i.existingFee) > 0) return null;
+  const hours = (Number(i.packingHours) || 0) + (Number(i.managerPackingHours) || 0);
+  if (hours > 0) return null;
+  const fee = Number(i.settingFee);
+  if (!Number.isFinite(fee) || fee <= 0) return null;
+  return fee;
+}
+
 export function isFlatPacking(r: { packingFee?: number | null }): boolean {
   return Number(r?.packingFee) > 0;
 }
@@ -137,13 +185,18 @@ export function isFlatPacking(r: { packingFee?: number | null }): boolean {
 export function streamPackingCost(
   r: {
     packingHours?: number | null; managerPackingHours?: number | null;
-    packingRate?: number | null; packingFee?: number | null; packerId?: string | null;
+    packingRate?: number | null; packingFee?: number | null;
+    packerId?: string | null;
+    /** pk-v6: still accepted so a caller that has not been updated yet keeps
+     *  compiling and keeps its old behaviour. packerId wins when both are set. */
+    managerId?: string | null;
   },
   s: Settings,
 ): number {
-  // pk-v5: packerId, not managerId. These were the same field until the manager
-  // of record turned out to be a different person from whoever packed the show.
-  if (isFlatPacking(r)) return r.packerId ? Number(r.packingFee) : 0;
+  // pk-v5: the packer, not the manager of record. These were the same field
+  // until the manager of record turned out to be a different person from
+  // whoever actually packed the show.
+  if (isFlatPacking(r)) return packerOf(r) ? Number(r.packingFee) : 0;
   const hrs = (Number(r.packingHours) || 0) + (Number(r.managerPackingHours) || 0);
   return hrs * packingRate(r, s);
 }
@@ -215,7 +268,7 @@ export type StreamRow = {
   //              also handed them the keys to every show they packed.
   // overrideId = who EARNS THE OVERRIDE (admin only, "Override Rec Id").
   //              Blank means nobody earns one here.
-  packerId: string | null;
+  packerId?: string | null;
   managerId: string | null;
   overrideId?: string | null;
   // Both costs are DELIVERED units only (qty hit), never the full wall - unhit units
@@ -265,7 +318,7 @@ export type PersonHours = Record<
 
 export function buildPersonHours(
   streams: Array<{
-    id: string; date: string; status: string; packerId?: string | null;
+    id: string; date: string; status: string; packerId?: string | null; managerId?: string | null;
     streamerId?: string; tips?: number; packingRate?: number | null;
     packingFee?: number | null;
   }>,
@@ -288,7 +341,7 @@ export function buildPersonHours(
       bump(key).streaming += e.hours;
       if (!streamersOnStream.has(st.id)) streamersOnStream.set(st.id, new Set());
       streamersOnStream.get(st.id)!.add(e.personId);
-    } else if (e.personId !== (st.packerId || null) && !isFlatPacking(st)) {
+    } else if (e.personId !== packerOf(st) && !isFlatPacking(st)) {
       // pk-v3: a flat-fee show pays its assigned packer and nobody else, so a
       // packing entry on one earns nothing. Skipped outright rather than
       // counted at $0, because hours that show up next to no money read as a
@@ -539,9 +592,10 @@ export function buildManagerPay(
   // field, so the only way to pay somebody for packing was to make them
   // manager of record of the show - access, reporting and all.
   for (const st of streams) {
-    if (st.status !== "Complete" || !st.packerId) continue;
+    const packer = packerOf(st);
+    if (st.status !== "Complete" || !packer) continue;
     if (isFlatPacking(st)) {
-      const agg = touch(`${weekStartOf(st.date)}|${st.packerId}`);
+      const agg = touch(`${weekStartOf(st.date)}|${packer}`);
       agg.packingPay += Number(st.packingFee);
       agg.packedCount += 1;
       agg.flatPacked += 1;
@@ -550,7 +604,7 @@ export function buildManagerPay(
     }
     const hrs = st.managerPackingHours || 0;
     if (hrs <= 0) continue;
-    const agg = touch(`${weekStartOf(st.date)}|${st.packerId}`);
+    const agg = touch(`${weekStartOf(st.date)}|${packer}`);
     agg.packingHours += hrs;
     agg.packingPay += hrs * packingRate(st, s);   // this show's own rate
     agg.packedCount += 1;

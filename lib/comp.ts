@@ -64,6 +64,27 @@ export const EST_MARKER = "est.";
 export const SOLDS_MARKER = "solds";
 export const LISTING_MARKER = "lowest";
 
+// im-v1. A comp seeded by an import and not yet repriced by anything.
+//
+// Its own marker because the alternative was reusing EST_MARKER, which is what
+// the CSV imports were doing, and the two mean different things. "est." means
+// NM market times a flat guess at what the condition costs - a number that
+// does not describe the card we hold. An import comp is the market price for
+// the exact printing and condition, straight off the TCGplayer export, which
+// is wrong only in being a market rather than a sale.
+//
+// Conflating them cost real information in both directions: 108 imported cards
+// read as condition guesses when their condition was right, and a genuine
+// step-3 estimate was indistinguishable from a fresh import. Neither shows as
+// hand-priced either, which is what they fell back to before this existed.
+//
+// Temporary by design. refreshSingleComps has no Card ID filter any more and
+// recompSingle links on first pass, so an import comp is replaced by solds or
+// a listing within a rotation or two. A collection still showing many of these
+// after a day means the rotation is not running, which is worth being able to
+// see.
+export const IMPORT_MARKER = "at import";
+
 /** How a sold-derived comp is written down.
  *
  *  `printing` leads the bracket for the same reason the listing source names
@@ -108,6 +129,18 @@ export function listingCompSource(cond: string, printing: string, count: number,
 
 export function fallbackCompSource(variant: string, mult: number, cond: string): string {
   return `${EST_MARKER} from TCGplayer market${variant ? ` (${variant})` : ""}${mult === 1 ? "" : ` x${mult} for ${cond}`}`;
+}
+
+/** How an import writes down a comp it seeded from the export's own market
+ *  price.
+ *
+ *  Names the printing AND the condition, because a TCGplayer export carries one
+ *  row per condition and prices each row for that condition. The MP Golbat came
+ *  in at $11.70 against the NM copy's $18.06 off the same product id, so the
+ *  condition is part of where the number came from and not decoration. */
+export function importCompSource(date: string, printing = "", cond = ""): string {
+  const what = [printing, cond].filter(Boolean).join(" ");
+  return `TCGplayer market ${IMPORT_MARKER} ${date}${what ? ` (${what})` : ""}`;
 }
 
 export type CompResult = {

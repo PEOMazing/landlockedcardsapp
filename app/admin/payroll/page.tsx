@@ -4,7 +4,7 @@ import MarkPaidButton from "./MarkPaidButton";
 import { getMe } from "@/lib/auth";
 import { atList, T } from "@/lib/airtable";
 import { getSettings } from "@/lib/settings";
-import { buildWeekPay, buildManagerPay, buildPersonHours, isFlatPacking, money, packingRate, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
+import { buildWeekPay, buildManagerPay, buildPersonHours, isFlatPacking, money, packerOf, packingRate, payDateOf, toLine, weekStartOf, StreamRow } from "@/lib/calc";
 import PaidToggle from "./PaidToggle";
 
 export const dynamic = "force-dynamic";
@@ -164,7 +164,7 @@ export default async function PayrollPage() {
       // packing pay only counts here if THIS person actually packed the show.
       // pk-v5: packerId, and a flat show owes the fee rather than hours x rate -
       // this line priced flat shows at zero even once the fee was being read.
-      const packed = r.packerId === mw.managerId;
+      const packed = packerOf(r) === mw.managerId;
       const packing = !packed ? 0
         : isFlatPacking(r) ? Number(r.packingFee)
         : (r.managerPackingHours || 0) * packingRate(r, settings);

@@ -33,7 +33,7 @@ describe("packing pay follows the packer, not the manager of record", () => {
     // the case that started this: Alyssa packed ten of Gabe's shows
     const out = buildManagerPay(
       [row({ packingFee: 35, packerId: ALYSSA, managerId: GABE })],
-      S, {}, { [ALYSSA]: "Alyssa", [GABE]: "Gabe" },
+      S, {}, { [ALYSSA]: "Alyssa", [GABE]: "Gabe" }, { [ALYSSA]: 20, [DESTINEE]: 20 },
     );
     const alyssa = out.find((m) => m.managerId === ALYSSA);
     assert.ok(alyssa, "the packer should be paid");
@@ -48,7 +48,7 @@ describe("packing pay follows the packer, not the manager of record", () => {
     // manager of record must not pick it up by default.
     const out = buildManagerPay(
       [row({ packingFee: 35, packerId: null, managerId: GABE })],
-      S, {}, { [GABE]: "Gabe" },
+      S, {}, { [GABE]: "Gabe" }, { [DESTINEE]: 20 },
     );
     assert.deepEqual(out, []);
     assert.equal(streamPackingCost({ packingFee: 35, packerId: null }, S), 0);
@@ -57,7 +57,7 @@ describe("packing pay follows the packer, not the manager of record", () => {
   it("adds up a week of flat shows for one packer", () => {
     const streams = Array.from({ length: 10 }, (_, i) =>
       row({ id: `rec${i}`, date: "2026-10-05", packingFee: 35, packerId: ALYSSA, managerId: GABE }));
-    const out = buildManagerPay(streams, S, {}, { [ALYSSA]: "Alyssa" });
+    const out = buildManagerPay(streams, S, {}, { [ALYSSA]: "Alyssa" }, { [ALYSSA]: 20, [DESTINEE]: 20 });
     assert.equal(out.length, 1);
     assert.equal(out[0].packingPay, 350);
     assert.equal(out[0].packedCount, 10);
@@ -70,7 +70,7 @@ describe("packing pay follows the packer, not the manager of record", () => {
   it("still pays an old hourly show by the hour, to its own packer", () => {
     const out = buildManagerPay(
       [row({ packingFee: null, packingRate: 20, managerPackingHours: 2, packerId: ALYSSA, managerId: GABE })],
-      S, {}, { [ALYSSA]: "Alyssa" },
+      S, {}, { [ALYSSA]: "Alyssa" }, { [ALYSSA]: 20, [DESTINEE]: 20 },
     );
     assert.equal(out[0].managerId, ALYSSA);
     assert.equal(out[0].packingPay, 40);
@@ -79,7 +79,7 @@ describe("packing pay follows the packer, not the manager of record", () => {
   it("leaves an incomplete show out, fee or no fee", () => {
     const out = buildManagerPay(
       [row({ status: "Planned", packingFee: 35, packerId: ALYSSA })],
-      S, {}, { [ALYSSA]: "Alyssa" },
+      S, {}, { [ALYSSA]: "Alyssa" }, { [ALYSSA]: 20, [DESTINEE]: 20 },
     );
     assert.deepEqual(out, []);
   });

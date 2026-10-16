@@ -1,5 +1,5 @@
 import { AtRecord, T, atList } from "./airtable";
-import { EST_MARKER, LISTING_MARKER, SOLDS_MARKER } from "./comp";
+import { EST_MARKER, IMPORT_MARKER, LISTING_MARKER, SOLDS_MARKER } from "./comp";
 import { conditionFloors, floorKey } from "./tcgListings";
 
 // Does the pricing pipeline still work?
@@ -62,7 +62,12 @@ export async function listingsCanary(): Promise<CanaryResult> {
 }
 
 // How a comp was actually arrived at, read back off the stored source string.
-export type CompBasis = "solds" | "listing" | "estimate" | "manual" | "none";
+//
+// "imported" sits between estimate and manual: the market price for the right
+// printing and condition, seeded by an import and not yet repriced. It used to
+// come back as "estimate", which overstated how wrong it was, or as "manual",
+// which claimed a person had chosen it.
+export type CompBasis = "solds" | "listing" | "estimate" | "imported" | "manual" | "none";
 
 // Matched on the markers lib/comp.ts builds into every source string, not on
 // the surrounding prose, so rewording a message cannot silently reclassify a
@@ -73,6 +78,10 @@ export function basisOf(rec: AtRecord): CompBasis {
   if (s.includes(EST_MARKER)) return "estimate";
   if (new RegExp(`\\b${SOLDS_MARKER}\\b`, "i").test(s)) return "solds";
   if (new RegExp(`\\b${LISTING_MARKER}\\b.*listing`, "i").test(s)) return "listing";
+  // After solds and listing, never before: a reprice overwrites the whole
+  // string, so a card that was imported and has since been priced off sales
+  // carries no import marker and must read as solds.
+  if (s.includes(IMPORT_MARKER)) return "imported";
   return "manual";
 }
 
@@ -81,6 +90,8 @@ export type Coverage = {
   solds: number;
   listing: number;
   estimate: number;
+  /** seeded by an import, not yet repriced by the rotation */
+  imported: number;
   manual: number;
   none: number;
   /** share priced from data specific to this card's condition */
@@ -101,7 +112,7 @@ export async function compCoverage(): Promise<Coverage> {
   const rows = await atList(T.singles, { filterByFormula: "{Status} = 'In Stock'" });
   const now = Date.now();
   const c: Coverage = {
-    total: rows.length, solds: 0, listing: 0, estimate: 0, manual: 0, none: 0,
+    total: rows.length, solds: 0, listing: 0, estimate: 0, imported: 0, manual: 0, none: 0,
     conditionSpecific: 0, stale: 0, oldestHours: null,
   };
   for (const r of rows) {

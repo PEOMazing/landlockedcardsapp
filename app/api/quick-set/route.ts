@@ -70,10 +70,24 @@ export async function GET(req: Request) {
     }
   }
 
-  // Slabs are not wheel stock. Every graded card in this inventory is $50 or
-  // more and the big ones average around $900, against a set that carries
-  // roughly $700 in total, so one of them IS the show. They come back in the
-  // response as a separate list to sell rather than spin.
+  // sl-v1. Slabs are wheel stock now.
+  //
+  // They used to be held out of the fill entirely, on the grounds that every
+  // graded card here is $50 or more and the big ones average around $900
+  // against a set carrying roughly $700, so one of them IS the show. That
+  // reasoning is still true and still worth knowing, and it is now a thing the
+  // set tells you about rather than a thing it decides for you: Gabe asked for
+  // slabs to be ordinary candidates, same as a raw single.
+  //
+  // So they go into the same pool, and the separate list below becomes a
+  // report instead of a quarantine - it still names every slab and its value,
+  // but it no longer means "excluded". What stops a $900 card landing in a $20
+  // spot is the generator's own value fitting, the same thing that stops a
+  // $900 raw single doing it.
+  //
+  // Still reported: slabValueInSet, because a set that is 80% one slab is a
+  // different show from one that is not, and that is worth seeing before you
+  // commit to it rather than after.
   const slabs: { id: string; name: string; value: number }[] = [];
   const singles: Candidate[] = [];
   for (const r of singleRows) {
@@ -83,12 +97,19 @@ export async function GET(req: Request) {
     const cond = String(r.fields["Condition"] || "NM");
     const slot = r.fields["Slot"] == null ? null : Number(r.fields["Slot"]);
     const label = `${slot ? `[${String(slot).padStart(4, "0")}] ` : ""}${cond} ${r.fields["Card Name"] || ""} ${r.fields["Card Number"] || ""}`.trim();
-    if (!isRawCondition(cond)) { slabs.push({ id: r.id, name: label, value }); continue; }
+    // A slab has no binder pocket, so its label carries no slot. Recorded
+    // rather than skipped, which is the difference from before.
+    const slab = !isRawCondition(cond);
+    if (slab) slabs.push({ id: r.id, name: label, value });
     singles.push({
       id: r.id, kind: "single", name: label, value, available: qty, slot,
       lastUsedShowsAgo: usedAgo.get(r.id),
+      // sl-v2. No value cap on a slab. A $1,000 slab on a $900 set is a
+      // decision about the show, not an accident to guard against.
+      uncapped: slab,
     });
   }
+  const slabIds = new Set(slabs.map((s) => s.id));
 
   const sealed: Candidate[] = invRows
     .filter((r) => String(r.fields["Category"] || "") !== "Graded Card" && Number(r.fields["Market Price"] || 0) > 0)
@@ -112,10 +133,21 @@ export async function GET(req: Request) {
       sealedProducts: sealed.length,
       sealedUnits: sealed.reduce((a, c) => a + c.available, 0),
     },
-    // Worth seeing every time: this is capital sitting still, and it is not
-    // sitting still because nobody wants it, it is sitting still because it
-    // does not fit on a wheel.
+    // Every slab on the shelf and what it is worth. No longer a quarantine
+    // list - they are in the fill now - but still worth seeing every time,
+    // because this is where the capital is.
     slabs: slabs.sort((a, b) => b.value - a.value),
     slabValue: Math.round(slabs.reduce((a, s) => a + s.value, 0)),
+    // What actually landed, which is the thing to look at before committing.
+    //
+    // sl-v2: these are uncapped, so a big one really can land and really can
+    // push the set over its value budget. generateQuickSet says by how much
+    // and which slab did it, in warnings. The rest of the wheel gets traded
+    // down around it rather than the slab being traded away.
+    slabsInSet: set.picks.filter((p) => slabIds.has(p.id))
+      .map((p) => ({ id: p.id, name: p.name, value: p.value })),
+    slabValueInSet: Math.round(
+      set.picks.filter((p) => slabIds.has(p.id)).reduce((a, p) => a + p.value, 0),
+    ),
   });
 }

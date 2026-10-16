@@ -31,6 +31,19 @@ export type Candidate = {
   category?: string;
   /** How many shows ago this last went on a set. Undefined means never. */
   lastUsedShowsAgo?: number;
+  /** sl-v2. Exempt from maxItemPct.
+   *
+   *  Set for slabs. The cap exists so one dear item cannot swallow a wheel
+   *  that was supposed to have eleven prizes on it, which is the right rule
+   *  for stock that is interchangeable with cheaper stock. A slab is not:
+   *  it IS the show, and Gabe's call is that a $1,000 slab on a $900 set is
+   *  fine. So the cap does not apply to it.
+   *
+   *  The value budget still does. An uncapped item can be picked, and the
+   *  swap-down pass afterwards will then trade other spots down to pay for
+   *  it rather than letting the set drift. That is the difference between
+   *  "this item is allowed to be big" and "this set is allowed to be wrong". */
+  uncapped?: boolean;
 };
 
 export type Tier = {
@@ -151,8 +164,9 @@ export function generateQuickSet(pool: Candidate[], opts: QuickSetOptions): Quic
   // saying the shelf had one pack left. The shelf had 708.
   const onCooldown = (c: Candidate) =>
     c.kind === "single" && c.lastUsedShowsAgo !== undefined && c.lastUsedShowsAgo < cooldown;
-  const tooBig = pool.filter((c) => c.value > cap);
-  const eligible = pool.filter((c) => c.value <= cap && c.available > 0 && !onCooldown(c));
+  const overCap = (c: Candidate) => !c.uncapped && c.value > cap;
+  const tooBig = pool.filter(overCap);
+  const eligible = pool.filter((c) => !overCap(c) && c.available > 0 && !onCooldown(c));
 
   const picks: Pick[] = [];
   const takenQty = new Map<string, number>();
@@ -229,8 +243,23 @@ export function generateQuickSet(pool: Candidate[], opts: QuickSetOptions): Quic
   const cheapestLeft = () => cheapPool.find((c) => (takenQty.get(c.id) || 0) < c.available);
   let swaps = 0;
   let stranded = 0;
+  // sl-v2. The swap-down pass may not evict an uncapped item.
+  //
+  // Without this the cap exemption above achieves nothing: a $1,000 slab is by
+  // definition the dearest pick, so the first swap would take it straight back
+  // off the board and the set would come out exactly as it did before. The
+  // exemption has to hold through both passes or it holds through neither.
+  //
+  // So the budget is brought back into line by trading the OTHER spots down,
+  // which is what somebody putting a big slab on a small set actually means:
+  // the slab stays and the rest of the wheel gets cheaper around it.
+  const uncappedIds = new Set(pool.filter((c) => c.uncapped).map((c) => c.id));
   while (spent > budget * 1.1 && picks.length > 1 && swaps < spots) {
-    const dearest = picks.reduce((b, p) => (p.unitValue > b.unitValue ? p : b), picks[0]);
+    const swappable = picks.filter((p) => !uncappedIds.has(p.id));
+    // Nothing left but protected picks. Stop rather than spin: the set is over
+    // budget on purpose and overBudget below reports it.
+    if (swappable.length === 0) break;
+    const dearest = swappable.reduce((b, p) => (p.unitValue > b.unitValue ? p : b), swappable[0]);
     const cheapest = cheapestLeft();
     if (!cheapest || dearest.unitValue <= cheapest.value) break; // nothing left to gain
     dearest.qty -= 1;
@@ -257,6 +286,19 @@ export function generateQuickSet(pool: Candidate[], opts: QuickSetOptions): Quic
   if (tooBig.length) {
     warnings.push(
       `${tooBig.length} item${tooBig.length === 1 ? "" : "s"} skipped for being worth more than ${Math.round(maxItemPct * 100)}% of the set on their own`,
+    );
+  }
+  // sl-v2. An uncapped pick can push the set past its budget, by design, and
+  // that is worth saying out loud rather than leaving somebody to notice it in
+  // the value-per-spot number. Named so it reads as a consequence of a choice
+  // and not as a bug.
+  const overBy = value - round2(budget);
+  const bigOnes = picks.filter((p) => uncappedIds.has(p.id));
+  if (bigOnes.length && overBy > 0) {
+    warnings.push(
+      `Over budget by ${Math.round(overBy)} to carry ${bigOnes.length === 1
+        ? `${bigOnes[0].name} at ${Math.round(bigOnes[0].unitValue)}`
+        : `${bigOnes.length} slabs worth ${Math.round(bigOnes.reduce((a, p) => a + p.value, 0))}`}`,
     );
   }
 

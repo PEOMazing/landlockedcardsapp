@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { packingFeeToStamp } from "../packingFee";
+import { packingFeeToStamp } from "../calc";
 
 const FEE = 35;
 

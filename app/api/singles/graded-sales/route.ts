@@ -47,6 +47,7 @@ export async function GET(req: Request) {
       number: rec.fields["Card Number"] || "",
       language: rec.fields["Language"] || "English",
       printing: rec.fields["Printing"] || "",
+      variant: rec.fields["Variant"] || "",
       condition: rec.fields["Condition"] || "Raw",
     };
     rawComp = typeof rec.fields["Comp"] === "number" ? rec.fields["Comp"] : null;

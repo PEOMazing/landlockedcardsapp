@@ -6,9 +6,11 @@ import { oddLowAsk } from "@/lib/tcgListings";
 
 const $ = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function QuickSell({ id, isManager, card }: {
+export default function QuickSell({ id, isManager, isSlab = false, card }: {
   id: string;
   isManager: boolean;
+  /** sl-v4. This sticker is on a slab case, not a sleeve. */
+  isSlab?: boolean;
   card: { cardNo?: string; name: string; setName: string; number: string; condition: string; printing: string; image: string; comp: number | null; market?: number | null; marketBasis?: string; sales?: { date: string; price: number; qty?: number }[]; listings?: number[]; compSource?: string; compSales?: number | null; tcgProductId?: number | null; status: string; salePrice: number | null; location?: string };
 }) {
   const [price, setPrice] = useState(card.comp !== null ? String(card.comp) : "");
@@ -25,8 +27,13 @@ export default function QuickSell({ id, isManager, card }: {
   // a spinner where a number should be. Managers only - a customer scanning a
   // sticker does not need to trigger an upstream call, and making that
   // reachable by anyone with the URL is how you get rate-limited.
+  // sl-v4. Not on a slab. This calls the raw pipeline, which prices off the
+  // TCGplayer feed - a feed with no grade dimension, so it would answer a PSA
+  // 10 with NM-raw money. A slab reprices on the button below instead, which
+  // is also why it is a button: each one is a metered eBay sold-listings call,
+  // where this is a cached lookup that costs nothing to fire on every scan.
   useEffect(() => {
-    if (!isManager || sold) return;
+    if (!isManager || sold || isSlab) return;
     let cancelled = false;
     (async () => {
       setPricing(true);
@@ -47,7 +54,55 @@ export default function QuickSell({ id, isManager, card }: {
       }
     })();
     return () => { cancelled = true; };
-  }, [id, isManager, sold, card.comp]);
+  }, [id, isManager, sold, isSlab, card.comp]);
+
+  // sl-v4. Reprice a slab from eBay sold prices, on demand.
+  //
+  // A button rather than an automatic pull on scan, for two reasons that point
+  // the same way. One eBay call per card against a metered quota is not
+  // something to spend every time a sticker is scanned, and a slab's price
+  // does not move the way a raw card's does - these are $50 to $9,000 cards
+  // whose comps rest on a handful of sales, so repricing is a thing you choose
+  // to do while holding the card, not a thing that happens at you.
+  //
+  // No sales leaves the existing comp alone and says so, which matters more
+  // here than anywhere: a hand-researched number on a four figure slab must
+  // never be silently replaced with a blank.
+  const [slabBusy, setSlabBusy] = useState(false);
+  const [slabNote, setSlabNote] = useState("");
+  async function recompSlab() {
+    setSlabBusy(true);
+    setSlabNote("");
+    try {
+      const r = await fetch("/api/singles/slab-comp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setSlabNote(d?.error || `Could not reprice (${r.status})`); return; }
+      if (!d.ok) { setSlabNote(d.reason || "No matching sales, price unchanged"); return; }
+      setLive({
+        comp: d.comp ?? null,
+        market: null,
+        marketBasis: d.source || "",
+        sales: Array.isArray(d.used) ? d.used.map((s: any) => ({ date: s.date, price: s.price })) : [],
+        compSales: typeof d.sampleSize === "number" ? d.sampleSize : null,
+      });
+      setPrice((cur) => (cur === (card.comp !== null ? String(card.comp) : "") && d.comp != null ? String(d.comp) : cur));
+      // Said on screen rather than in a toast that slides away: somebody is
+      // holding the card and deciding whether to trust the number.
+      setSlabNote(
+        d.stale
+          ? `No sales in 30 days. Priced off the last one, ${d.asOf}.`
+          : `${$(d.comp)} from ${d.sampleSize} sale${d.sampleSize === 1 ? "" : "s"}${d.dropped?.length ? `, ${d.dropped.length} low set aside` : ""}`,
+      );
+    } catch {
+      setSlabNote("Could not reach the pricing service");
+    } finally {
+      setSlabBusy(false);
+    }
+  }
 
   // TCGplayer's own page for this card, filtered to the condition in hand, so
   // the number on screen can be checked against the source in one tap rather
@@ -220,6 +275,25 @@ export default function QuickSell({ id, isManager, card }: {
           <div className="text-win font-bold text-lg">{"\u2713"} Sold</div>
         ) : isManager ? (
           <div className="space-y-2">
+            {/* sl-v4. Slabs only, and above the sale price on purpose: the
+                order of operations at a table is price it, then sell it, and
+                a button that reprices sitting under the one that books the
+                sale invites doing those backwards. */}
+            {isSlab && (
+              <div className="space-y-1">
+                <button
+                  className="btn-ghost w-full !py-2.5 disabled:opacity-40"
+                  disabled={slabBusy}
+                  onClick={recompSlab}
+                  title="Pull this slab's recent eBay sales for its exact grade and reprice from the median"
+                >
+                  {slabBusy ? "Checking eBay..." : "Recomp from eBay"}
+                </button>
+                {slabNote && (
+                  <div className="t-meta text-dim leading-snug px-1">{slabNote}</div>
+                )}
+              </div>
+            )}
             <input
               type="number" step="0.01" inputMode="decimal"
               className="input text-center text-xl !py-3 w-40 mx-auto"

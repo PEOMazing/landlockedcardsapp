@@ -49,8 +49,32 @@ describe("telling a slab from a sleeved card", () => {
   });
 
   it("covers every condition the page splits on", () => {
-    assert.equal(SLAB_CONDITIONS.length, 8);
-    assert.equal(new Set(SLAB_CONDITIONS).size, 8, "no duplicates");
+    // sl-v3. Was pinned at 8, which was the whole list while every slab in the
+    // collection was a gem-mint modern card. A real slabs export arrived with
+    // PSA 7, 6, 5, 2 and 1, plus CGC 9 and BGS 9, and isSlab said false for all
+    // of them - which would have handed a PSA 1 a binder pocket and let the raw
+    // TCGplayer rotation price it off NM market.
+    //
+    // A count is the wrong guard anyway: it fails when the list grows on
+    // purpose and passes when two entries are swapped. Assert the shape.
+    assert.equal(new Set(SLAB_CONDITIONS).size, SLAB_CONDITIONS.length, "no duplicates");
+    for (const g of ["PSA 10", "PSA 1", "CGC 9", "BGS 9", "Other Graded", "Other"]) {
+      assert.ok(SLAB_CONDITIONS.includes(g), `${g} is missing`);
+    }
+  });
+
+  it("knows the whole PSA ladder, not just the top of it", () => {
+    // The low grades are where pricing a slab as a raw card goes most wrong: a
+    // PSA 1 is a fraction of NM, not a multiple of it.
+    for (let n = 1; n <= 10; n++) {
+      assert.equal(isSlab(`PSA ${n}`), true, `PSA ${n} should be a slab`);
+    }
+  });
+
+  it("never calls a raw condition a slab", () => {
+    for (const c of ["NM", "LP", "MP", "HP", "DM", "Raw"]) {
+      assert.equal(isSlab(c), false, `${c} is not a slab`);
+    }
   });
 });
 
