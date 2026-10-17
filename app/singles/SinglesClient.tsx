@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { formatCardNo, parseCardNo, bucketFor, bucketRange, bucketDrifted } from "@/lib/cardNo";
 import { isThinComp } from "@/lib/salesWindow";
 import { SLAB_CONDITIONS } from "@/lib/slab";
+import { GRADERS as SLAB_GRADERS, GRADES_BY_GRADER as SLAB_GRADES } from "@/lib/slabIntake";
 import { priceBound, inPriceRange, rangeBackwards } from "@/lib/priceRange";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CompSales from "@/components/CompSales";
@@ -246,6 +247,13 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   const [picked, setPicked] = useState<SearchCard | null>(null);
   const [manual, setManual] = useState(false);
   const [draft, setDraft] = useState({ name: "", setName: "", number: "", condition: "NM", qty: "1", buyPrice: "", comp: "", notes: "", printing: "", language: "English" });
+  // si-v1. The slab half of the form. Kept out of `draft` so the raw path is
+  // untouched and nothing it sends changes shape.
+  const [slab, setSlab] = useState({ grader: "PSA", grade: "10", tcgUrl: "", soldLink: "", soldPaste: "" });
+  const [quote, setQuote] = useState<any>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const quoteDebounce = useRef<any>(null);
   const debounce = useRef<any>(null);
   const searchAbort = useRef<AbortController | null>(null);
 
@@ -310,10 +318,68 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     if (r.ok) await load();
   }
 
+  // si-v1. Price the pasted sold rows as they are pasted, so the number and
+  // its working are on screen BEFORE the card is committed. Same endpoint,
+  // same engine the server re-runs on save, so the preview cannot disagree
+  // with what gets stored.
+  useEffect(() => {
+    if (mode !== "graded") return;
+    clearTimeout(quoteDebounce.current);
+    if (!slab.soldPaste.trim()) { setQuote(null); return; }
+    quoteDebounce.current = setTimeout(async () => {
+      setQuoting(true);
+      try {
+        const r = await fetch("/api/singles/slab-quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ grader: slab.grader, grade: slab.grade, paste: slab.soldPaste }),
+        });
+        setQuote(await r.json());
+      } catch {
+        setQuote({ ok: false, notes: ["Could not reach the pricing endpoint."] });
+      } finally {
+        setQuoting(false);
+      }
+    }, 500);
+    return () => clearTimeout(quoteDebounce.current);
+  }, [slab.soldPaste, slab.grader, slab.grade, mode]);
+
+  // A pasted TCGplayer product link, resolved to the same card object the
+  // search box produces, so everything downstream is identical.
+  async function linkFromTcg() {
+    const url = slab.tcgUrl.trim();
+    if (!url) return;
+    setLinking(true); setErr("");
+    try {
+      const r = await fetch(`/api/pokemon/cards?tcgUrl=${encodeURIComponent(url)}`);
+      const d = await r.json();
+      if (!r.ok || !d.cards?.[0]) {
+        setErr(d.error || "Could not read that TCGplayer link");
+        toast(d.error || "Could not read that TCGplayer link", "bad");
+      } else {
+        setPicked(d.cards[0]);
+        setResults([]); setQ("");
+        toast(`Linked ${d.cards[0].name}`, "ok");
+      }
+    } catch {
+      toast("Could not reach TCGplayer", "bad");
+    } finally {
+      setLinking(false);
+    }
+  }
+
   async function addCard() {
     setBusy("add"); setErr("");
+    const isSlabAdd = mode === "graded";
     const body: any = {
-      condition: draft.condition,
+      // si-v1. A slab sends grader and grade; the server builds the Condition
+      // and refuses a pairing it cannot store, rather than this screen having
+      // its own opinion about what a valid grade is.
+      ...(isSlabAdd
+        ? { grader: slab.grader, grade: slab.grade }
+        : { condition: draft.condition }),
+      ...(isSlabAdd && slab.soldPaste.trim() ? { soldPaste: slab.soldPaste } : {}),
+      ...(isSlabAdd && slab.soldLink.trim() ? { soldLink: slab.soldLink.trim() } : {}),
       ...(draft.language !== "English" ? { language: draft.language } : {}),
       qty: parseInt(draft.qty) || 1,
       notes: draft.notes,
@@ -1121,10 +1187,68 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
         {!manual && !picked && (
           <div className="space-y-2">
-            <div>
+            {/* si-v1. A slab is two choices, not one of twenty-one chips.
+                The flat row worked when every slab in the collection was a
+                gem-mint modern card and the list was eight long; at
+                twenty-one it is a wall, and the grade you want is never
+                where you look. Grader then grade is how the label reads. */}
+            {mode === "graded" && (
+              <div className="space-y-2">
+                <div>
+                  <label className="label">Grading company</label>
+                  <div className="flex gap-1 flex-wrap mt-1">
+                    {SLAB_GRADERS.map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        className={`rounded-lg border px-3 py-1 text-xs font-semibold transition-colors ${
+                          slab.grader === g ? "border-foil text-foil bg-foil/10" : "border-edge text-dim hover:text-body"
+                        }`}
+                        onClick={() => {
+                          const grades = SLAB_GRADES[g] || [];
+                          setSlab((s) => ({
+                            ...s,
+                            grader: g,
+                            // Keep the grade if this grader issues it, so
+                            // flipping PSA to CGC on a 10 does not make you
+                            // pick 10 again. BGS has a 9.5 and PSA does not,
+                            // so the fallback matters.
+                            grade: grades.includes(s.grade) ? s.grade : grades[0] || "",
+                          }));
+                        }}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Grade</label>
+                  <div className="flex gap-1 flex-wrap mt-1">
+                    {(SLAB_GRADES[slab.grader] || []).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className={`rounded-lg border px-3 py-1 text-xs font-semibold transition-colors ${
+                          slab.grade === n ? "border-givvy text-givvy bg-givvy/10" : "border-edge text-dim hover:text-body"
+                        }`}
+                        onClick={() => setSlab((s) => ({ ...s, grade: n }))}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-dim text-xs mt-1">
+                    Saves as <span className="text-body font-semibold">{slab.grader} {slab.grade}</span>.
+                    A slab gets no binder pocket and no sticker slot.
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className={mode === "graded" ? "hidden" : ""}>
               <label className="label">Condition first</label>
               <div className="flex gap-1 flex-wrap mt-1">
-                {(mode === "graded" ? CONDITIONS.filter((c) => GRADED.includes(c)) : CONDITIONS.filter((c) => !GRADED.includes(c))).map((c) => (
+                {CONDITIONS.filter((c) => !GRADED.includes(c)).map((c) => (
                   <button
                     key={c}
                     type="button"
@@ -1139,9 +1263,8 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 ))}
               </div>
               <p className="text-dim text-xs mt-1">
-                {GRADED.includes(draft.condition)
-                  ? "Graded card: comp is manual. After adding, use Check price (ALT sold listings) or eBay solds and enter the comp."
-                  : "Comp pulls the TCGplayer market price" + (draft.condition !== "NM" ? " with a condition discount" : "") + "."}
+                Comp pulls the TCGplayer market price
+                {draft.condition !== "NM" ? " with a condition discount" : ""}.
               </p>
               <div className="flex gap-1 mt-2 flex-wrap items-center">
                 <span className="label !t-meta">Language</span>
@@ -1184,6 +1307,31 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
               aria-label="Search for a card to add"
               aria-activedescendant={results[pickHi] ? `addcard-${results[pickHi].id}` : undefined}
             />
+            {/* si-v1. Or paste the link. Both paths end at the same card
+                object, so use whichever is faster for the card in hand: three
+                letters in the box, or a URL you already have open. */}
+            {mode === "graded" && (
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="label">or paste the TCGplayer card link</label>
+                  <input
+                    className="input mt-1"
+                    placeholder="https://www.tcgplayer.com/product/517049/..."
+                    value={slab.tcgUrl}
+                    onChange={(e) => setSlab({ ...slab, tcgUrl: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); linkFromTcg(); } }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost disabled:opacity-40"
+                  disabled={linking || !slab.tcgUrl.trim()}
+                  onClick={linkFromTcg}
+                >
+                  {linking ? "Looking up..." : "Fill card"}
+                </button>
+              </div>
+            )}
             {searching && <div className="text-dim text-xs">Searching TCGplayer...</div>}
             {results.length > 0 && (
               <div className="text-dim t-meta">
@@ -1312,10 +1460,76 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 to go and look up a comp on eBay by hand, next to a field that
                 was not on screen, contradicting the correct line above the
                 picker. The real split is graded against everything else. */}
-            {GRADED.includes(draft.condition) ? (
-              <p className="text-dim t-meta">
-                Graded comps are manual: check ALT or eBay sold listings and enter the comp above.
-              </p>
+            {/* si-v1. The evidence comes in with the card.
+                This replaces "go and look it up somewhere else and type a
+                number", which is how 88 slabs ended up carrying prices with
+                no record of where they came from. */}
+            {mode === "graded" ? (
+              <div className="space-y-2 rounded-xl border border-edge p-3">
+                <div>
+                  <label className="label">eBay / 130point sold link</label>
+                  <input
+                    className="input mt-1"
+                    placeholder="https://130point.com/search?q=..."
+                    value={slab.soldLink}
+                    onChange={(e) => setSlab({ ...slab, soldLink: e.target.value })}
+                  />
+                  <p className="text-dim t-meta mt-1">
+                    Stored with the card, so Recomp reopens this exact search instead of guessing.
+                  </p>
+                </div>
+                <div>
+                  <label className="label">Paste the sold results</label>
+                  <textarea
+                    className="input mt-1 font-mono text-xs"
+                    rows={5}
+                    placeholder={"Select the sold rows on that page and paste here.\nPrices and dates are all this needs."}
+                    value={slab.soldPaste}
+                    onChange={(e) => setSlab({ ...slab, soldPaste: e.target.value })}
+                  />
+                </div>
+
+                {quoting && <div className="text-dim text-xs">Pricing...</div>}
+
+                {quote && !quoting && (
+                  quote.ok ? (
+                    <div className="space-y-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-semibold text-foil">
+                          ${Number(quote.price).toLocaleString("en-US")}
+                        </span>
+                        <span className="text-dim text-xs">
+                          from {quote.count} sale{quote.count === 1 ? "" : "s"}
+                          {quote.stale ? ", none in 30 days" : ""}
+                        </span>
+                      </div>
+                      <p className="text-dim t-meta">{quote.source}</p>
+                      {/* Show the working. A comp that set a real sale aside
+                          should say which one and let a person disagree. */}
+                      <div className="grid gap-0.5 mt-1">
+                        {quote.sales.slice(0, 8).map((s: any, i: number) => (
+                          <div key={i} className={`flex gap-2 t-meta ${s.used ? "text-body" : "text-dim line-through"}`}>
+                            <span className="w-24 tabular-nums">{s.date}</span>
+                            <span className="w-24 tabular-nums">${Number(s.price).toLocaleString("en-US")}</span>
+                            {s.askingPrice && <span className="text-dim">ask ${Number(s.askingPrice).toLocaleString("en-US")}</span>}
+                            {!s.used && <span className="text-dim">{s.why}</span>}
+                          </div>
+                        ))}
+                      </div>
+                      {quote.notes?.map((n: string, i: number) => (
+                        <p key={i} className="t-meta text-givvy">{n}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="t-meta text-loss">{quote.notes?.[0] || "Could not price that paste."}</p>
+                  )
+                )}
+                {!quote && !quoting && (
+                  <p className="text-dim t-meta">
+                    No paste, no comp: the card is added unpriced and shows up as needing a price.
+                  </p>
+                )}
+              </div>
             ) : (
               <p className="text-dim t-meta">
                 The TCGplayer market price pulls in automatically as the comp. Nothing else to fill in.

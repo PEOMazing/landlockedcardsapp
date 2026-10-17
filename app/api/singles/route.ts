@@ -6,6 +6,7 @@ import { conditionSoldComp, getTcgcsvCard, subTypeForVariant, tcgProductIdFromCa
 import { toSingle } from "@/lib/singles";
 import { claimSlot, isSlab, slotFields } from "@/lib/slots";
 import { roundUpDollar } from "@/lib/salesWindow";
+import { conditionFor, isSoldLink, quoteSlab } from "@/lib/slabIntake";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,24 @@ export async function POST(req: Request) {
   if (!me?.isTeam && !me?.isCollector) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = await req.json();
 
+  // si-v1. The slab form sends a grader and a grade rather than a Condition
+  // string, because picking "PSA" then "10" off two short lists beats finding
+  // "PSA 10" in a flat row of twenty-one chips. conditionFor is the only thing
+  // that turns the pair into a Condition, and it refuses a pairing the rest of
+  // the app cannot store rather than writing one that nothing can price.
+  let slabCondition: string | null = null;
+  if (b.grader && b.grade) {
+    slabCondition = conditionFor(String(b.grader), String(b.grade));
+    if (!slabCondition) {
+      return NextResponse.json(
+        { error: `${b.grader} ${b.grade} is not a grade this app stores` },
+        { status: 400 },
+      );
+    }
+  }
+
   let fields: Record<string, any> = {
-    "Condition": b.condition || "Raw",
+    "Condition": slabCondition || b.condition || "Raw",
     "Qty": Math.max(1, parseInt(b.qty) || 1),
     "Status": "In Stock",
     // collector cards live in their own walled collection
@@ -147,6 +164,53 @@ export async function POST(req: Request) {
     if (b.rarity) fields["Rarity"] = b.rarity;
     if (b.imageUrl) fields["Image URL"] = b.imageUrl;
   }
+  // si-v1. A slab arrives with its evidence attached.
+  //
+  // This is the whole point of the new form. Until now the graded path ended
+  // with the app telling you to go and look the price up somewhere else and
+  // type it in, so the hardest part of the job happened outside the tool and
+  // nothing recorded which sales the number came from. Now the sold rows come
+  // in with the card and the same engine that reprices a slab tomorrow sets
+  // its comp today: one code path, one answer.
+  //
+  // quoteSlab is re-run here rather than trusting a price the browser worked
+  // out, for the obvious reason. The preview endpoint and this call share the
+  // function, so what was on screen is what gets written.
+  if (b.soldPaste && slabCondition) {
+    const q = quoteSlab(String(b.grader), String(b.grade), String(b.soldPaste));
+    if (!q.ok || q.price === null) {
+      return NextResponse.json(
+        { error: q.notes[0] || "no sales could be read from that paste", notes: q.notes },
+        { status: 400 },
+      );
+    }
+    fields["Comp"] = q.price;
+    fields["Comp Source"] = q.source;
+    fields["Comp Date"] = new Date().toISOString().slice(0, 10);
+    fields["Comp Sales"] = q.result?.used.length ?? 0;
+    fields["Market"] = q.price;
+    fields["Market Basis"] = `${q.grade!.grader} ${q.grade!.grade}, eBay sold`;
+    // The sales themselves, so the scan page can show the working and the
+    // next recomp can see what this one rested on.
+    fields["Comp Detail"] = JSON.stringify(
+      q.parsed.map((s) => ({ date: s.date, price: s.price, qty: 1 })),
+    );
+  }
+
+  // Where the comp came from, kept so Recomp reopens the same search instead
+  // of guessing at a query. Validated rather than trusted: this string ends up
+  // as a clickable link on the label page, which is public.
+  if (b.soldLink) {
+    const link = String(b.soldLink).trim();
+    if (!isSoldLink(link)) {
+      return NextResponse.json(
+        { error: "that sold link is not a 130point or eBay URL" },
+        { status: 400 },
+      );
+    }
+    fields["ALT Link"] = link;
+  }
+
   if (b.comp !== undefined && parseFloat(b.comp) > 0) {
     fields["Comp"] = parseFloat(b.comp);
     fields["Comp Source"] = b.compSource || "manual";

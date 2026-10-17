@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
 import { listSetCards, searchCards, searchCardsByName } from "@/lib/pokemon";
-import { printingKey, searchTcgcsvCards, vintagePrintings } from "@/lib/tcgcsvCards";
+import { getTcgcsvCardByProductId, printingKey, searchTcgcsvCards, vintagePrintings } from "@/lib/tcgcsvCards";
+import { tcgProductIdFromUrl } from "@/lib/slabIntake";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,6 +18,29 @@ export async function GET(req: Request) {
   try {
     const nameQuery = url.searchParams.get("nameQuery");
     if (nameQuery) return NextResponse.json({ cards: await searchCardsByName(nameQuery) });
+
+    // si-v1. ?tcgUrl= resolves a pasted TCGplayer product link to one card, so
+    // the slab form can fill name, set, number, rarity and art from a link
+    // instead of a search. Returns a single-element cards array so the caller
+    // handles it the same way it handles a search result.
+    const tcgUrl = url.searchParams.get("tcgUrl");
+    if (tcgUrl) {
+      const pid = tcgProductIdFromUrl(tcgUrl);
+      if (!pid) {
+        return NextResponse.json(
+          { error: "no TCGplayer product id in that link - paste the product page URL" },
+          { status: 400 },
+        );
+      }
+      const card = await getTcgcsvCardByProductId(pid).catch(() => null);
+      if (!card) {
+        return NextResponse.json(
+          { error: `no card found for TCGplayer product ${pid}`, productId: pid },
+          { status: 404 },
+        );
+      }
+      return NextResponse.json({ cards: [card] });
+    }
     if (setId) {
       let cards = await listSetCards(setId);
       // vintage sets get per-printing prices layered from TCGplayer, since the

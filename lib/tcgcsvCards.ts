@@ -307,6 +307,35 @@ export async function getTcgcsvCard(id: string): Promise<PokeCard | null> {
   return card;
 }
 
+/** A card from a TCGplayer product id alone, with no group to narrow it.
+ *
+ *  si-v1. A pasted TCGplayer URL carries the product id and nothing else -
+ *  /product/517049/pokemon-ultra-prism-darkrai-prism-star - so getTcgcsvCard,
+ *  which needs the groupId too, cannot answer. This scans for it.
+ *
+ *  Same chunked walk searchTcgcsvCards already does, and cheaper in practice
+ *  because a product id is unique: the first group holding it ends the search,
+ *  where a name search has to read every group to rank what it found.
+ *
+ *  Null when nothing matches, which the caller must treat as "ask the person
+ *  to check the link" rather than falling back to a guess. Attaching the wrong
+ *  product to a slab is silent and permanent. */
+export async function getTcgcsvCardByProductId(productId: number): Promise<PokeCard | null> {
+  if (!Number.isFinite(productId) || productId <= 0) return null;
+  const groups = await recentGroups();
+  for (let i = 0; i < groups.length; i += 4) {
+    const chunk = await Promise.all(
+      groups.slice(i, i + 4).map((g) => loadGroup(g).then((d) => ({ g, d }))),
+    );
+    for (const { g, d } of chunk) {
+      if (!d) continue;
+      const p = d.prods.find((x) => x.productId === productId);
+      if (p) return toCard(p, g, d.market.get(productId));
+    }
+  }
+  return null;
+}
+
 // ---------------- resolving an unlinked single ----------------
 //
 // Cards that came in from a TCGplayer or Collectr export carry a set name, a
