@@ -58,8 +58,21 @@ describe("a lone recent sale that disagrees with the older ones", () => {
 // distinguishable by date. dropWashSales anchors on the $150 and deletes the
 // four real sales for being under 20% of it, which is how a five-sale card
 // ends up reporting "median of 1".
+// sw-v2. These two used to assert that the DEMOTION GUARD rescued the card.
+// It no longer has to, because the thing it was rescuing the card from is
+// fixed. The guard existed because the wash filter anchored on the window
+// high, so a lone $150 deleted Espeon's four real sales and became the whole
+// sample; the guard then noticed the comp was an outlier and undid the damage.
+//
+// With the filter anchored on the median, the four real sales survive, the
+// $150 is one vote out of five, and the median lands in the cluster on its
+// own. The guard correctly does not fire, because there is nothing left to
+// rescue. It still fires where it is genuinely needed - see the cases below,
+// where the outlier is the only sale inside the window.
+//
+// The numbers moved by about 6% and 3%, both toward the cluster.
 describe("an outlier whose peers are all inside the window too", () => {
-  it("catches Espeon, where the wash filter ate the evidence", () => {
+  it("Espeon no longer needs rescuing, because the evidence survives", () => {
     const pick = pickSoldPrice(0, [
       { date: d(3), price: 17.24 },
       { date: d(5), price: 150 },
@@ -67,13 +80,12 @@ describe("an outlier whose peers are all inside the window too", () => {
       { date: d(16), price: 22.51 },
       { date: d(16), price: 25 },
     ], null, NOW);
-    assert.equal(pick.demotedOutlier, true);
-    assert.equal(pick.droppedPrice, 150);
-    assert.equal(pick.peerMedian, 21.23);
-    assert.equal(pick.price, 21.23);
+    assert.ok(!pick.demotedOutlier, "no damage to undo");
+    assert.equal(pick.freshCount, 5, "all five sales counted, not one");
+    assert.equal(pick.price, 22.51);
   });
 
-  it("catches the Eevee this import just created", () => {
+  it("the Eevee prices off its cluster without the guard", () => {
     const pick = pickSoldPrice(0, [
       { date: d(1), price: 6.09 },
       { date: d(1), price: 6 },
@@ -81,9 +93,9 @@ describe("an outlier whose peers are all inside the window too", () => {
       { date: d(3), price: 6.5 },
       { date: d(5), price: 70 },
     ], null, NOW);
-    assert.equal(pick.demotedOutlier, true);
-    assert.equal(pick.droppedPrice, 70);
-    assert.equal(pick.price, 6.3); // (6.09 + 6.5) / 2
+    assert.ok(!pick.demotedOutlier);
+    assert.equal(pick.freshCount, 5);
+    assert.equal(pick.price, 6.5);
   });
 });
 

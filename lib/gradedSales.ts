@@ -34,6 +34,23 @@ export type SaleRow = {
    *  thin card is weaker evidence than a buy-it-now somebody chose to pay. */
   format: string;
   bestOffer: boolean;
+  /** What the seller was asking, when the feed tells us and it differs from
+   *  what the card sold for. Carried rather than discarded because the gap
+   *  between ask and accepted offer is the single most useful thing to show a
+   *  person deciding whether to believe a comp. */
+  askingPrice?: number;
+  /** gs-v2. The price on this row is the ASK, not what the card sold for.
+   *
+   *  Set by an adapter when its source could not read the accepted amount on a
+   *  negotiated sale. eBay suppresses it; different feeds react differently.
+   *  The Apify actor returns a null soldPrice, which is honest. Collectr
+   *  silently records the ask as if it were the sale, which is not, and is how
+   *  a $15,000 asking price became a $15,000 "sale" on a card that went for
+   *  $8,500 on 2026-10-16.
+   *
+   *  A row marked this way is evidence that a sale happened and no evidence at
+   *  all about the price, so isPricedSale keeps it out of every median. */
+  askOnly?: boolean;
 };
 
 export type GradeSales = Record<string, SaleRow | null>;

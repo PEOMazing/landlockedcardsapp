@@ -198,16 +198,28 @@ describe("the newest sale against the median", () => {
     assert.equal(p.usedLastSale, true);
   });
 
-  // A known limit, written down rather than left to be discovered. dropWashSales
-  // decides which sales are fake by distance from the HIGHEST one, so it assumes
-  // the high sale is the real one. Push a card far enough in one trade and the
-  // honest sales are the ones discarded, and the median that the cap is measured
-  // against is poisoned along with them. The cap cannot save a card from this,
-  // because both numbers come from the same poisoned set.
-  it("cannot cap a pump extreme enough to wash out the real sales", () => {
+  // sw-v2. This test used to document the opposite, as a known limit: the
+  // filter measured distance from the HIGHEST sale, so a big enough pump made
+  // the honest sales look like the fakes and the card was priced at the pump.
+  // "The cap cannot save a card from this," it said, "because both numbers
+  // come from the same poisoned set."
+  //
+  // The limit was not inherent, it was the anchor. Measuring against the
+  // median instead means two agreeing sales outvote one absurd one, and the
+  // pump is diluted rather than enthroned. Kept as a test of the fix, with the
+  // old expectation inverted, so nobody reintroduces the anchor.
+  it("caps a pump that would once have washed out the real sales", () => {
     const extreme = [s("2026-09-15", 900), s("2026-09-10", 100), s("2026-09-05", 100)];
-    assert.deepEqual(dropWashSales(extreme).map((x) => x.price), [900]);
-    assert.equal(pick(extreme).price, 900);
+    assert.deepEqual(dropWashSales(extreme).map((x) => x.price), [900, 100, 100]);
+    // $900 before the fix, $200 after. The two honest sales now survive to
+    // form a median of $100, and LAST_SALE_MAX_LIFT holds the newest sale to
+    // twice it. The cap was always written to do this and never could, because
+    // the median it measured against came out of the same poisoned set.
+    //
+    // $200 is still above where this card trades, because the rising-sale lift
+    // fires on ONE sale. That is a separate rule with its own tuning on the raw
+    // path and is deliberately left alone here.
+    assert.equal(pick(extreme).price, 200);
   });
 
   it("holds the line exactly at the freshness gate", () => {

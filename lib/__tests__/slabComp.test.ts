@@ -241,12 +241,26 @@ describe("the comp itself", () => {
     assert.equal(r.price, 510);
   });
 
-  it("will not call either of two sales an outlier", () => {
-    // With two data points there is no way to tell which one is odd, so
-    // neither is cut and the thin-data count does the talking instead.
+  it("still cuts an obvious wash sale when there are only two", () => {
+    // sw-v2. This used to assert that neither of two sales could be called an
+    // outlier, on the theory that two data points cannot identify which is
+    // odd. That theory produces $500.50 for a card whose sales were $1 and
+    // $1,000, and $500.50 is a price at which nothing sold and nobody would
+    // trade. Nothing legitimate changes hands at a thousandth of what the same
+    // card made a day earlier.
+    //
+    // With no majority to appeal to, the filter keeps its original asymmetric
+    // assumption and trusts the high. The comp is still flagged thin.
     const r = slabComp([sale("2026-10-14", 1), sale("2026-10-13", 1000)], NOW)!;
+    assert.equal(r.price, 1000);
+    assert.equal(r.dropped.length, 1);
+    assert.equal(r.used.length, 1);
+  });
+
+  it("leaves two sales that merely differ alone", () => {
+    const r = slabComp([sale("2026-10-14", 700), sale("2026-10-13", 1000)], NOW)!;
     assert.equal(r.dropped.length, 0);
-    assert.equal(r.used.length, 2);
+    assert.equal(r.price, 850);
   });
 
   it("ignores sales outside the window", () => {

@@ -13,7 +13,7 @@ export type Sale = { date: string; price: number; qty?: number };
 // live asking prices are the better answer.
 export const FRESH_DAYS = 30;
 
-// Sales this far below the strongest recent sale are thrown out before the
+// Sales this far below the TYPICAL recent sale are thrown out before the
 // median is taken. Sold data can be pushed down on purpose: list a card far
 // under value, have it bought immediately, and the recorded sale drags the
 // published average with it. Nothing legitimate sells at a fifth of what the
@@ -43,15 +43,49 @@ export function isThinComp(compSales: number | null | undefined): boolean {
   return typeof compSales === "number" && compSales < MIN_CONFIDENT_SALES;
 }
 
-export function dropWashSales<T extends { price: number }>(sales: T[]): T[] {
+/** Low sales, thrown out before the median, measured against the MEDIAN of the
+ *  window rather than its high.
+ *
+ *  sw-v2. This used to key off the window HIGH, and that was backwards in a way
+ *  that cost real money. Comparing every sale to the highest one means a single
+ *  absurd high sale raises the bar underneath all the legitimate sales and
+ *  throws THOSE out instead. Sales of $100, $110 and $900 kept only the $900:
+ *  every real sale sat below a fifth of it. A rule written to stop one bad sale
+ *  deciding a price handed that bad sale the price outright.
+ *
+ *  It is not hypothetical. On 2026-10-16 a Darkrai listed at $15,000 with an
+ *  accepted Best Offer was logged by a vendor as a $15,000 sale. Under the old
+ *  rule that one row would have evicted every genuine sale of the card.
+ *
+ *  A median barely moves when one sale is absurd, so measuring against it cuts
+ *  the lows it was meant to cut and leaves a high outlier to be diluted by the
+ *  median rather than enthroned by it. Same threshold, same one-sided intent,
+ *  no hijack.
+ *
+ *  TWO SALES ARE A SPECIAL CASE and still key off the high. With two prices
+ *  there is no majority, and their median is just their midpoint, so a $1 wash
+ *  sale against a genuine $200 one would drag the comp to $100.50 - a price at
+ *  which nothing sold and nobody would trade. With no majority available the
+ *  only outlier you can identify is one sitting wildly below the other, and
+ *  treating the high as the real one is the asymmetric assumption this filter
+ *  was built on. Those comps are flagged thin by MIN_CONFIDENT_SALES anyway.
+ *
+ *  Three or more is where a majority exists, and where the old rule failed. */
+export function dropLowOutliers<T extends { price: number }>(sales: T[]): T[] {
   const real = (sales || []).filter((s) => Number(s?.price) > 0);
   if (real.length < 2) return real;
-  const high = Math.max(...real.map((s) => s.price));
-  const kept = real.filter((s) => s.price >= high * WASH_FRACTION);
+  const prices = real.map((s) => s.price);
+  const anchor = real.length === 2 ? Math.max(...prices) : medianOf(prices);
+  const floor = round2(anchor * WASH_FRACTION);
+  const kept = real.filter((s) => s.price >= floor);
   // Never discard everything: if the whole window looks like an outlier the
   // problem is the comparison, not the sales.
   return kept.length > 0 ? kept : real;
 }
+
+/** @deprecated Use dropLowOutliers. Kept so the raw pricing path and the scan
+ *  screen keep one name for one behaviour while callers are migrated. */
+export const dropWashSales = dropLowOutliers;
 
 export function medianOf(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b);
