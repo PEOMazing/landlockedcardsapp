@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 import { atGet, atList, isRecId, T, type AtRecord } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { recordStoreSale, rememberWhatnotName, type StoreSaleResult } from "@/lib/storeSales";
+import { shelfUnits } from "@/lib/whatnotCsv";
 
 // Store sales from a Whatnot CSV upload. The file is read in the browser; only
 // the listing title, units, price and order id come here - never buyer names
 // or addresses. Orders already booked on this stream (same Whatnot order id)
 // are skipped, so uploading the same file twice is harmless.
-type Row = { productId: string; units: number; soldPrice: number; orderId?: string; listing?: string; remember?: boolean };
+type Row = {
+  productId: string; units: number; soldPrice: number; orderId?: string; listing?: string; remember?: boolean;
+  // su-v1: what the order itself said, before any pack count was read off the
+  // title. Sent so the shelf count can be settled here, against the product
+  // this row actually landed on, rather than taken on trust from a browser
+  // that may be running yesterday's code.
+  orderQty?: number;
+};
 
 export async function POST(req: Request) {
   const me = await getMe();
@@ -41,8 +49,20 @@ export async function POST(req: Request) {
     const product = await atGet(T.inventory, r.productId).catch(() => null);
     if (!product) { errors.push(`${r.listing || "row"}: product not found`); continue; }
     products.set(product.id, product);
+    // su-v1. The count in a listing title is a number of PACKS; the count on
+    // the shelf is a number of ITEMS, and an item can be a six-pack. Reading
+    // the title's 6 against a product called "6x Obsidian Flames Booster Pack"
+    // took six bundles - thirty-six packs - off the shelf for one sale. The
+    // product's own name is the only place the unit is written down, and it is
+    // read here, where the product record is already in hand.
+    const asked = Math.max(1, Math.min(500, parseInt(String(r.units)) || 1));
+    const name = String(product.fields["Product Name"] || "");
+    const units =
+      r.listing && Number(r.orderQty) > 0
+        ? Math.min(500, shelfUnits(String(r.listing), Number(r.orderQty), name))
+        : asked;
     const res = await recordStoreSale(stream, product, {
-      units: Math.max(1, Math.min(500, parseInt(String(r.units)) || 1)),
+      units,
       soldPrice: Math.max(0, parseFloat(String(r.soldPrice)) || 0),
       orderId,
     });

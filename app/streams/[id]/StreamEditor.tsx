@@ -73,7 +73,11 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   // A Surprise Set's wheel can carry sealed product and single cards side by
   // side. This picks which inventory the add box searches; both kinds land on
   // the same show set.
-  const [addFrom, setAddFrom] = useState<"sealed" | "singles">("sealed");
+  // sp-v2. Three shelves, not two. Graded was always addable - the to-stream
+  // route has never cared whether a card is in a case - but with no button for
+  // it the 88 slabs sat unfindable among 700 sleeved cards, so in practice the
+  // feature did not exist.
+  const [addFrom, setAddFrom] = useState<"sealed" | "singles" | "graded">("sealed");
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaTitle, setMetaTitle] = useState("");
   const [metaDate, setMetaDate] = useState("");
@@ -359,7 +363,10 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   // Surprise Sets can mix sealed and singles on one wheel. Single Streams are
   // singles only; Character Breaks stay sealed only.
   const mixedSet = (stream.streamType || "Surprise Set") === "Surprise Set";
-  const pickingSingles = stream.streamType === "Single Stream" || (mixedSet && addFrom === "singles");
+  const pickingSingles = stream.streamType === "Single Stream" || (mixedSet && addFrom !== "sealed");
+  // A Single Stream has no shelf buttons above the picker, so it is left to
+  // show its own and can mix raw and graded on one auction list as before.
+  const pickerKind = mixedSet ? (addFrom === "graded" ? "graded" : "raw") : undefined;
 
   async function addLine(item: PickerItem, qty: number) {
     setBusy(true);
@@ -1305,11 +1312,18 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
           <div className="flex items-center gap-2 text-xs">
             <span className="text-dim">Add from</span>
             <div className="inline-flex rounded-lg border border-edge overflow-hidden">
-              {([["sealed", "Sealed"], ["singles", "Singles"]] as const).map(([k, label]) => (
+              {([["sealed", "Sealed"], ["singles", "Singles"], ["graded", "Graded"]] as const).map(([k, label]) => (
                 <button
                   key={k}
-                  onClick={() => { setAddFrom(k); if (k === "singles") setShowPaste(false); }}
+                  onClick={() => { setAddFrom(k); if (k !== "sealed") setShowPaste(false); }}
                   className={`px-3 py-1 ${addFrom === k ? "bg-foil/15 text-foil" : "text-dim hover:text-paper"}`}
+                  title={
+                    k === "graded"
+                      ? "Slabs. They go on the wheel exactly like any other card: the comp snapshots as the line's market price, a hit sells it, an unhit one goes back in the case."
+                      : k === "singles"
+                        ? "Raw cards out of the binder"
+                        : "Sealed product from inventory"
+                  }
                 >
                   {label}
                 </button>
@@ -1323,7 +1337,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
             {/* Before picking cards one at a time, the set from the last show
                 that did not sell out is usually most of what belongs here. */}
             {!stream.itemsReturned && <RollSingles streamId={id} onRolled={load} />}
-            <SinglesPicker streamId={id} onAdded={load} busy={busy} />
+            <SinglesPicker streamId={id} onAdded={load} busy={busy} kind={pickerKind} />
           </>
         )}
         {showPaste && (
@@ -1667,7 +1681,7 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
                   {stream.streamType === "Single Stream"
                     ? "Search the singles inventory above to add auction cards - each starts at $1 on Whatnot"
                     : mixedSet
-                      ? "Search sealed or singles above to build the wheel - unhit singles go back to stock when the show closes"
+                      ? "Search sealed, singles or graded above to build the wheel - anything unhit goes back to stock when the show closes"
                       : "Search the inventory above to build this stream's show set"}
                 </TableEmpty>
               )}

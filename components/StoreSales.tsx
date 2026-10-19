@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/components/Toaster";
-import { readWhatnotCsv, showsIn, storeRows, pickShow, matchProduct, localDate, type Product, type StoreRow } from "@/lib/whatnotCsv";
+import { readWhatnotCsv, showsIn, storeRows, pickShow, matchProduct, packMultiplier, shelfUnits, localDate, type Product, type StoreRow } from "@/lib/whatnotCsv";
 import { CATEGORIES, categoryForName } from "@/lib/categories";
 
 // Store sales: what buyers bought straight off the shelf during the show
@@ -129,9 +129,15 @@ export default function StoreSales({
   const preview = found.rows.map((r) => {
     const p = picks[r.key] || { productId: "", remember: false, include: true };
     const item = p.productId ? invById[p.productId] : null;
+    // su-v1. How many units this order takes off the shelf depends on what the
+    // product IS, so it cannot be settled in the parser. "6x Phantasmal Flames
+    // Booster Packs" matched to a product of the same name is one item, not
+    // six; matched to a single pack it is six. Changing the matched product
+    // re-answers it, which is why this is computed here and not stored.
+    const units = shelfUnits(r.title, r.orderQty, item?.name);
     const status: "booked" | "nomatch" | "short" | "ready" =
-      r.orderId && booked.has(r.orderId) ? "booked" : !item ? "nomatch" : item.qty < r.units ? "short" : "ready";
-    return { r, p, item, status };
+      r.orderId && booked.has(r.orderId) ? "booked" : !item ? "nomatch" : item.qty < units ? "short" : "ready";
+    return { r, p, item, status, units };
   });
   const toAdd = preview.filter((x) => x.p.include && (x.status === "ready" || x.status === "short"));
   const setPick = (key: string, patch: Partial<Pick>) =>
@@ -154,7 +160,8 @@ export default function StoreSales({
         streamId,
         rows: toAdd.map((x) => ({
           productId: x.p.productId,
-          units: x.r.units,
+          units: x.units,
+          orderQty: x.r.orderQty,
           soldPrice: x.r.price,
           orderId: x.r.orderId,
           listing: x.r.title,
@@ -349,6 +356,16 @@ export default function StoreSales({
               Sold
             </button>
           </div>
+          {/* su-v1: the count in a product's own name is part of the item, not
+              a number of them. One "6x Obsidian Flames Booster Pack" sold is
+              one unit off the shelf, and a 36-pack box put away this way is
+              six of them. Said out loud here because the obvious thing to type
+              into Units is 6. */}
+          {handItem && packMultiplier(handItem.name) > 1 && (
+            <div className="text-dim text-xs">
+              {handItem.name} is one item on the shelf. One sold is 1 unit, not {packMultiplier(handItem.name)}.
+            </div>
+          )}
           {handShort && (
             <div className="text-warn text-xs">
               {"⚠"} Only {handItem!.qty} on hand. This will be logged as "cannot complete set" until inventory is updated.
@@ -393,7 +410,7 @@ export default function StoreSales({
 
                 {preview.length > 0 && (
                   <div className="space-y-2">
-                    {preview.map(({ r, p, item, status }) => (
+                    {preview.map(({ r, p, item, status, units }) => (
                       <div key={r.key} className={`rounded-lg border p-2.5 text-sm ${status === "booked" ? "border-edge opacity-60" : status === "nomatch" ? "border-bad/60" : status === "short" ? "border-warn/60" : "border-edge"}`}>
                         <div className="flex items-start justify-between gap-3 flex-wrap">
                           <label className="flex items-start gap-2 min-w-0">
@@ -402,13 +419,16 @@ export default function StoreSales({
                             )}
                             <span className="min-w-0">
                               <span className="block truncate">{r.title}</span>
-                              <span className="text-dim text-xs">{r.units} unit{r.units === 1 ? "" : "s"} - {$(r.price)}</span>
+                              <span className="text-dim text-xs">
+                                {units} unit{units === 1 ? "" : "s"}
+                                {item ? ` of ${item.name}` : ""} - {$(r.price)}
+                              </span>
                             </span>
                           </label>
                           <span className="text-xs">
                             {status === "booked" && <span className="text-dim">already on this stream</span>}
                             {status === "ready" && <span className="text-win">ready</span>}
-                            {status === "short" && <span className="text-warn">{"⚠"} {item!.qty} on hand, {r.units} needed - will log as cannot complete set</span>}
+                            {status === "short" && <span className="text-warn">{"⚠"} {item!.qty} on hand, {units} needed - will log as cannot complete set</span>}
                             {status === "nomatch" && <span className="text-bad">not in inventory - match it or add it</span>}
                           </span>
                         </div>

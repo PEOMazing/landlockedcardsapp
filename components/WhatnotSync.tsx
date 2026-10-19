@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/components/Toaster";
-import { readWhatnotCsv, showsIn, pickShow, planSetFromShow, storeRows, localDate, looksGeneric, type SetLine } from "@/lib/whatnotCsv";
+import { readWhatnotCsv, showsIn, pickShow, planSetFromShow, storeRows, shelfUnits, localDate, looksGeneric, type SetLine } from "@/lib/whatnotCsv";
 
 // Whatnot show report -> show set. Drop the show's sales export (or the weekly
 // earnings report and pick the show) and the set fills itself in: every paid
@@ -99,6 +99,8 @@ export default function WhatnotSync({
     onFile({ name: f.name, text: t, nonce: Date.now() });
   }
 
+  const invName = useMemo(() => new Map(inv.map((i) => [i.id, i.name])), [inv]);
+
   const changes = plan ? plan.lines.filter((l) => l.now !== l.was) : [];
   const numbersChange =
     !!plan &&
@@ -148,9 +150,17 @@ export default function WhatnotSync({
           streamId,
           // one row per Whatnot order, so a second upload of the same file is
           // skipped on the order id instead of booking the sale again
+          // su-v1: what each order takes off the shelf is decided against the
+          // product the operator picked, not the listing alone. A "6x" listing
+          // sent to a "6x" product is one of them; sent to a single pack it is
+          // six. The product name comes from the inventory list this flow has
+          // already loaded to offer the choice.
           rows: plan.toStore.flatMap((t) =>
             t.orders.map((o) => ({
-              productId: t.productId, units: o.units, soldPrice: o.price,
+              productId: t.productId,
+              units: shelfUnits(t.title, o.units, invName.get(t.productId)),
+              orderQty: o.units,
+              soldPrice: o.price,
               listing: t.title, orderId: o.orderId,
             }))
           ),

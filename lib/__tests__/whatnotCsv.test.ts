@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { parseCsv, readWhatnotCsv, matchProduct, checkAgainstSet, tokens, splitGiveaways, showsIn, suggestShow, localDate, packMultiplier, storeRows, pickShow, planSetFromShow, spinItem, type WhatnotSale } from "../whatnotCsv";
+import { parseCsv, readWhatnotCsv, matchProduct, checkAgainstSet, tokens, splitGiveaways, showsIn, suggestShow, localDate, packMultiplier, shelfUnits, storeRows, pickShow, planSetFromShow, spinItem, type WhatnotSale } from "../whatnotCsv";
 
 const S = (o: Partial<WhatnotSale>): WhatnotSale => ({ row: 2, title: "", description: "", qty: 1, price: 10, date: "", buyer: "", status: "", giveaway: false, showId: "", showTitle: "", ...o });
 
@@ -120,6 +120,50 @@ describe("store sales", () => {
     assert.equal(packMultiplier("10X Gem Pack"), 10);
     assert.equal(packMultiplier("Darkness Ablaze Booster Pack"), 1);
     assert.equal(packMultiplier("1 in 5 BANGERS - Gem 4"), 1);
+  });
+  // su-v1. The bug: one order of "6x Obsidian Flames Booster Pack" booked six
+  // units off the shelf, when the product on the shelf IS the six-pack. Gabe,
+  // 2026-10-17: "its actually one sale for 6 packs - so if a booster box has 36
+  // packs, there is 6 'items'". Inventory carries "6x Obsidian Flames Booster
+  // Pack" with 2 on hand, meaning two bundles, so reading the 6 twice emptied a
+  // shelf that still had stock on it.
+  describe("what one order takes off the shelf", () => {
+    it("counts the packs when the product on the shelf is a single pack", () => {
+      assert.equal(shelfUnits("6x Obsidian Flames Booster Pack", 1, "Obsidian Flames Booster Pack"), 6);
+      assert.equal(shelfUnits("5x Darkness Ablaze Booster Packs", 1, "Darkness Ablaze Booster Pack"), 5);
+      // two of the same listing on one order
+      assert.equal(shelfUnits("5x Darkness Ablaze Booster Packs", 2, "Darkness Ablaze Booster Pack"), 10);
+    });
+    it("counts one when the product IS the bundle", () => {
+      assert.equal(shelfUnits("6x Obsidian Flames Booster Pack", 1, "6x Obsidian Flames Booster Pack"), 1);
+      assert.equal(shelfUnits("6x Phantasmal Flames Booster Packs - Ripped Live", 1, "6x Phantasmal Flames Booster Packs"), 1);
+      // the real inventory rows, which are not spelled the same way twice
+      assert.equal(shelfUnits("6X Battle Styles Booster Packs", 1, "6X Battle Styles Booster Packs"), 1);
+      assert.equal(shelfUnits("6x Scarlet & Violet Base Booster Packs", 3, "6x Scarlet & Violet Base Booster Packs"), 3);
+    });
+    it("divides when a listing is a whole number of the product's own bundles", () => {
+      assert.equal(shelfUnits("12x Lost Origin Booster Packs", 1, "6x Lost Origin Booster Packs"), 2);
+      assert.equal(shelfUnits("18x Lost Origin Booster Packs", 2, "6x Lost Origin Booster Packs"), 6);
+    });
+    it("books one bundle rather than a fraction when the counts disagree", () => {
+      // "5x" against a "6x" product is a listing and a product that are not the
+      // same thing. Guessing 5/6 of a bundle would hide that.
+      assert.equal(shelfUnits("5x Lost Origin Booster Packs", 1, "6x Lost Origin Booster Packs"), 1);
+    });
+    it("falls back to the order quantity when no product is known", () => {
+      assert.equal(shelfUnits("Pokemon Keychain", 1, null), 1);
+      assert.equal(shelfUnits("Pokemon Keychain", 3), 3);
+      assert.equal(shelfUnits("6x Obsidian Flames Booster Pack", 1), 6);
+      // a missing or junk quantity is still one order
+      assert.equal(shelfUnits("Pokemon Keychain", 0, "Pokemon Keychain"), 1);
+      assert.equal(shelfUnits("Pokemon Keychain", NaN, "Pokemon Keychain"), 1);
+    });
+  });
+  it("keeps the order's own quantity next to the pack-count reading", () => {
+    const { rows } = storeRows([
+      S({ title: "6x Obsidian Flames Booster Pack", qty: 1, price: 85, format: "BUY_IT_NOW", orderId: "21" }),
+    ]);
+    assert.deepEqual(rows.map((r) => [r.units, r.orderQty]), [[6, 1]]);
   });
   it("takes Buy It Now orders from the earnings report and skips spins, giveaways and shipping", () => {
     const { rows, guessed } = storeRows([

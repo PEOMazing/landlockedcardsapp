@@ -418,6 +418,38 @@ export function packMultiplier(title: string): number {
   return n >= 2 && n <= 50 ? n : 1;
 }
 
+/** What one order takes off the shelf, once the product behind it is known.
+ *
+ *  su-v1. The count at the front of a listing was always read as a multiplier:
+ *  one order of "6x Obsidian Flames Booster Pack" took six units off the shelf.
+ *  That is right when the thing on the shelf is one pack. It is wrong when the
+ *  product IS the six-pack, which is how these are actually stocked - Inventory
+ *  carries "6x Obsidian Flames Booster Pack" with 2 on hand, meaning two
+ *  bundles, and a 36-pack box put away this way is six items on the shelf, not
+ *  thirty-six. Reading the title's 6 again on top of that booked one sale as
+ *  six and emptied a shelf that still had stock on it.
+ *
+ *  So the product's own name decides, because it is the only place the unit is
+ *  written down. A product carrying a count is already the bundle and one order
+ *  is one of them; a product without one is a single unit, and the listing's
+ *  count is how many of them went.
+ *
+ *  A listing count that is a whole multiple of the product's own - a "12x"
+ *  listing against a "6x" product - is two bundles. That is the one case where
+ *  both numbers are real and dividing them is arithmetic rather than a guess.
+ *  Anything else that disagrees ("5x" against a "6x" product) is a listing and
+ *  a product that are not the same thing, and inventing a fraction of a bundle
+ *  would hide that; one order, one unit, and the count on the shelf is left for
+ *  a person to look at. */
+export function shelfUnits(listingTitle: string, orderQty: number, productName?: string | null): number {
+  const qty = Math.max(1, Math.floor(Number(orderQty) || 1));
+  const listing = packMultiplier(listingTitle);
+  const bundle = packMultiplier(productName || "");
+  if (bundle <= 1) return qty * listing;
+  if (listing > bundle && listing % bundle === 0) return qty * (listing / bundle);
+  return qty;
+}
+
 /** Shipping upgrades are money, not product. */
 export const isShippingLine = (title: string) => /shipping/i.test(String(title || ""));
 
@@ -425,7 +457,12 @@ export type StoreRow = {
   key: string; // order id, or file row when there is none
   orderId: string;
   title: string;
-  units: number; // what comes off the shelf: order qty x the "5x" multiplier
+  /** What comes off the shelf when nothing is known about the product: order
+   *  qty x the "5x" multiplier. Once a product is matched this is NOT the
+   *  number to book - call shelfUnits with its name, because a product that is
+   *  itself a bundle has already counted the packs. */
+  units: number;
+  orderQty: number; // units on the order itself, before any pack count is read
   price: number; // what the buyer paid for the whole order
   date: string;
   showId: string;
@@ -482,6 +519,7 @@ export function storeRows(sales: WhatnotSale[]): { rows: StoreRow[]; guessed: bo
       orderId: s.orderId || "",
       title: s.title,
       units: s.qty * packMultiplier(s.title),
+      orderQty: Math.max(1, Math.floor(Number(s.qty) || 1)),
       price: s.price,
       date: s.date,
       showId: s.showId,
@@ -555,7 +593,12 @@ export type SetPlan = {
    *  `orders` keeps each Whatnot order separately even though the row shows a
    *  total, because the store booking dedupes on order id. Aggregating them
    *  away would let the same file, uploaded twice, book the sale twice and
-   *  take the stock off the shelf twice. */
+   *  take the stock off the shelf twice.
+   *
+   *  su-v1: `units` here and on each order is what the ORDER says, with no pack
+   *  count read off the title. The product is picked by hand in this flow, so
+   *  the caller knows its name and runs shelfUnits before booking - which is
+   *  the only place that can tell a six-pack product from six packs. */
   toStore: {
     title: string; fold: string; units: number; price: number; productId: string;
     orders: { orderId: string; units: number; price: number }[];
