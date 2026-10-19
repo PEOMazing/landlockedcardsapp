@@ -21,7 +21,7 @@ type Card = {
   // bd-v3/v4. Caption for anything off the Singles table, raw or slabbed.
   // Condition and set, never a price - see the note in the public overlay
   // route for why the value stays server side.
-  cond?: string; set?: string; graded?: boolean;
+  cond?: string; set?: string; printing?: string; graded?: boolean;
 };
 
 const POLL_MS = 3000;
@@ -259,7 +259,12 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           >
             {c.cond}
           </div>
-          {c.set && (
+          {/* bd-v5. Set and printing on one line. The printing matters most on
+              exactly the cards whose stock art cannot show it: a Team Rocket
+              holo scan carries a 1st Edition stamp whether or not the card in
+              the case does, so the words have to settle what the picture
+              cannot. Blank printings simply drop out. */}
+          {(c.set || c.printing) && (
             <div
               style={{
                 color: "rgba(255,255,255,.82)",
@@ -270,7 +275,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
                 textOverflow: "ellipsis",
               }}
             >
-              {c.set}
+              {[c.set, c.printing].filter(Boolean).join(" · ")}
             </div>
           )}
         </div>

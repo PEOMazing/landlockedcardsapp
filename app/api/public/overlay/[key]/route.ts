@@ -43,6 +43,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
   const imageBySingle: Record<string, string> = {};
   const conditionBySingle: Record<string, string> = {};
   const setBySingle: Record<string, string> = {};
+  const printingBySingle: Record<string, string> = {};
   if (singleIds.length) {
     const or = singleIds.map((id) => `RECORD_ID() = '${id}'`).join(", ");
     const singles = await atList(T.singles, { filterByFormula: `OR(${or})` }).catch(() => []);
@@ -51,6 +52,7 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
       if (url) imageBySingle[s.id] = url;
       conditionBySingle[s.id] = String(s.fields["Condition"] || "");
       setBySingle[s.id] = String(s.fields["Set Name"] || "").trim();
+      printingBySingle[s.id] = String(s.fields["Printing"] || "").trim();
     }
   }
   const conditionOf = (l: { fields: Record<string, any> }) =>
@@ -115,6 +117,12 @@ export async function GET(_req: Request, { params }: { params: { key: string } }
         // disclosure, which is asked for, rather than valuation, which is not.
         cond: fromSingles ? conditionOf(l) : "",
         set: fromSingles ? setBySingle[singleId] || "" : "",
+        // bd-v5. The printing, when the card has one recorded. Vintage sets
+        // reuse one piece of artwork across 1st Edition and Unlimited and the
+        // only difference is a stamp, so the stock scan can carry a stamp the
+        // card in the case does not have. Saying the printing in words settles
+        // it, and it is the same disclosure the checklist already owes.
+        printing: fromSingles ? printingBySingle[singleId] || "" : "",
         // Lets the board colour a grade differently from a raw condition
         // without having to parse the string and guess.
         graded: kind === "graded",
