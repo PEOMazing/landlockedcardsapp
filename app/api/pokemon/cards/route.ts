@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getMe } from "@/lib/auth";
 import { listSetCards, searchCards, searchCardsByName } from "@/lib/pokemon";
 import { getTcgcsvCardByProductId, printingKey, searchTcgcsvCards, vintagePrintings } from "@/lib/tcgcsvCards";
-import { tcgProductIdFromUrl } from "@/lib/slabIntake";
+import { tcgProductIdFromUrl, tcgSlugFromUrl } from "@/lib/slabIntake";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -32,10 +32,16 @@ export async function GET(req: Request) {
           { status: 400 },
         );
       }
-      const card = await getTcgcsvCardByProductId(pid).catch(() => null);
+      // The slug goes with the id so the lookup knows which catalog and which
+      // set to open, instead of hunting through the newest English sets and
+      // giving up on everything else.
+      const card = await getTcgcsvCardByProductId(pid, tcgSlugFromUrl(tcgUrl)).catch(() => null);
       if (!card) {
         return NextResponse.json(
-          { error: `no card found for TCGplayer product ${pid}`, productId: pid },
+          {
+            error: `no card found for TCGplayer product ${pid}. If the link is right, the set may not be in the nightly mirror yet - add the card by hand and paste the link into Notes.`,
+            productId: pid,
+          },
           { status: 404 },
         );
       }

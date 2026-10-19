@@ -320,20 +320,69 @@ export async function getTcgcsvCard(id: string): Promise<PokeCard | null> {
  *  Null when nothing matches, which the caller must treat as "ask the person
  *  to check the link" rather than falling back to a guess. Attaching the wrong
  *  product to a slab is silent and permanent. */
-export async function getTcgcsvCardByProductId(productId: number): Promise<PokeCard | null> {
+export async function getTcgcsvCardByProductId(
+  productId: number,
+  slug?: string,
+): Promise<PokeCard | null> {
   if (!Number.isFinite(productId) || productId <= 0) return null;
-  const groups = await recentGroups();
-  for (let i = 0; i < groups.length; i += 4) {
-    const chunk = await Promise.all(
-      groups.slice(i, i + 4).map((g) => loadGroup(g).then((d) => ({ g, d }))),
-    );
-    for (const { g, d } of chunk) {
-      if (!d) continue;
-      const p = d.prods.find((x) => x.productId === productId);
-      if (p) return toCard(p, g, d.market.get(productId));
+  // si-v2. The slug off the pasted URL first, then the recent-sets window.
+  //
+  // The window alone was the whole bug: it is the newest sixteen ENGLISH sets,
+  // which is the right list for a search box and the wrong list for a link
+  // somebody is holding in their hand. Paste a Japanese card, or anything
+  // older than about a year, and the id was unfindable no matter how correct
+  // it was. The set was never missing from the mirror; the lookup was looking
+  // in sixteen drawers out of six hundred and seventy-nine.
+  //
+  // The slug fixes that without scanning the catalog, because TCGplayer builds
+  // it out of the catalog name and the set name - "pokemon-japan-expansion-
+  // pack-blastoise" is Japanese, set "Expansion Pack". That is one group to
+  // load instead of hundreds.
+  const tried = new Set<number>();
+  const pools = [slugGroups(await allGroups(), String(slug || "")), await recentGroups()];
+  for (const pool of pools) {
+    const groups = pool.filter((g) => !tried.has(g.groupId));
+    for (const g of groups) tried.add(g.groupId);
+    for (let i = 0; i < groups.length; i += 4) {
+      const chunk = await Promise.all(
+        groups.slice(i, i + 4).map((g) => loadGroup(g).then((d) => ({ g, d }))),
+      );
+      for (const { g, d } of chunk) {
+        if (!d) continue;
+        const p = d.prods.find((x) => x.productId === productId);
+        if (p) return toCard(p, g, d.market.get(productId));
+      }
     }
   }
   return null;
+}
+
+/** tcgcsv group names turned into the shape TCGplayer puts in a URL.
+ *  "SM12a: TAG TEAM GX: Tag All Stars" -> "sm12a-tag-team-gx-tag-all-stars" */
+const slugify = (s: string) =>
+  String(s || "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+/** The groups a pasted product slug could belong to, best guess first.
+ *
+ *  Longest name wins, because set names nest: "base-set" is a prefix of
+ *  "base-set-2", and matching the short one first would send the lookup to
+ *  the wrong set and quietly find nothing. */
+export function slugGroups(groups: any[], slug: string): any[] {
+  const s = slugify(slug);
+  if (!s) return [];
+  const cat = s.startsWith("pokemon-japan-") ? JP_CAT : s.startsWith("pokemon-") ? EN_CAT : 0;
+  const rest = s.replace(/^pokemon-japan-/, "").replace(/^pokemon-/, "");
+  return groups
+    .filter((g) => {
+      if (cat && Number(g.categoryId) !== cat) return false;
+      const gs = slugify(g.name);
+      return !!gs && rest.startsWith(`${gs}-`);
+    })
+    .sort((a, b) => slugify(b.name).length - slugify(a.name).length);
 }
 
 // ---------------- resolving an unlinked single ----------------

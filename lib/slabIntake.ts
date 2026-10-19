@@ -69,6 +69,21 @@ export function tcgProductIdFromUrl(input: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+/** The set-and-card slug out of a pasted TCGplayer product URL.
+ *
+ *  "https://www.tcgplayer.com/product/575602/pokemon-japan-expansion-pack-blastoise?page=1"
+ *  gives "pokemon-japan-expansion-pack-blastoise".
+ *
+ *  Worth having because the slug names the catalog and the set, and the
+ *  catalog and the set are exactly what a product-id lookup otherwise has to
+ *  guess by loading sets one at a time until it gets lucky. Empty string for
+ *  a bare id or a share link that carries no slug - the caller treats that as
+ *  "no hint", not as an error. */
+export function tcgSlugFromUrl(input: string): string {
+  const m = /\/product\/\d+\/([A-Za-z0-9-]+)/.exec(String(input || ""));
+  return m ? m[1].toLowerCase() : "";
+}
+
 /** Is this a link we are willing to store as comp provenance?
  *
  *  Allow-listed rather than "any http", because this string is rendered as a
