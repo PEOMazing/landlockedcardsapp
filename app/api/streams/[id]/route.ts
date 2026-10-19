@@ -251,6 +251,11 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       productId: lineRows[i].fields["Product"]?.[0] || "",
       aliases: aliasesByProduct[lineRows[i].fields["Product"]?.[0]] || [],
       isGraded: categoryByProduct[lineRows[i].fields["Product"]?.[0]] === "Graded Card",
+      // bd-v2. The CARD's grade, for the board's slabs filter. Distinct from
+      // isGraded above, which is about a sealed Inventory product filed under
+      // the Graded Card category - a different thing that happens to share a
+      // word. Blank on a sealed line, which reads as raw everywhere.
+      condition: cardBySingle[String(lineRows[i].fields["Single Rec Id"] || "")]?.cond || "",
       tcgUrl: tcgByProduct[lineRows[i].fields["Product"]?.[0]] || "",
       image:
         imageBySingle[String(lineRows[i].fields["Single Rec Id"] || "")] ||

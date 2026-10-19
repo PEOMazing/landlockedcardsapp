@@ -1,4 +1,5 @@
 import { AtRecord, T, atList, atUpdate } from "./airtable";
+import { isSlab } from "./slab";
 
 // The OBS card board.
 //
@@ -54,8 +55,31 @@ export const isSingleLine = (line: { fields: Record<string, any> }) =>
   !!String(line.fields["Single Rec Id"] || "").trim();
 
 /** Which kinds of product the board is showing. Stored inverted on the stream
- *  so an untouched show includes both. */
-export type BoardKinds = { singles: boolean; sealed: boolean };
+ *  so an untouched show includes all of them.
+ *
+ *  bd-v2: graded split out of singles. A slab was always a single as far as
+ *  the board was concerned, so it rode along whenever singles were on and
+ *  there was no way to ask for a banner of nothing but slabs - which is the
+ *  one a $9,000 Darkrai deserves. Three kinds now, and `singles` means RAW
+ *  singles, matching what the Singles button on the set builder means. */
+export type BoardKinds = { singles: boolean; sealed: boolean; graded: boolean };
+
+/** Which bucket a line falls in.
+ *
+ *  The condition has to come from the Singles record: a line carries its
+ *  card's name and price but not its grade. The caller fetches those records
+ *  anyway, for the art, so this takes the condition rather than going and
+ *  finding it - which also keeps the rule a pure function that can be tested
+ *  without Airtable. */
+export type LineKind = "sealed" | "singles" | "graded";
+
+export function lineKind(
+  line: { fields: Record<string, any> },
+  condition?: string | null,
+): LineKind {
+  if (!isSingleLine(line)) return "sealed";
+  return isSlab(condition) ? "graded" : "singles";
+}
 
 /** Grid fills the whole canvas and resizes tiles to the count. Banner is a
  *  single row that scrolls, for a strip along the bottom of the scene. */
@@ -158,6 +182,10 @@ export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds 
   return {
     singles: !stream.fields["Board Hide Singles"],
     sealed: !stream.fields["Board Hide Sealed"],
+    // bd-v2. A stream from before this field existed reads undefined here and
+    // therefore true, so every show that already had slabs on its board keeps
+    // showing them. The new control can only ever take them away.
+    graded: !stream.fields["Board Hide Graded"],
   };
 }
 
@@ -168,7 +196,8 @@ export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds 
 //   giveaway       - gone. Not something a viewer is spinning for.
 //   store purchase - gone. Already sold off the shelf, never on the wheel.
 //   wrong kind     - gone. A singles wheel and a sealed break are different
-//                    shows, and a mixed board reads as neither.
+//                    shows, and a mixed board reads as neither. bd-v2: slabs
+//                    are their own kind, so a graded-only banner is possible.
 //   under the hit  - gone. The board is advertising what is still winnable,
 //     threshold      and a $2 common is not a reason to keep spinning. Same
 //                    threshold the rest of the app calls a hit, so the board
@@ -177,14 +206,18 @@ export function boardKinds(stream: { fields: Record<string, any> }): BoardKinds 
 //                    knows whether a picture was actually found.
 export function onBoard(
   line: { fields: Record<string, any> },
-  kinds: BoardKinds = { singles: true, sealed: true },
+  kinds: BoardKinds = { singles: true, sealed: true, graded: true },
   hitThreshold = 0,
+  /** The card's Condition, for telling a slab from a raw single. Left off, a
+   *  single is treated as raw, which is how every caller behaved before slabs
+   *  were their own kind. */
+  condition?: string | null,
 ): boolean {
   const f = line.fields;
   if (f["Off Board"]) return false;
   if (f["Is Giveaway"]) return false;
   if (f["Is Store Purchase"]) return false;
-  if (!(isSingleLine(line) ? kinds.singles : kinds.sealed)) return false;
+  if (!kinds[lineKind(line, condition)]) return false;
   if ((Number(f["Market Price Snapshot"]) || 0) < hitThreshold) return false;
   const remaining = (Number(f["Qty"]) || 0) - (Number(f["Qty Hit"]) || 0);
   return remaining > 0;

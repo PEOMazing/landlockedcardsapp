@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BOARD_SCALE_MAX, BOARD_SCALE_MIN, BOARD_SHINE_MAX, HEAT_MAX, boardKinds, boardLayout, boardScale, boardShine, boardSpeed, heatLevel, isOverlayKey, isShiny, isSingleLine, newOverlayKey, onBoard, spinsSinceHit } from "../overlay";
+import { BOARD_SCALE_MAX, BOARD_SCALE_MIN, BOARD_SHINE_MAX, HEAT_MAX, boardKinds, boardLayout, boardScale, boardShine, boardSpeed, heatLevel, isOverlayKey, isShiny, isSingleLine, lineKind, newOverlayKey, onBoard, spinsSinceHit } from "../overlay";
 
 const line = (f: Record<string, any>) => ({ fields: { Qty: 1, "Qty Hit": 0, ...f } });
 
@@ -84,42 +84,42 @@ describe("showing singles, sealed, or both", () => {
   it("includes both on a stream nobody has touched the setting on", () => {
     // The flags are stored inverted for exactly this: every show that existed
     // before the toggles did still shows everything.
-    assert.deepEqual(boardKinds({ fields: {} }), { singles: true, sealed: true });
+    assert.deepEqual(boardKinds({ fields: {} }), { singles: true, sealed: true, graded: true });
     assert.equal(onBoard(single), true);
     assert.equal(onBoard(sealed), true);
   });
 
   it("reads the stored flags as hide, not show", () => {
-    assert.deepEqual(boardKinds({ fields: { "Board Hide Sealed": true } }), { singles: true, sealed: false });
-    assert.deepEqual(boardKinds({ fields: { "Board Hide Singles": true } }), { singles: false, sealed: true });
+    assert.deepEqual(boardKinds({ fields: { "Board Hide Sealed": true } }), { singles: true, sealed: false, graded: true });
+    assert.deepEqual(boardKinds({ fields: { "Board Hide Singles": true } }), { singles: false, sealed: true, graded: true });
   });
 
   it("drops sealed product from a singles-only board", () => {
-    const kinds = { singles: true, sealed: false };
+    const kinds = { singles: true, sealed: false, graded: true };
     assert.equal(onBoard(single, kinds), true);
     assert.equal(onBoard(sealed, kinds), false);
   });
 
   it("drops singles from a sealed-only board", () => {
-    const kinds = { singles: false, sealed: true };
+    const kinds = { singles: false, sealed: true, graded: true };
     assert.equal(onBoard(single, kinds), false);
     assert.equal(onBoard(sealed, kinds), true);
   });
 
   it("shows an empty board when both are off rather than falling back to all", () => {
-    const kinds = { singles: false, sealed: false };
+    const kinds = { singles: false, sealed: false, graded: true };
     assert.equal(onBoard(single, kinds), false);
     assert.equal(onBoard(sealed, kinds), false);
   });
 
   it("still drops a hit card whatever the kind filter says", () => {
-    assert.equal(onBoard({ fields: { Qty: 1, "Qty Hit": 1, "Single Rec Id": "recX" } }, { singles: true, sealed: true }), false);
+    assert.equal(onBoard({ fields: { Qty: 1, "Qty Hit": 1, "Single Rec Id": "recX" } }, { singles: true, sealed: true, graded: true }), false);
   });
 });
 
 describe("only hits go on the board", () => {
   const worth = (n: number) => ({ fields: { Qty: 1, "Qty Hit": 0, "Market Price Snapshot": n } });
-  const both = { singles: true, sealed: true };
+  const both = { singles: true, sealed: true, graded: true };
 
   it("keeps a card at or above the threshold", () => {
     // "Ten dollars or more", so exactly ten counts. The whole app reads the
@@ -247,7 +247,7 @@ describe("which cards get the foil", () => {
     // A $12 card is still a hit and still belongs on the board; it just does
     // not get to look like the $340 one.
     const card = { fields: { Qty: 1, "Qty Hit": 0, "Market Price Snapshot": 12 } };
-    assert.equal(onBoard(card, { singles: true, sealed: true }, 10), true);
+    assert.equal(onBoard(card, { singles: true, sealed: true, graded: true }, 10), true);
     assert.equal(isShiny(12, 50), false);
   });
 });
@@ -324,5 +324,70 @@ describe("how big the board draws", () => {
 
   it("ignores junk", () => {
     assert.equal(boardScale({ fields: { "Board Scale": "half" } }), 1);
+  });
+});
+
+// bd-v2. Slabs used to ride the board as singles, so there was no way to ask
+// for a banner of nothing but graded cards - the one a $9,000 Darkrai
+// deserves. Three kinds now. The condition comes in as an argument because a
+// line carries its card's name and price but not its grade.
+describe("the board's slabs filter", () => {
+  const sealed = { fields: { Qty: 1, "Qty Hit": 0 } };
+  const raw = { fields: { Qty: 1, "Qty Hit": 0, "Single Rec Id": "recRaw" } };
+  const slab = { fields: { Qty: 1, "Qty Hit": 0, "Single Rec Id": "recSlab" } };
+
+  it("sorts a line into one of three buckets", () => {
+    assert.equal(lineKind(sealed), "sealed");
+    assert.equal(lineKind(sealed, "PSA 10"), "sealed"); // sealed wins; a product has no grade
+    assert.equal(lineKind(raw, "NM"), "singles");
+    assert.equal(lineKind(slab, "PSA 10"), "graded");
+    assert.equal(lineKind(slab, "BGS 9.5"), "graded");
+    assert.equal(lineKind(slab, "CGC 9"), "graded");
+  });
+
+  it("treats a single with no grade as raw", () => {
+    // Every caller before this passed no condition at all, and a sealed line
+    // has none to pass. Both have to land on the old behaviour.
+    assert.equal(lineKind(raw), "singles");
+    assert.equal(lineKind(raw, ""), "singles");
+    assert.equal(lineKind(raw, null), "singles");
+  });
+
+  it("reads the new stream field, defaulting to showing slabs", () => {
+    // A show from before the field existed has undefined here. It must keep
+    // showing the slabs it was already showing: the control can only subtract.
+    assert.equal(boardKinds({ fields: {} }).graded, true);
+    assert.equal(boardKinds({ fields: { "Board Hide Graded": true } }).graded, false);
+    assert.equal(boardKinds({ fields: { "Board Hide Graded": false } }).graded, true);
+  });
+
+  it("builds a slabs-only board", () => {
+    const only = { singles: false, sealed: false, graded: true };
+    assert.equal(onBoard(slab, only, 0, "PSA 10"), true);
+    assert.equal(onBoard(raw, only, 0, "NM"), false);
+    assert.equal(onBoard(sealed, only, 0), false);
+  });
+
+  it("keeps slabs off a raw-singles board", () => {
+    const noSlabs = { singles: true, sealed: true, graded: false };
+    assert.equal(onBoard(slab, noSlabs, 0, "PSA 9"), false);
+    assert.equal(onBoard(raw, noSlabs, 0, "NM"), true);
+    assert.equal(onBoard(sealed, noSlabs, 0), true);
+  });
+
+  it("does not let the singles toggle take slabs with it any more", () => {
+    // The point of the split: turning singles off used to hide every slab too.
+    const noRaw = { singles: false, sealed: false, graded: true };
+    assert.equal(onBoard(slab, noRaw, 0, "PSA 10"), true);
+  });
+
+  it("still applies every other board rule to a slab", () => {
+    const only = { singles: false, sealed: false, graded: true };
+    const hit = { fields: { Qty: 1, "Qty Hit": 1, "Single Rec Id": "recSlab" } };
+    const off = { fields: { Qty: 1, "Qty Hit": 0, "Single Rec Id": "recSlab", "Off Board": true } };
+    const cheap = { fields: { Qty: 1, "Qty Hit": 0, "Single Rec Id": "recSlab", "Market Price Snapshot": 4 } };
+    assert.equal(onBoard(hit, only, 0, "PSA 10"), false);
+    assert.equal(onBoard(off, only, 0, "PSA 10"), false);
+    assert.equal(onBoard(cheap, only, 10, "PSA 10"), false);
   });
 });

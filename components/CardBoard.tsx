@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Thumb from "@/components/Thumb";
 import { toast } from "@/components/Toaster";
+import { isSlab } from "@/lib/slab";
 
 // The streamer's control for the OBS card board.
 //
@@ -17,7 +18,16 @@ type Line = {
   id: string; name: string; qty: number; qtyHit: number; market: number;
   isGiveaway?: boolean; isStore?: boolean; image?: string; offBoard?: boolean;
   singleRecId?: string;
+  /** bd-v2: the card's grade, so a slab can be told from a raw single. Blank
+   *  on sealed lines. */
+  condition?: string;
 };
+
+/** bd-v2. The three buckets the board can show, mirroring the Sealed /
+ *  Singles / Graded split on the set builder. Kept here as well as in
+ *  lib/overlay because this component must not import the Airtable client. */
+const kindOfLine = (l: Line): "sealed" | "singles" | "graded" =>
+  !l.singleRecId ? "sealed" : isSlab(l.condition) ? "graded" : "singles";
 
 export default function CardBoard({
   streamId,
@@ -29,7 +39,7 @@ export default function CardBoard({
   onChanged: () => Promise<void> | void;
 }) {
   const [url, setUrl] = useState("");
-  const [kinds, setKinds] = useState({ singles: true, sealed: true });
+  const [kinds, setKinds] = useState({ singles: true, sealed: true, graded: true });
   const [layout, setLayout] = useState<"grid" | "banner">("grid");
   const [hitThreshold, setHitThreshold] = useState(0);
   const [speed, setSpeed] = useState(1);
@@ -73,10 +83,11 @@ export default function CardBoard({
     (l) => !l.isGiveaway && !l.isStore && l.image && (l.market || 0) >= hitThreshold,
   );
   const remaining = eligible.filter((l) => l.qty - l.qtyHit > 0);
-  const kindOk = (l: Line) => (l.singleRecId ? kinds.singles : kinds.sealed);
+  const kindOk = (l: Line) => kinds[kindOfLine(l)];
   const showing = remaining.filter((l) => !l.offBoard && kindOk(l));
-  const singlesLeft = remaining.filter((l) => l.singleRecId).length;
-  const sealedLeft = remaining.length - singlesLeft;
+  const singlesLeft = remaining.filter((l) => kindOfLine(l) === "singles").length;
+  const gradedLeft = remaining.filter((l) => kindOfLine(l) === "graded").length;
+  const sealedLeft = remaining.filter((l) => kindOfLine(l) === "sealed").length;
   // What the streamer is about to see, counted the same way the board counts
   // it. Worth showing: "$50 and up" means nothing until you know it is four
   // cards tonight and twenty-six tomorrow.
@@ -157,12 +168,12 @@ export default function CardBoard({
     if (!r.ok) { setLayout(prev); toast("Could not change the layout"); }
   }
 
-  async function setKind(which: "singles" | "sealed", on: boolean) {
-    // Never let both go off - that is an empty board and always a mistake
+  async function setKind(which: "singles" | "sealed" | "graded", on: boolean) {
+    // Never let them all go off - that is an empty board and always a mistake
     // rather than a choice, and it is a confusing one to recover from mid-show.
     const next = { ...kinds, [which]: on };
-    if (!next.singles && !next.sealed) {
-      toast("Turn the other one on first - the board cannot show nothing");
+    if (!next.singles && !next.sealed && !next.graded) {
+      toast("Turn another one on first - the board cannot show nothing");
       return;
     }
     setKinds(next);
@@ -226,7 +237,13 @@ export default function CardBoard({
     else toast("Could not make a new link");
   }
 
-  if (eligible.length === 0) return null;
+  // bd-v4. The panel used to vanish whenever nothing was drawable, which is
+  // the worst possible moment to take the controls away: a set of freshly
+  // imported slabs has no art yet, so the board went missing on exactly the
+  // stream that needed it. An empty set is still no board, but once there are
+  // lines the panel stays put and says what is wrong.
+  if (lines.length === 0) return null;
+  const noArt = eligible.length === 0;
 
   return (
     <div className="space-y-2 border border-edge rounded-lg p-3">
@@ -238,6 +255,14 @@ export default function CardBoard({
           {hitThreshold > 0 && <> · hits are ${hitThreshold}+</>}
         </span>
       </div>
+
+      {noArt && (
+        <p className="text-warn text-xs">
+          Nothing on this set can be drawn yet. Every card is either missing its picture, a
+          giveaway, a store sale, or under the ${hitThreshold} hit line. Fill the card images and
+          the board fills itself - the link below keeps working the whole time.
+        </p>
+      )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <input className="input flex-1 !text-xs num" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
@@ -270,6 +295,19 @@ export default function CardBoard({
         >
           {kinds.sealed ? "Including sealed" : "Include sealed"}
           <span className="num ml-1.5 opacity-70">{sealedLeft}</span>
+        </button>
+        {/* bd-v2. Slabs out of the singles bucket and into their own, so a
+            banner of nothing but graded cards is one click: turn the other two
+            off. A slab rode the board as a single before this and still does
+            by default - the control can only take them away. */}
+        <button
+          type="button"
+          onClick={() => setKind("graded", !kinds.graded)}
+          className={`!px-3 !py-1 text-xs ${kinds.graded ? "btn-foil" : "btn opacity-60"}`}
+          title="Graded slabs. Turn singles and sealed off for a board of nothing but slabs."
+        >
+          {kinds.graded ? "Including slabs" : "Include slabs"}
+          <span className="num ml-1.5 opacity-70">{gradedLeft}</span>
         </button>
 
         {/* How much of the Browser Source's height the board uses. Height
@@ -460,7 +498,7 @@ export default function CardBoard({
               className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 cursor-pointer ${
                 l.offBoard || !kindOk(l) ? "border-edge opacity-50" : "border-foil/40"
               }`}
-              title={kindOk(l) ? "" : `Hidden by the ${l.singleRecId ? "singles" : "sealed"} filter`}
+              title={kindOk(l) ? "" : `Hidden by the ${kindOfLine(l) === "graded" ? "slabs" : kindOfLine(l)} filter`}
             >
               <input
                 type="checkbox"

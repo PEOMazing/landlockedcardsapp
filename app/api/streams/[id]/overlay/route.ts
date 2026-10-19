@@ -63,6 +63,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const fields: Record<string, any> = {};
   if (b?.singles !== undefined) fields["Board Hide Singles"] = !b.singles;
   if (b?.sealed !== undefined) fields["Board Hide Sealed"] = !b.sealed;
+  if (b?.graded !== undefined) fields["Board Hide Graded"] = !b.graded;
   if (b?.layout !== undefined) fields["Board Banner"] = b.layout === "banner";
   if (b?.speed !== undefined) {
     const n = Number(b.speed);

@@ -16,7 +16,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // having on stream, because the board gets more readable exactly as the
 // remaining cards get more interesting.
 
-type Card = { id: string; image: string; thumb: string; left: number; shiny?: boolean };
+type Card = {
+  id: string; image: string; thumb: string; left: number; shiny?: boolean;
+  // bd-v3/v4. Caption for anything off the Singles table, raw or slabbed.
+  // Condition and set, never a price - see the note in the public overlay
+  // route for why the value stays server side.
+  cond?: string; set?: string; graded?: boolean;
+};
 
 const POLL_MS = 3000;
 
@@ -162,6 +168,13 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
   // run takes. The floor keeps a two-card board from becoming a blur.
   const duration = Math.max(4, runWidth / (BANNER_PX_PER_SEC * speed));
 
+  // bd-v3. Caption text sizes off the tile it sits under, so it stays in
+  // proportion whether the board is holding three enormous cards or forty
+  // small ones. In the grid the tile width has to be derived; the banner
+  // already knows it.
+  const gridTileW = cols > 0 ? Math.max(0, (size.w - gap * (cols - 1)) / cols) : 0;
+  const capPx = (w?: number) => Math.max(8, Math.round((w || gridTileW) * 0.085));
+
   const tile = (c: Card, i: number, w?: number) => (
     <div
       key={c.id}
@@ -172,6 +185,10 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
         aspectRatio: w ? undefined : String(CARD_RATIO),
         flex: w ? "0 0 auto" : undefined,
         maxWidth: w ? undefined : "100%",
+        // A captioned tile is art above, label below. Without a caption this
+        // is a column of one and lays out exactly as it always did.
+        display: "flex",
+        flexDirection: "column",
         // The card art is the thing; the glow just lifts it off whatever
         // is behind it in the scene so it does not disappear into a busy
         // background.
@@ -188,7 +205,7 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           unison, which looks like a screen fault rather than foil. */}
       <div
         className={c.shiny ? "llc-card llc-tilt" : "llc-card"}
-        style={{ ["--d" as any]: `${((i % 7) * 0.83).toFixed(2)}s` }}
+        style={{ ["--d" as any]: `${((i % 7) * 0.83).toFixed(2)}s`, flex: "1 1 auto", minHeight: 0 }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -213,6 +230,51 @@ export default function OverlayClient({ apiKey }: { apiKey: string }) {
           </>
         )}
       </div>
+      {/* bd-v3/v4. Cards say what they are. A grade or a condition, plus the
+          set it came from, is the disclosure a card is owed: it is the whole
+          reason the card is worth what it is, and art alone cannot show it.
+          A grade reads gold because it is the louder claim; a raw condition
+          reads white so the two are never mistaken for each other at a
+          glance. Sealed tiles stay art-only, exactly as before. */}
+      {c.cond && (
+        <div
+          style={{
+            flex: "0 0 auto",
+            marginTop: "3%",
+            textAlign: "center",
+            lineHeight: 1.15,
+            fontSize: capPx(w),
+            // Drawn like the rest of the board: no panel, just type that
+            // holds up over whatever is behind it in the scene.
+            textShadow: "0 1px 3px rgba(0,0,0,.95), 0 0 10px rgba(0,0,0,.8)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              color: c.graded ? "#ffd77a" : "rgba(255,255,255,.95)",
+              fontWeight: 800,
+              letterSpacing: ".02em",
+            }}
+          >
+            {c.cond}
+          </div>
+          {c.set && (
+            <div
+              style={{
+                color: "rgba(255,255,255,.82)",
+                fontWeight: 600,
+                fontSize: "0.82em",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {c.set}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 
