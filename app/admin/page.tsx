@@ -157,6 +157,18 @@ export default async function AdminDashboard() {
           // chart it. It just does not belong in a figure that claims to be
           // what the week actually made.
           const weekNet = weekProfit - weekPayroll;
+          // pd-v6. Packing and override are paid through the manager path but
+          // belong on the person's own row, so they are looked up by id rather
+          // than printed in a table of their own.
+          const mgrByPerson = new Map(mgr.map((m) => [m.managerId, m]));
+          const anyOverride = mgr.some((m) => m.earnsOverride);
+          // pd-v7. Commission is shown only in a week where it actually wins.
+          // It has never won - it needs $100 of profit per clocked hour - so a
+          // Commission column and a Commissionable column were two columns of
+          // arithmetic nobody is paid, sitting beside the one number that is.
+          const anyCommission = group.some((w) => w.winner === "commission");
+          const streamed = new Set(group.map((w) => w.streamerId));
+          const packOnly = mgr.filter((m) => !streamed.has(m.managerId));
           return (
           <section key={ws}>
             <h2 className="label mb-2">Week of {group[0].weekLabel}</h2>
@@ -176,88 +188,75 @@ export default async function AdminDashboard() {
               <span className="num">{money(weekPayroll + weekTips)}</span>. Everything is over
               MARKET, so a positive net beat the shelf price, not merely what you paid.
             </p>
+            {/* pd-v6. One row per person, one total.
+                
+                This was two tables: streamers, then a second table for
+                whoever packed. Under the flat $35 deal that split quietly
+                broke the arithmetic. Packing in the streamer row means HOURLY
+                packing off that person's own timeclock, and a flat show has
+                no hours, so the column read $0.00 for everyone while the fee
+                sat in the table below. Alyssa's "Total pay" said $510.40 when
+                she was owed $860.40.
+                
+                A column called Total Pay that is not the total is how someone
+                gets underpaid, so the tables are now one. Packing is the real
+                figure, hourly and flat together, tips are visible rather than
+                folded silently into the total, and Total is everything that
+                person is owed for the week.
+                
+                Override only appears in a week where somebody earns one.
+                People who packed but did not stream still get a row. */}
             <div className="card overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr>
-                    <th>Streamer</th><th>Streams</th><th>Profit (mkt)</th><th>Profit (buy)</th><th>Packing</th>
-                    <th>Commissionable</th><th>Hourly (A)</th><th>Commission (B)</th>
-                    <th>Stream pay</th><th>Total pay</th>
+                    <th>Person</th><th>Streams</th><th>Profit (mkt)</th><th>Profit (buy)</th>
+                    <th>Hourly</th>
+                    {anyCommission && <th>Commission</th>}
+                    <th>Tips</th><th>Packing</th>
+                    {anyOverride && <th>Override</th>}
+                    <th>Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {group.map((w) => (
+                  {group.map((w) => {
+                    const extra = mgrByPerson.get(w.streamerId);
+                    const packing = w.packingPay + (extra?.packingPay || 0);
+                    const total = w.totalPay + (extra?.totalPay || 0);
+                    return (
                     <tr key={w.streamerId}>
                       <td className="!font-medium">{w.streamerName}</td>
                       <td>{w.streams.length}</td>
                       <td>{money(w.profit)}</td>
                       <td>{money(w.buyProfit)}</td>
-                      <td>{money(w.packingPay)}</td>
-                      <td>{money(w.commissionable)}</td>
                       <td className={w.winner === "hourly" ? "text-win font-semibold" : ""}>{money(w.optionA)}</td>
-                      <td className={w.winner === "commission" ? "text-win font-semibold" : ""}>{money(w.optionB)}</td>
-                      <td>{money(w.streamPay)}</td>
-                      <td className="!font-semibold">{money(w.totalPay)}</td>
+                      {anyCommission && (
+                        <td className={w.winner === "commission" ? "text-win font-semibold" : ""}>{money(w.optionB)}</td>
+                      )}
+                      <td>{money(w.tips)}</td>
+                      <td>{money(packing)}</td>
+                      {anyOverride && <td>{money(extra?.overridePay || 0)}</td>}
+                      <td className="!font-semibold">{money(total)}</td>
+                    </tr>
+                    );
+                  })}
+                  {/* packed but did not stream this week */}
+                  {packOnly.map((m) => (
+                    <tr key={m.managerId}>
+                      <td className="!font-medium">{m.managerName} <span className="text-dim text-xs">packer</span></td>
+                      <td>{m.packedCount}</td>
+                      <td className="text-dim">-</td>
+                      <td className="text-dim">-</td>
+                      <td className="text-dim">-</td>
+                      {anyCommission && <td className="text-dim">-</td>}
+                      <td>{money(0)}</td>
+                      <td>{money(m.packingPay)}</td>
+                      {anyOverride && <td>{money(m.overridePay)}</td>}
+                      <td className="!font-semibold">{money(m.totalPay)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {/* pd-v5. Two different jobs, two different tables.
-                  
-                  Everyone who packed a show landed in a table headed Manager,
-                  with Override % and Override pay columns reading 0.0% and
-                  $0.00 beside their name. Packing a show does not make
-                  somebody a manager and it does not earn an override, so the
-                  page was asserting two things that are not true and then
-                  printing zeroes to prove it. The data already knew the
-                  difference - earnsOverride has been on the row all along -
-                  the table just never asked.
-                  
-                  Nobody earns an override this week: show what actually
-                  happened, which is that people packed shows for a fee. */}
-              {mgr.length > 0 && !mgr.some((m) => m.earnsOverride) && (
-                <table className="w-full border-t-2 border-edge">
-                  <thead>
-                    <tr><th>Packer</th><th>Shows packed</th><th>Packing pay</th></tr>
-                  </thead>
-                  <tbody>
-                    {mgr.map((m) => (
-                      <tr key={m.managerId}>
-                        <td className="!font-medium">{m.managerName} <span className="text-dim text-xs">packer</span></td>
-                        <td>{m.packedCount}</td>
-                        <td className="!font-semibold">{money(m.packingPay)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {mgr.some((m) => m.earnsOverride) && (
-                <table className="w-full border-t-2 border-edge">
-                  <thead>
-                    <tr>
-                      <th>Person</th><th>Streams</th><th>Managed commissionable</th>
-                      <th>After streamer pay</th><th>Override %</th><th>Override pay</th><th>Packing</th><th>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mgr.map((m) => (
-                      <tr key={m.managerId}>
-                        <td className="!font-medium">
-                          {m.managerName}{" "}
-                          <span className="text-dim text-xs">{m.earnsOverride ? "override" : "packer"}</span>
-                        </td>
-                        <td>{m.earnsOverride ? m.streamCount : m.packedCount}</td>
-                        <td>{m.earnsOverride ? money(m.managedCommissionable) : ""}</td>
-                        <td>{m.earnsOverride ? money(m.overrideBase) : ""}</td>
-                        <td>{m.earnsOverride ? `${(m.overridePct * 100).toFixed(1)}%` : ""}</td>
-                        <td>{m.earnsOverride ? money(m.overridePay) : ""}</td>
-                        <td>{money(m.packingPay)}</td>
-                        <td className="!font-semibold">{money(m.totalPay)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
             </div>
           </section>
           );
