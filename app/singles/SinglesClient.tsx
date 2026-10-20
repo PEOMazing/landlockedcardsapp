@@ -24,6 +24,64 @@ const CONDITIONS = ["NM", "LP", "MP", "HP", "DM", "PSA 10", "PSA 9", "PSA 8", "C
 // lb-v2: the graded split now comes from lib/slots, the same list the slot
 // pool refuses to give pockets to, so the view and the binder cannot drift
 // apart again. Adds "Other Graded", which this list had always missed.
+// gt-v3. Net if this copy comes back at AT LEAST the given grade.
+//
+// The floor is the WORST outcome from 10 down to the chosen grade, not that
+// grade read on its own. Thin graded markets are noisy and a 9 sometimes sold
+// for less than an 8; a floor of 8 that quoted only the 8 would recommend a
+// card whose likelier outcome loses money. Grades with no sale on record are
+// skipped rather than counted as zero, or every sparse card would fail.
+//
+// Mirrors floorNet in lib/gradeTriage. Duplicated rather than imported because
+// this file is a client component and that module pulls in server-only
+// settings types; the test suite pins the shared behaviour.
+// pl-v2. Which way the comp last moved, and by how much.
+//
+// Both the percent and the dollars, because neither alone is the story: +40%
+// on a $2 bulk card is 80 cents and means nothing, while +4% on a $2,100
+// Chansey is $84 and means a great deal. Shown together so the eye can tell
+// those apart without doing arithmetic.
+//
+// Colour is the fast read and the numbers are the slow one, so the arrow
+// carries a sign as well - a red and a green that differ only in hue are
+// invisible to a good few people, and this sits in a dense table.
+function MoveArrow({ move }: { move?: { delta: number; pct: number; date: string } | null }) {
+  if (!move || !move.delta) return null;
+  const up = move.delta > 0;
+  const money = (n: number) =>
+    (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <span
+      className={`num text-xs whitespace-nowrap ml-1.5 ${up ? "text-win" : "text-bad"}`}
+      title={`Last recorded move, ${move.date}: ${up ? "up" : "down"} ${money(Math.abs(move.delta))} (${Math.abs(move.pct)}%)`}
+    >
+      {up ? "\u25B2" : "\u25BC"} {up ? "+" : "-"}{Math.abs(move.pct)}%{" "}
+      <span className="opacity-70">{up ? "+" : "-"}{money(Math.abs(move.delta))}</span>
+    </span>
+  );
+}
+
+const FLOOR_ORDER = ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"];
+function floorNetOf(
+  s: { comp: number | null; gradeSales?: Record<string, number> | null },
+  floor: string,
+  cost: number,
+): number | null {
+  const sales = s.gradeSales;
+  const raw = Number(s.comp);
+  if (!sales || !Number.isFinite(raw) || raw <= 0) return null;
+  let worst: number | null = null;
+  for (const g of FLOOR_ORDER) {
+    const price = Number(sales[g]);
+    if (Number.isFinite(price) && price > 0) {
+      const net = Math.round((price - raw - cost) * 100) / 100;
+      worst = worst === null ? net : Math.min(worst, net);
+    }
+    if (g === floor) break;
+  }
+  return worst;
+}
+
 const GRADED = SLAB_CONDITIONS;
 // The ungraded ladder, and the only conditions the row menu offers. A graded
 // card's comp is manual by design, so flipping one to PSA 10 from a dropdown
@@ -37,6 +95,9 @@ const CONDITION_LABELS: Record<string, string> = {
 type SingleT = {
   id: string; cardNo?: number | null; printedBucket?: string; labelPrinted?: string; name: string; setName: string; number: string; cardId: string; location?: string; language?: string;
   rarity: string; variant: string; condition: string; compSales?: number | null;
+  gradeBestNet?: number | null; gradeChecked?: string;
+  gradeSales?: Record<string, number> | null;
+  move?: { from: number; to: number; delta: number; pct: number; date: string } | null;
   comp: number | null; market?: number | null; marketBasis?: string; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
   lastSale?: { date: string; price: number } | null;
@@ -206,6 +267,16 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   // cards that have never had a sticker printed - the batch you just entered
   const [neverPrinted, setNeverPrinted] = useState(false);
   const [thinData, setThinData] = useState(false);
+  // gt-v3. Cost per card, so the floor test uses the same arithmetic as the
+  // Worth Grading page. Hardcoded default matches lib/settings; the page that
+  // owns the decision reads it from Settings, this is a filter chip.
+  const gradeCost = 64.99;
+  // gt-v1. Raw cards the graded sweep says would clear the grading fee.
+  const [gradeWorth, setGradeWorth] = useState(false);
+  // gt-v3. The grade you are willing to assume as a FLOOR. "8" asks: worth
+  // sending if it comes back no better than an 8? Lower is a harsher test,
+  // so 10 shows the most cards and 1 the fewest.
+  const [gradeFloor, setGradeFloor] = useState<string>("9");
   const [tableQ, setTableQ] = useState("");
   const [busy, setBusy] = useState("");
   const [qrFor, setQrFor] = useState<SingleT | null>(null);
@@ -941,7 +1012,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
 
   // a changed view means a changed list - drop the selection so nothing gets
   // deleted that the user can no longer see
-  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker, neverPrinted, thinData, lo, hi]);
+  useEffect(() => { setSelected([]); lastClicked.current = null; }, [statusFilter, setFilter, tableQ, mode, needsResticker, neverPrinted, thinData, gradeWorth, gradeFloor, lo, hi]);
   // re-sorting keeps the selection but retires the shift-click anchor, since
   // the row that index pointed at just moved
   useEffect(() => { lastClicked.current = null; }, [sortKey, sortDir]);
@@ -965,13 +1036,14 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     if (needsResticker) on.push({ label: "needs re-sticker", clear: () => setNeedsResticker(false) });
     if (neverPrinted) on.push({ label: "never printed", clear: () => setNeverPrinted(false) });
     if (thinData) on.push({ label: "thin data", clear: () => setThinData(false) });
+    if (gradeWorth) on.push({ label: `recommend to grade (PSA ${gradeFloor}+)`, clear: () => setGradeWorth(false) });
     return on;
-  }, [statusFilter, tableQ, setFilter, minP, maxP, needsResticker, neverPrinted, thinData]);
+  }, [statusFilter, tableQ, setFilter, minP, maxP, needsResticker, neverPrinted, thinData, gradeWorth, gradeFloor]);
 
   const clearFilters = useCallback(() => {
     setStatusFilter("All"); setTableQ(""); setSetFilter("All");
     setMinP(""); setMaxP("");
-    setNeedsResticker(false); setNeverPrinted(false); setThinData(false);
+    setNeedsResticker(false); setNeverPrinted(false); setThinData(false); setGradeWorth(false);
   }, []);
 
   const shown = useMemo(() => {
@@ -983,6 +1055,10 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     // is blank for unpriced cards however many times they have been printed.
     if (neverPrinted) list = list.filter((s) => !s.labelPrinted);
     if (thinData) list = list.filter((s) => s.comp !== null && isThinComp(s.compSales));
+    // gt-v1. Strictly ABOVE zero. A card that exactly breaks even is five
+    // months in a queue for nothing, and a card nobody has looked up yet is
+    // null, which must not read as a recommendation either way.
+    if (gradeWorth) list = list.filter((s) => floorNetOf(s, gradeFloor, gradeCost) !== null && (floorNetOf(s, gradeFloor, gradeCost) as number) > 0);
     if (lo !== null || hi !== null) list = list.filter((s) => inPriceRange(s.comp, lo, hi));
     list = mode === "graded" ? list.filter((s) => GRADED.includes(s.condition)) : list.filter((s) => !GRADED.includes(s.condition));
     if (setFilter !== "All") list = list.filter((s) => s.setName === setFilter);
@@ -1023,7 +1099,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     }
     // "newest" keeps API order (Date Added desc)
     return list;
-  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker, neverPrinted, thinData, lo, hi]);
+  }, [singles, statusFilter, setFilter, sortKey, sortDir, tableQ, mode, needsResticker, neverPrinted, thinData, gradeWorth, gradeFloor, lo, hi]);
 
   // How many cards the range is holding back purely for want of a comp, so an
   // empty-looking table is explained rather than mysterious.
@@ -1082,6 +1158,26 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
     () => singles.filter((s) =>
       s.status === "In Stock" && s.comp !== null && isThinComp(s.compSales) &&
       (mode === "graded" ? GRADED.includes(s.condition) : !GRADED.includes(s.condition))).length,
+    [singles, mode]
+  );
+
+  // gt-v1. Cards the graded sweep reckons would clear the grading fee.
+  //
+  // Raw only, and that is not a scoping nicety: a slab already has a grade, so
+  // "should this be graded" is a question it has answered. The chip simply
+  // does not exist on the graded half of the page.
+  const gradeWorthCount = useMemo(
+    () => mode === "graded" ? 0 : singles.filter((s) => {
+      if (s.status !== "In Stock" || GRADED.includes(s.condition)) return false;
+      const n = floorNetOf(s, gradeFloor, gradeCost);
+      return n !== null && n > 0;
+    }).length,
+    [singles, mode, gradeFloor]
+  );
+  // Any card the sweep has ever found a graded sale for, so the chip can
+  // appear at a lenient floor even when the current floor matches nothing.
+  const gradeEverCount = useMemo(
+    () => mode === "graded" ? 0 : singles.filter((s) => s.gradeSales && Object.keys(s.gradeSales).length > 0).length,
     [singles, mode]
   );
 
@@ -1685,6 +1781,35 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                 Thin data <span className="num ml-1 opacity-70">{thinCount}</span>
               </button>
             )}
+            {mode !== "graded" && gradeEverCount > 0 && (
+              <span className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-pressed={gradeWorth}
+                  onClick={() => setGradeWorth((v) => !v)}
+                  title="Raw cards that still clear the grading fee and shipping even if they come back at the floor grade you pick. Conditional, not a prediction: it says what the card makes IF it grades no worse than that, never how likely that is. Cards nobody has looked up yet are not in here - unknown is not a no."
+                  className={`px-3 py-1.5 text-xs whitespace-nowrap rounded-lg border transition-colors ${
+                    gradeWorth ? "border-win/60 bg-win/15 text-win font-semibold" : "border-edge text-dim hover:text-body"
+                  }`}
+                >
+                  Recommend to grade <span className="num ml-1 opacity-70">{gradeWorthCount}</span>
+                </button>
+                {/* The floor. Lower is a HARSHER test - it asks the card to
+                    still pay off at a worse outcome - so the count falls as
+                    you go down, which is the opposite of what people expect
+                    from a dropdown and worth the hint text. */}
+                <select
+                  className="input !w-auto !py-1 !px-2 text-xs"
+                  value={gradeFloor}
+                  onChange={(e) => setGradeFloor(e.target.value)}
+                  title="Assume the card comes back no worse than this. PSA 10 is the optimistic read; PSA 1 asks whether it pays off even if it grades terribly."
+                >
+                  {FLOOR_ORDER.map((g) => (
+                    <option key={g} value={g}>PSA {g}+</option>
+                  ))}
+                </select>
+              </span>
+            )}
             {mode !== "graded" && restickerCount > 0 && (
               <button
                 type="button"
@@ -1917,6 +2042,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                   <span className="inline-flex items-center gap-1">
                     {isManager ? <EditCell value={s.comp} onSave={(v) => patch(s.id, { comp: v })} /> : <span className="num text-sm">{s.comp !== null ? $(s.comp) : "-"}</span>}
                     <DeltaHover current={s.comp} entry={s.entryComp} date={s.dateAdded} />
+                    <MoveArrow move={s.move} />
                   </span>
                   {mode === "graded" && (
                     <a className="block text-xs text-foil underline" target="_blank" rel="noreferrer" href={altCheckUrl(s)}>
@@ -2074,6 +2200,7 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                         <span className="num">{s.comp !== null ? $(s.comp) : "-"}</span>
                       )}
                       <DeltaHover current={s.comp} entry={s.entryComp} date={s.dateAdded} />
+                    <MoveArrow move={s.move} />
                       {s.compDetail && <CompSales detail={s.compDetail} condition={s.condition} productId={s.tcgProductId} />}
                       {/* gs-v1: only on raw cards, and only in the raw view.
                           A slab already has a grade and its own comp. */}

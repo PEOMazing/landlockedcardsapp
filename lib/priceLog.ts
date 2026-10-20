@@ -212,3 +212,34 @@ export async function logMoves(moves: Move[]): Promise<number> {
   }
   return written;
 }
+
+// pl-v2. The most recent move a card made, for showing a direction arrow
+// beside its price rather than making somebody open the Movers page.
+//
+// "Since last comp" deliberately means the last RECORDED move, not the last
+// time the reprice ran. The log only writes when a move clears worthLogging,
+// so a card that was re-checked this morning and came back at the same price
+// has not moved, and showing it as 0% would be noise on a thousand rows. Null
+// means no move on record, which renders as nothing at all.
+export type LastMove = { from: number; to: number; delta: number; pct: number; date: string };
+
+export function lastMove(points: PricePoint[]): LastMove | null {
+  let newest: PricePoint | null = null;
+  for (const p of points) {
+    if (!p.date || !(p.comp > 0)) continue;
+    if (!newest || p.date > newest.date) newest = p;
+  }
+  if (!newest || !(newest.prevComp > 0)) return null;
+  const delta = newest.comp - newest.prevComp;
+  if (delta === 0) return null;
+  return {
+    from: newest.prevComp,
+    to: newest.comp,
+    delta: Math.round(delta * 100) / 100,
+    // Percent of where it came FROM, which is the only reading that makes a
+    // rise and the fall that undoes it look like different sizes - and they
+    // are: $10 to $20 is +100%, $20 back to $10 is -50%.
+    pct: Math.round((delta / newest.prevComp) * 1000) / 10,
+    date: newest.date,
+  };
+}

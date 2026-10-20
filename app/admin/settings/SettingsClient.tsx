@@ -10,6 +10,8 @@ const FIELDS: { key: string; label: string; hint: string; pct?: boolean }[] = [
   { key: "hit_threshold", label: "Hit threshold ($)", hint: "Items over this market price count as hits" },
   { key: "giveaway_cost", label: "Pack givvy cost ($ each)", hint: "Deducted from profit per pack giveaway run on a stream" },
   { key: "singles_giveaway_cost", label: "Singles givvy cost ($ each)", hint: "Deducted from profit per single card given away" },
+  { key: "grading_fee", label: "Grading fee ($ per card)", hint: "What PSA charges on the tier open to you. Shipping is added on top automatically. Drives every number on the Worth Grading view" },
+  { key: "grading_max_insured", label: "Grading insured cap ($)", hint: "The tier's ceiling. A card whose graded price is over this cannot go on the submission at all" },
   { key: "tier1_limit", label: "Tier 1 cap ($)", hint: "First slice of weekly profit" },
   { key: "tier1_rate", label: "Tier 1 rate", hint: "Rate on the first slice", pct: true },
   { key: "tier2_limit", label: "Tier 2 cap ($)", hint: "Profit up to this amount hits tier 2" },

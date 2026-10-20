@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MoverCard, PricePoint, logFields, rankMovers, valueAsOf, worthLogging } from "../priceLog";
+import { MoverCard, PricePoint, logFields, rankMovers, valueAsOf, worthLogging, lastMove } from "../priceLog";
 
 const pt = (date: string, comp: number, prevComp = 0): PricePoint => ({ date, comp, prevComp });
 
@@ -140,5 +140,46 @@ describe("logFields", () => {
   it("leaves market empty rather than writing a zero price", () => {
     const f = logFields({ rec, before: 60, comp: 67, market: null }, "2026-09-24", 60);
     assert.equal(f["Market"], null);
+  });
+});
+
+describe("the last move a card made", () => {
+  const p = (date: string, comp: number, prevComp: number) => ({ date, comp, prevComp });
+
+  it("takes the newest row, not the biggest", () => {
+    const m = lastMove([p("2026-09-01", 300, 100), p("2026-10-01", 110, 100)]);
+    assert.equal(m?.to, 110);
+    assert.equal(m?.date, "2026-10-01");
+  });
+
+  it("reports the dollars and the percent of where it came FROM", () => {
+    const m = lastMove([p("2026-10-01", 20, 10)]);
+    assert.equal(m?.delta, 10);
+    assert.equal(m?.pct, 100);
+  });
+
+  it("so a rise and the fall that undoes it are different sizes, because they are", () => {
+    assert.equal(lastMove([p("2026-10-01", 20, 10)])?.pct, 100);
+    assert.equal(lastMove([p("2026-10-01", 10, 20)])?.pct, -50);
+  });
+
+  it("carries the sign on a fall", () => {
+    const m = lastMove([p("2026-10-01", 80, 100)]);
+    assert.equal(m?.delta, -20);
+    assert.equal(m?.pct, -20);
+  });
+
+  it("is null when nothing has moved - a flat card shows no arrow rather than 0%", () => {
+    assert.equal(lastMove([]), null);
+    assert.equal(lastMove([p("2026-10-01", 100, 100)]), null);
+  });
+
+  it("is null when there is nothing to measure from", () => {
+    assert.equal(lastMove([p("2026-10-01", 100, 0)]), null);
+  });
+
+  it("ignores rows with no date or no price", () => {
+    const m = lastMove([p("", 999, 1), p("2026-10-01", 20, 10)]);
+    assert.equal(m?.to, 20);
   });
 });

@@ -4,6 +4,7 @@ import { getMe } from "@/lib/auth";
 import { getCard } from "@/lib/pokemon";
 import { conditionSoldComp, getTcgcsvCard, subTypeForVariant, tcgProductIdFromCardId } from "@/lib/tcgcsvCards";
 import { toSingle } from "@/lib/singles";
+import { daysAgo, lastMove, pointsSince } from "@/lib/priceLog";
 import { claimSlot, isSlab, slotFields } from "@/lib/slots";
 import { roundUpDollar } from "@/lib/salesWindow";
 import { conditionFor, isSoldLink, quoteSlab } from "@/lib/slabIntake";
@@ -24,7 +25,27 @@ export async function GET(req: Request) {
   }
   try {
     const rows = await atList(T.singles, params);
-    return NextResponse.json({ singles: rows.map((r) => toSingle(r, me.isAdmin || me.isCollector)) });
+    // pl-v2. The last recorded price move per card, so the list can show a
+    // direction arrow beside the comp instead of making somebody open Movers.
+    //
+    // A 180-day window rather than all of history: the log is one row per
+    // meaningful move per card and reading three years of it to render an
+    // arrow would be the most expensive thing on the page. A card that has
+    // not moved in six months shows no arrow, which is the honest answer.
+    //
+    // Soft-failed on purpose. An arrow is a nicety; the list of cards is not,
+    // and a slow or missing log table must not take the page down with it.
+    let moves = new Map<string, ReturnType<typeof lastMove>>();
+    try {
+      const pts = await pointsSince(daysAgo(180));
+      for (const [id, points] of pts) moves.set(id, lastMove(points));
+    } catch { moves = new Map(); }
+    return NextResponse.json({
+      singles: rows.map((r) => ({
+        ...toSingle(r, me.isAdmin || me.isCollector),
+        move: moves.get(r.id) || null,
+      })),
+    });
   } catch (e: any) {
     // table missing means setup has not been run yet
     if (String(e.message).includes("404") || String(e.message).includes("TABLE_NOT_FOUND")) {

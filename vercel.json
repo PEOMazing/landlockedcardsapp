@@ -1,6 +1,16 @@
 {
   "crons": [
-    { "path": "/api/cron/reprice", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/refresh-prices", "schedule": "0 9 * * *" }
+    {
+      "path": "/api/cron/reprice",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-prices",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/grade-sweep",
+      "schedule": "*/15 * * * *"
+    }
   ]
 }

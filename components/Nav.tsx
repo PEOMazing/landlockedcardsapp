@@ -55,6 +55,7 @@ const GROUPS: Group[] = [
       { href: "/singles", label: "Singles", icon: I.singles },
       { href: "/singles/movers", label: "Movers", icon: I.movers },
       { href: "/graded", label: "Graded", icon: I.singles },
+      { href: "/grading", label: "Worth Grading", icon: I.movers, manager: true },
       { href: "/show", label: "Card Show", icon: I.show },
       { href: "/quote", label: "Quote", icon: I.pay, manager: true },
       { href: "/scan", label: "Scan", icon: I.pay, manager: true },

@@ -7,6 +7,14 @@ export type Settings = {
   giveaway_cost: number;
   singles_giveaway_cost: number;
   commission_pct: number;
+  /** gt-v1. What PSA charges per card on the tier open to you. Bulk is closed,
+   *  so this is the $59.99 service tier. A setting rather than a constant
+   *  because tiers open and close and the whole grading decision hangs off it. */
+  grading_fee: number;
+  /** The tier's insured ceiling. A card whose graded price is over this
+   *  cannot go on this submission at all, which is a different answer from
+   *  "not worth it". */
+  grading_max_insured: number;
 };
 
 const DEFAULTS: Settings = {
@@ -29,6 +37,8 @@ const DEFAULTS: Settings = {
   // flat rate, separate from pack givvies.
   singles_giveaway_cost: 1,
   commission_pct: 0.2,
+  grading_fee: 59.99,
+  grading_max_insured: 1000,
 };
 
 export async function getSettings(): Promise<Settings> {
