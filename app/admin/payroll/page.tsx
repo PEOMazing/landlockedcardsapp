@@ -246,7 +246,25 @@ export default async function PayrollPage() {
           </p>
         </div>
         {ordered.length === 0 && <p className="text-dim">No completed streams yet - payroll builds itself as shows are completed.</p>}
-        {ordered.map(([ws, payees]) => {
+        {ordered.map(([ws, rawPayees]) => {
+          // pr-v2. One row per PERSON, not per role.
+          //
+          // Somebody who streamed and also packed got two rows, and both of
+          // them keyed their paid tick off `${ws}|${personId}` - the same key.
+          // Ticking her streamer row silently ticked her packing row too, and
+          // the page then showed $350 as paid that nobody had paid. Payroll
+          // settles a person, not a job title, so the rows merge and the key
+          // means what it always claimed to.
+          const merged = new Map<string, (typeof rawPayees)[number]>();
+          for (const p of rawPayees) {
+            const cur = merged.get(p.personId);
+            if (!cur) { merged.set(p.personId, { ...p, breakdown: [...p.breakdown] }); continue; }
+            cur.amount += p.amount;
+            cur.role = cur.role === p.role ? cur.role : `${cur.role} + ${p.role}`;
+            cur.detail = [cur.detail, p.detail].filter(Boolean).join(" + ");
+            cur.breakdown = [...cur.breakdown, ...p.breakdown];
+          }
+          const payees = [...merged.values()];
           const total = payees.reduce((a, p) => a + p.amount, 0);
           const wkStreams = salesByWeek.get(ws) || { afterFees: 0, count: 0 };
           const inProgress = ws === thisWeek;
@@ -270,27 +288,32 @@ export default async function PayrollPage() {
                 </span>
               </div>
               <div className="text-sm">
-                <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[160px_90px_1fr_110px] gap-x-3 text-dim text-left pb-1">
-                  <span>Employee</span><span className="hidden sm:block">Role</span><span className="hidden sm:block">How it was earned</span><span className="text-right">Owed</span>
+                {/* pr-v2. The toggle used to live inside the Owed cell, so a
+                    110px column held a button plus a number and the button was
+                    shoved left by however wide the number happened to be.
+                    $35.00 and $913.80 pushed it to different places and the
+                    column read as crooked. Its own fixed column now. */}
+                <div className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[150px_110px_1fr_104px_104px] gap-x-3 text-dim text-left pb-1">
+                  <span>Employee</span><span className="hidden sm:block">Role</span><span className="hidden sm:block">How it was earned</span><span /><span className="text-right">Owed</span>
                 </div>
                 {payees.sort((a, b) => b.amount - a.amount).map((p, i) => (
                   <details key={i} className="border-t border-edge group">
-                    <summary className="grid grid-cols-[1fr_auto] sm:grid-cols-[160px_90px_1fr_110px] gap-x-3 py-2 cursor-pointer list-none items-baseline hover:bg-edge/40">
+                    <summary className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[150px_110px_1fr_104px_104px] gap-x-3 py-2 cursor-pointer list-none items-baseline hover:bg-edge/40">
                       <span className="font-medium"><span className="text-dim text-xs mr-1.5 inline-block transition-transform group-open:rotate-90">&#9656;</span>{p.name}</span>
                       <span className="text-dim hidden sm:block">{p.role}</span>
                       <span className="text-dim text-xs hidden sm:block">{p.detail}</span>
-                      <span className="text-right num font-semibold flex items-baseline justify-end gap-3">
+                      <span className="flex items-baseline justify-end">
                         {canMarkPaid ? (
                           <PaidToggle week={ws} personId={p.personId} personName={p.name} amount={p.amount} paid={paidKeys.has(`${ws}|${p.personId}`)} />
                         ) : paidKeys.has(`${ws}|${p.personId}`) ? (
                           <span className="text-win text-xs">paid &#10003;</span>
                         ) : null}
-                        {money(p.amount)}
                       </span>
+                      <span className="text-right num font-semibold tabular-nums">{money(p.amount)}</span>
                     </summary>
                     <div className="pb-3 pl-5 pr-1 space-y-1">
                       {p.breakdown.map((b, j) => (
-                        <div key={j} className="grid grid-cols-[1fr_110px] gap-x-3 text-xs items-baseline">
+                        <div key={j} className="grid grid-cols-[1fr_104px] gap-x-3 text-xs items-baseline">
                           <span className="text-dim truncate" title={b.label}>{b.label}<span className="text-dim/60"> - {b.note}</span></span>
                           <span className="text-right num">{money(b.amount)}</span>
                         </div>
@@ -298,11 +321,11 @@ export default async function PayrollPage() {
                     </div>
                   </details>
                 ))}
-                <div className="grid grid-cols-[1fr_110px] gap-x-3 border-t border-edge pt-2 text-dim text-xs">
+                <div className="grid grid-cols-[1fr_104px] gap-x-3 border-t border-edge pt-2 text-dim text-xs">
                   <span>Sales after fees ({wkStreams.count} completed stream{wkStreams.count === 1 ? "" : "s"})</span>
                   <span className="text-right num">{money(wkStreams.afterFees)}</span>
                 </div>
-                <div className="grid grid-cols-[1fr_110px] gap-x-3 py-2">
+                <div className="grid grid-cols-[1fr_104px] gap-x-3 py-2">
                   <span className="font-bold">Period total{payees.every((p) => paidKeys.has(`${ws}|${p.personId}`)) && payees.length > 0 ? " - all paid" : ""}{wkStreams.afterFees > 0 ? <span className="text-dim text-xs font-normal ml-2">{((total / wkStreams.afterFees) * 100).toFixed(1)}% of sales</span> : null}</span>
                   <span className="text-right num font-bold text-win">{money(total)}</span>
                 </div>

@@ -79,18 +79,31 @@ export default async function AdminDashboard() {
   );
   const weeks = buildWeekPay(rows, settings, rateById, { personHours, namesById: nameById });
   const managerWeeks = buildManagerPay(rows, settings, overrideById, nameById, rateById);
-  const totalOverrides = managerWeeks.reduce((a, w) => a + w.overridePay, 0);
+  // pd-v8. The top strip is the running total of the weekly tiles below it,
+  // the same five measures summed over every completed week, so the two read
+  // the same way and a weekly number can be traced into the lifetime one.
+  //
+  // What it replaced: Streamer pay, Manager overrides and Company profit.
+  // Overrides are a closed chapter - the only person who ever earned one has
+  // left - and Company profit ran on BUY cost with support deducted, so it
+  // was the one headline figure on the page computed by rules nothing else
+  // used, and it flattered every week by pricing stock at what it cost rather
+  // than what it is worth.
+  //
+  // Tips are summed and then taken back out of payroll for the same reason
+  // they are in the weekly tiles: the customer's money, passed through, never
+  // in the sales figure, so never deducted from it.
+  const lifeTips = weeks.reduce((a, w) => a + w.tips, 0);
+  const lifeSales = weeks.reduce((a, w) => a + w.streams.reduce((b, r) => b + r.afterFees, 0), 0);
+  const lifePayroll =
+    weeks.reduce((a, w) => a + w.totalPay, 0)
+    + managerWeeks.reduce((a, m) => a + m.totalPay, 0)
+    - lifeTips;
   const life = weeks.reduce(
-    (a, w) => ({
-      profit: a.profit + w.profit,
-      buyProfit: a.buyProfit + w.buyProfit,
-      pay: a.pay + w.totalPay,
-      support: a.support + w.supportPay,
-      company: a.company + w.companyProfit,
-    }),
-    { profit: 0, buyProfit: 0, pay: 0, support: 0, company: 0 }
+    (a, w) => ({ profit: a.profit + w.profit, buyProfit: a.buyProfit + w.buyProfit }),
+    { profit: 0, buyProfit: 0 }
   );
-  life.company -= totalOverrides; // manager packing is already netted inside commissionable
+  const lifeNet = life.profit - lifePayroll;
   const mgrByWeek = new Map<string, typeof managerWeeks>();
   for (const w of managerWeeks) {
     if (!mgrByWeek.has(w.weekStart)) mgrByWeek.set(w.weekStart, []);
@@ -108,13 +121,14 @@ export default async function AdminDashboard() {
       <Nav isAdmin name={me.streamer?.fields?.["Name"] || "Admin"} />
       <main className="max-w-6xl mx-auto p-6 space-y-8">
         <h1 className="t-page">Pay dashboard</h1>
+        <p className="text-dim text-xs -mt-4">All time, every completed stream. The weeks below use the same measures.</p>
 
-        <section className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <StatTile label="Profit over market" value={money(life.profit)} size="md" />
-          <StatTile label="Profit over buy" value={money(life.buyProfit)} size="md" />
-          <StatTile label="Streamer pay" value={money(life.pay)} size="md" />
-          <StatTile label="Manager overrides" value={money(totalOverrides)} size="md" />
-          <StatTile label="Company profit" value={money(life.company)} size="md" tone="win" />
+        <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <StatTile label="Sales after fees" value={money(lifeSales)} size="md" />
+          <StatTile label="Profit over market" value={money(life.profit)} size="md" tone={life.profit >= 0 ? "win" : "bad"} />
+          <StatTile label="Payroll" value={money(lifePayroll)} size="md" />
+          <StatTile label="Tips through" value={money(lifeTips)} size="md" />
+          <StatTile label="Net over market" value={money(lifeNet)} size="md" tone={lifeNet >= 0 ? "win" : "bad"} />
         </section>
 
         {[...byWeek.entries()].map(([ws, group]) => {
