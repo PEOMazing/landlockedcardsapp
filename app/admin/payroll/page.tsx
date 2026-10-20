@@ -192,7 +192,7 @@ export default async function PayrollPage() {
               ? `packing ${money(mw.packingPay)} flat on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}`
               : `packing ${money(mw.packingPay)} on ${mw.packedCount} show${mw.packedCount === 1 ? "" : "s"}`)
           : "",
-      ].filter(Boolean).join(" + ") || "manager pay",
+      ].filter(Boolean).join(" + ") || (mw.earnsOverride ? "manager pay" : "packing pay"),
       amount: mw.totalPay,
       breakdown,
       personId: mw.managerId,

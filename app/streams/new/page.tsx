@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { STREAM_TITLE_MAX } from "@/lib/streamTitle";
 
 export default function NewStream() {
   const router = useRouter();
@@ -91,10 +92,26 @@ export default function NewStream() {
           </div>
           <p className="text-dim text-xs mt-1">{TYPE_HELP[streamType]}</p>
         </div>
+        {/* st-v2. A live count, because a maxLength that just stops accepting
+            keystrokes reads as a broken keyboard. The whole 50 is yours now -
+            the date stamp that used to eat 13 of them is gone. */}
         <div>
           <label className="label">Whatnot show title</label>
-          <input className="input mt-1" placeholder="Paste the show title from Whatnot" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <p className="text-dim text-xs mt-1">Copy it straight from Whatnot so the two match exactly.</p>
+          <input
+            className="input mt-1"
+            placeholder="Paste the show title from Whatnot"
+            value={title}
+            maxLength={STREAM_TITLE_MAX}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <p className="text-dim text-xs mt-1">
+            Copy it straight from Whatnot so the two match exactly.{" "}
+            <span className={title.length >= STREAM_TITLE_MAX ? "text-warn" : ""}>
+              <span className="num">{STREAM_TITLE_MAX - title.length}</span> of{" "}
+              <span className="num">{STREAM_TITLE_MAX}</span> characters left
+            </span>
+            . No need for the date, it is stored separately.
+          </p>
         </div>
         {err && <div className="text-bad text-sm">{err}</div>}
         <button className="btn-foil w-full justify-center disabled:opacity-40" disabled={busy} onClick={create}>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { atList, atCreate, atGet, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { defaultManagerId } from "@/lib/defaultManager";
+import { streamTitleError } from "@/lib/streamTitle";
 
 export async function GET() {
   const me = await getMe();
@@ -45,8 +46,14 @@ export async function POST(req: Request) {
   const assigned = await atGet(T.streamers, assignedId);
   const assignedName = assigned.fields["Name"] || "Stream";
 
+  // st-v2. No date stamp. The date lives in Stream Date, which is what every
+  // sort, filter and lookup in the app actually reads.
+  const fullTitle = String(b.title || assignedName).trim();
+  const titleErr = streamTitleError(fullTitle);
+  if (titleErr) return NextResponse.json({ error: titleErr }, { status: 400 });
+
   const fields: Record<string, any> = {
-    "Title": `${b.date} - ${b.title || assignedName}`,
+    "Title": fullTitle,
     "Stream Date": b.date,
     "Status": "Planned",
     "Stream Type": ["Surprise Set", "Character Break", "Single Stream"].includes(b.streamType)

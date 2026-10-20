@@ -5,6 +5,7 @@ import { getSettings } from "@/lib/settings";
 import { toLine, isHitLine, packingRate, streamPackingCost, packingFeeToStamp } from "@/lib/calc";
 import { syncWheelSinglePrices } from "@/lib/streamSingles";
 import { whatnotDescription, whatnotTitle } from "@/lib/showSetTitle";
+import { streamTitleError } from "@/lib/streamTitle";
 
 
 // The historical delivery rate is computed from every line and every completed
@@ -368,9 +369,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       fields["Stream Date"] = b.date;
     }
     if (b.title !== undefined) {
+      // st-v1. Rejected rather than clipped at 120 as before: a title cut
+      // silently is one nobody notices until it is on screen mid-show.
       const t = String(b.title).trim();
-      if (!t) return NextResponse.json({ error: "title cannot be empty" }, { status: 400 });
-      fields["Title"] = t.slice(0, 120);
+      const err = streamTitleError(t);
+      if (err) return NextResponse.json({ error: err }, { status: 400 });
+      fields["Title"] = t;
     } else if (b.date !== undefined && String(stream.fields["Title"] || "").startsWith(oldDate)) {
       // the show moved and the title still leads with the old date - keep them in step
       fields["Title"] = String(stream.fields["Title"]).replace(oldDate, b.date);

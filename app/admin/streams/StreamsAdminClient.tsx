@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import TableEmpty from "@/components/ui/TableEmpty";
+import { stripLegacyDate } from "@/lib/streamTitle";
 
 const $ = (n: number) => "$" + (n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -115,7 +116,9 @@ export default function StreamsAdminClient({
     setEditing(""); router.refresh();
   }
   // titles carry the date already, and the date column repeats it - show the clean name
-  const displayTitle = (r: StreamRowT) => r.title.replace(/^\d{4}-\d{2}-\d{2}\s*-\s*/, "");
+  // st-v2. Kept, and now a no-op for anything created after the date stamp
+  // was dropped. It still earns its place tidying up the older rows.
+  const displayTitle = (r: StreamRowT) => stripLegacyDate(r.title);
 
   return (
     <>
