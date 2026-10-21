@@ -1,9 +1,62 @@
 import { AtRecord } from "./airtable";
+import { ALL_GRADES, SHIP_PER_CARD, gradingCost, netGain, suspectQuotes, type GradeKey, type SaleQuote } from "./gradeTriage";
+
+// gt-v7. The graded prices on a record, with the ones that are not believed
+// taken out, and the best net recomputed from what is left.
+//
+// Deliberately NOT read straight off the Grade Best Net column. That column is
+// what the sweep wrote at the time it ran, from every price it found including
+// the ones suspectQuotes now rejects, so on a card whose PSA 10 "sale" was a
+// hundred-thousand-dollar asking price the column says the card nets ninety-
+// nine thousand. Recomputing here means the filter tells the truth about every
+// card already swept without waiting for a fresh pass over all of them - and
+// the column stays as it is, since it is the sweep's own record of what it saw.
+function gradedRead(f: Record<string, any>) {
+  let d: any = null;
+  try { d = f["Graded Detail"] ? JSON.parse(f["Graded Detail"]) : null; } catch { d = null; }
+  if (!d) return { sales: null as Record<string, number> | null, bestNet: null as number | null, suspectCount: 0 };
+
+  const quotes: Partial<Record<GradeKey, SaleQuote>> = {};
+  for (const g of ALL_GRADES) {
+    const p = Number(d?.[g]?.price);
+    if (Number.isFinite(p) && p > 0) {
+      quotes[g] = { price: p, date: d[g]?.date ?? null, title: d[g]?.title ?? null };
+    }
+  }
+  const suspect = suspectQuotes(quotes);
+
+  // The cost the sweep used, when it recorded one. Falling back to the
+  // default rather than to zero: a missing cost must not make grading look
+  // free, which is the one direction this number must never be wrong in.
+  const cost = Number(d?.cost) > 0 ? Number(d.cost) : gradingCost(59.99, SHIP_PER_CARD);
+  const raw = typeof f["Comp"] === "number" ? f["Comp"] : null;
+
+  const sales: Record<string, number> = {};
+  let bestNet: number | null = null;
+  for (const g of ALL_GRADES) {
+    if (suspect[g]) continue;
+    const p = Number(quotes[g]?.price);
+    if (!Number.isFinite(p) || p <= 0) continue;
+    sales[g] = p;
+    const net = netGain(raw, p, cost);
+    // Greater-or-equal walking high to low, so a tie names the lower grade -
+    // the same rule as triage(), which the two must agree on.
+    if (net !== null && (bestNet === null || net >= bestNet)) bestNet = net;
+  }
+  return {
+    sales: Object.keys(sales).length ? sales : null,
+    bestNet,
+    suspectCount: Object.keys(suspect).length,
+  };
+}
 
 // Shape an Airtable Singles record for the client. Buy price is admin-only,
 // matching the sealed inventory.
 export function toSingle(r: AtRecord, isAdmin: boolean) {
   const f = r.fields;
+  // Once per record, not once per field that wants it: this parses JSON and
+  // the singles list calls toSingle twelve hundred times a request.
+  const graded = gradedRead(f);
   return {
     id: r.id,
     // permanent sticker number, assigned by Airtable and never reused
@@ -43,23 +96,16 @@ export function toSingle(r: AtRecord, isAdmin: boolean) {
     // sweep. null means nobody has looked yet, which is NOT zero - the
     // Recommend to grade filter has to tell those two apart or it would claim
     // every uncheck ed card is a dud.
-    gradeBestNet: typeof f["Grade Best Net"] === "number" ? f["Grade Best Net"] : null,
+    gradeBestNet: graded.bestNet,
     gradeChecked: f["Graded Checked"] || "",
+    // gt-v7. How many of this card's graded prices were not believed. Shown
+    // beside the recommendation so a card resting on a rejected sale cannot
+    // look like a card resting on a clean one.
+    gradeSuspect: graded.suspectCount,
     // gt-v3. Last sale at EVERY PSA grade, 10 down to 1, out of the JSON the
     // sweep writes. The three columns on the record are only the ones worth
     // sorting on inside Airtable; the floor filter needs all ten.
-    gradeSales: (() => {
-      try {
-        const d = f["Graded Detail"] ? JSON.parse(f["Graded Detail"]) : null;
-        if (!d) return null;
-        const out: Record<string, number> = {};
-        for (const g of ["10","9","8","7","6","5","4","3","2","1"]) {
-          const p = Number(d?.[g]?.price);
-          if (Number.isFinite(p) && p > 0) out[g] = p;
-        }
-        return Object.keys(out).length ? out : null;
-      } catch { return null; }
-    })(),
+    gradeSales: graded.sales,
     compDetail: (() => {
       try { return f["Comp Detail"] ? JSON.parse(f["Comp Detail"]) : null; } catch { return null; }
     })(),

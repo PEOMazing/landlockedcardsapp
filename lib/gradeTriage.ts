@@ -117,14 +117,205 @@ export const isStaleSale = (saleDate: string | null | undefined, now?: Date) => 
   return age !== null && age > STALE_SALE_DAYS;
 };
 
+// gt-v7. Which of these prices should not be believed.
+//
+// This section exists because of what the first full sweep actually returned,
+// and it is worth writing down what happened rather than just the fix.
+//
+// The per-card panel this grew out of was fine. A human opened one card, saw
+// "PSA 10, $100,000, 2026-09-21" with the listing title under it, and either
+// believed it or did not. The title was right there.
+//
+// Ranking 858 cards by that same number is a different thing entirely, and it
+// fails in a way the single-card view cannot. Sorting by the best net sorts by
+// the LARGEST number, and the largest number in a pile of single observations
+// is the most likely one to be wrong. A ranked list built on one sale per
+// grade is not a shortlist of the best cards, it is an outlier detector with a
+// dollar sign in front of it. Three real examples off the first 240 cards:
+//
+//   Charizard G Lv.X, Supreme Victors. PSA 8 $2,450, PSA 9 $7,000,
+//   PSA 10 $100,000. Right card, right grade, correct title. The 10 is 14x
+//   the 9 and a round hundred thousand: an asking price, not a sale.
+//
+//   Mew, Southern Island. PSA 9 "$3,036.98", title reads "PSA 9 & 8 Japanese
+//   Southern Island Complete Set Tropical / Rainbow Island Mew". That is a
+//   multi-slab set sold as one lot, recorded as the price of one Mew. The
+//   feed's own exclude=junk did not catch it.
+//
+//   Leafeon LV.X, Majestic Dawn. PSA 8 $10,080, PSA 9 $6,999.99. The 8 above
+//   the 9 by three grand. One of those two numbers is not a Leafeon.
+//
+// All three are mechanically detectable, and detectable from what the sweep
+// already stores, which matters: the titles are in Graded Detail, so none of
+// this needs a single extra API call over data already paid for.
+//
+// The direction of the bias is deliberate. Every rule below throws away
+// UPSIDE, never adds it, and when a rule cannot tell which of two prices is
+// wrong it drops the lower grade and keeps the higher claim out of the
+// decision. A flagged real card costs Gabe a click to confirm. An unflagged
+// fake card costs $65 and five months.
+
+/** Why a price is not being used. */
+export type SuspectReason = "lot" | "inverted" | "round-jump";
+
+export const SUSPECT_WHY: Record<SuspectReason, string> = {
+  lot: "the listing looks like more than one card",
+  inverted: "priced above a higher grade",
+  "round-jump": "a round number far above the grade below it",
+};
+
+/** Words that mean a title is not describing one single card.
+ *
+ *  "complete set" and "lot" are the common ones. Kept narrow on purpose: this
+ *  runs against titles of real sales and a word that also appears innocently
+ *  would quietly delete good evidence. */
+const LOT_WORDS =
+  /\b(lots?|bundles?|job\s*lots?|collections?|complete\s+sets?|sets?\s+of|both|pairs?|binders?|reprints?|proxy|proxies|custom)\b/i;
+
+/** "2x", "x2", "3 cards", "4 slabs". */
+const MULTI_COUNT = /\b\d{1,3}\s?x\b|\bx\d{1,3}\b|\b\d{1,2}\s+(?:cards?|slabs?|pcs?)\b/i;
+
+/** Two grades named in one title: "PSA 9 & 8", "PSA 10 / 9", "PSA 8 and 7". */
+const TWO_GRADES = /\bpsa\s*(?:10|[1-9])\s*(?:&|\+|and|,|\/)\s*(?:10|[1-9])\b/i;
+
+/** Whether this title is selling more than one card.
+ *
+ *  "Lv.X" is stripped before anything else runs. It is a real part of a card
+ *  name on exactly the generation this tool is most useful on, and the bare X
+ *  beside a collector number reads as a multiplier to every quantity pattern
+ *  there is: without this, "Leafeon LV.X 99/100" is a lot of 99 cards. */
+export function lotTitle(title: string | null | undefined): boolean {
+  const t = String(title || "");
+  if (!t) return false;
+  const s = t.replace(/\blv\.?\s*x\b/gi, " ");
+  if (LOT_WORDS.test(s)) return true;
+  if (MULTI_COUNT.test(s)) return true;
+  if (TWO_GRADES.test(s)) return true;
+  // Two separate "PSA n" tokens is the same thing said another way.
+  const tokens = s.match(/\bpsa\s*(?:10|[1-9])\b/gi) || [];
+  return tokens.length > 1;
+}
+
+/** A price with a round-number asking-price signature.
+ *
+ *  Roundness alone proves nothing - real cards sell for $5,000. The jump alone
+ *  proves nothing either - a 10 really can be many times the 9 on a low pop
+ *  card. It is the two together that no honest sale produces often: a price
+ *  that is an exact multiple of a thousand AND several times the grade below
+ *  it is somebody's ask that the feed read as a sale. */
+export const ROUND_JUMP_MULTIPLE = 4;
+export const ROUND_JUMP_FLOOR = 5000;
+
+export function roundJump(price: number, nextLower: number | null): boolean {
+  if (!(price >= ROUND_JUMP_FLOOR) || price % 1000 !== 0) return false;
+  // Nothing to compare against is not evidence of anything.
+  if (nextLower === null || !(nextLower > 0)) return false;
+  return price >= ROUND_JUMP_MULTIPLE * nextLower;
+}
+
+/** gt-v7. A grade-to-grade jump big enough to be worth a look before acting.
+ *
+ *  This one is a MARKER, not a rejection, and the difference matters. The
+ *  three rules above identify prices that are mechanically wrong - a lot is a
+ *  lot whatever the market does. This is a number that is merely unusual, and
+ *  unusual is where the real finds live too.
+ *
+ *  The threshold is measured off Gabe's own binder rather than picked. Across
+ *  835 adjacent grade pairs in the first full sweep, the ratio of a grade to
+ *  the grade below it ran: median 2.4x, p75 4.9x, p90 8.8x, p95 14.5x, max
+ *  1800x. So 9x is roughly the top tenth of his own data - normal enough to
+ *  happen, rare enough to be worth a click.
+ *
+ *  What is NOT used, and the reason is worth recording. My first attempt at a
+ *  second rule compared the graded price to the RAW comp and flagged anything
+ *  over a few hundred times it. The same measurement killed it: the median
+ *  PSA 10 in this binder is 40x its raw comp and the p75 is 107x. That is not
+ *  a data problem, it is what a vintage-heavy binder looks like - a Base Set
+ *  common is $2 raw and a few hundred dollars in a 10 - and it is Gabe's own
+ *  example back at me: "some cards could be $5 but in a 10 are worth $500",
+ *  which is exactly 100x. A rule at any threshold low enough to catch the
+ *  wrong numbers would have deleted the entire reason the page exists. */
+export const JUMP_FLAG_MULTIPLE = 9;
+
+export type SaleQuote = { price: number | null; date: string | null; title?: string | null };
+
+/** Which grades' prices to ignore, and why.
+ *
+ *  Three passes, in this order, because each one needs the previous one's
+ *  output: a lot price must not be used to judge whether another grade is
+ *  inverted, and an inverted price must not be the baseline a round jump is
+ *  measured against.
+ *
+ *    1. lot          - the title alone, independent of every other price
+ *    2. inverted     - a surviving price above a surviving HIGHER grade
+ *    3. round-jump   - a surviving round number far above the one below it
+ *
+ *  Pass 2 drops the lower grade when two prices disagree. Which of the pair is
+ *  wrong is genuinely unknowable from here, and dropping the lower one is the
+ *  choice that removes the bigger claim from the decision: the lower grade is
+ *  the easier outcome, so an inflated 8 is what makes a card look like a safe
+ *  send. */
+export function suspectQuotes(
+  quotes: Partial<Record<GradeKey, SaleQuote>>,
+): Partial<Record<GradeKey, SuspectReason>> {
+  const out: Partial<Record<GradeKey, SuspectReason>> = {};
+  const price = (g: GradeKey): number | null => {
+    if (out[g]) return null;
+    const p = Number(quotes[g]?.price);
+    return Number.isFinite(p) && p > 0 ? p : null;
+  };
+
+  for (const g of ALL_GRADES) {
+    if (price(g) !== null && lotTitle(quotes[g]?.title)) out[g] = "lot";
+  }
+
+  // High to low, carrying the best surviving price seen at a higher grade.
+  let bestAbove: number | null = null;
+  for (const g of ALL_GRADES) {
+    const p = price(g);
+    if (p === null) continue;
+    if (bestAbove !== null && p > bestAbove) {
+      out[g] = "inverted";
+      continue;
+    }
+    bestAbove = bestAbove === null ? p : Math.max(bestAbove, p);
+  }
+
+  // Low to high, so each grade is measured against the nearest surviving
+  // grade beneath it.
+  let below: number | null = null;
+  for (const g of [...ALL_GRADES].reverse()) {
+    const p = price(g);
+    if (p === null) continue;
+    if (roundJump(p, below)) {
+      out[g] = "round-jump";
+      continue;
+    }
+    below = p;
+  }
+
+  return out;
+}
+
 export type GradeQuote = { price: number | null; date: string | null };
 export type TriageCard = {
   id: string;
   name: string;
   setName?: string;
   rarity?: string;
+  /** gt-v8. The condition of THIS copy: NM, LP, MP, HP, DM, Raw.
+   *
+   *  Not part of cardGroupKey and deliberately so - a PSA 10 of a card sold
+   *  for what it sold for whatever shape your copy is in. It is on the row
+   *  because it is the single most important thing the page was not showing.
+   *  An LP copy shows a BIGGER net than the NM one beside it, because it is
+   *  cheaper to give up, while being far less likely to come back a 9 or a 10.
+   *  Both halves of that are true and the page was only printing the first. */
+  condition?: string;
   rawComp: number | null;
-  grades: Partial<Record<GradeKey, GradeQuote>>;
+  /** gt-v7. The title comes in with the price because the title is how a
+   *  wrong price is caught. See suspectQuotes. */
+  grades: Partial<Record<GradeKey, SaleQuote>>;
   checked?: string | null;
 };
 
@@ -133,12 +324,27 @@ export type TriageRow = {
   name: string;
   setName: string;
   rarity: string;
+  condition: string;
   rawComp: number | null;
   cost: number;
   breakEven: number | null;
   neededMultiple: number | null;
   /** Per grade: the price, the net after fee, how old the sale is. */
-  byGrade: Record<GradeKey, { price: number | null; net: number | null; ageDays: number | null; stale: boolean }>;
+  byGrade: Record<GradeKey, {
+    /** The price being USED. Null when there is no sale, and also null when
+     *  there is one that suspectQuotes threw out - so nothing downstream can
+     *  spend a rejected number by forgetting to check a flag. The number
+     *  itself is still available as rejected, for showing the person what was
+     *  dropped and letting them overrule it. */
+    price: number | null;
+    net: number | null;
+    ageDays: number | null;
+    stale: boolean;
+    /** Set when a price was found and not believed. */
+    suspect: SuspectReason | null;
+    rejected: number | null;
+    title: string | null;
+  }>;
   /** Net if the card comes back at AT LEAST this grade - that is, the WORST
    *  net among this grade and everything above it. The question "is it worth
    *  sending if I assume an 8 floor" is not "what does the 8 make", it is
@@ -155,6 +361,28 @@ export type TriageRow = {
   overInsured: boolean;
   /** Every price we have is older than STALE_SALE_DAYS. */
   allStale: boolean;
+  /** gt-v7. How many grades had a price that was not believed, and why. A card
+   *  with any of these is on the check list rather than the buy list: the
+   *  evidence may be fine and one click on the listing settles it. */
+  suspectCount: number;
+  suspectReasons: SuspectReason[];
+  /** The dearest rejected price, so the check list can be read worst-first:
+   *  the $100,000 Charizard is the one to settle before the $5,000 one. */
+  topRejected: number | null;
+  /** gt-v7. The biggest surviving grade-to-grade jump, when it clears
+   *  JUMP_FLAG_MULTIPLE. Not a rejection - a note that this card's case rests
+   *  on one sale standing well clear of the one beneath it, which is both what
+   *  a genuine low-pop chase card looks like and what a misread listing looks
+   *  like. Null when the curve is ordinary or there is nothing to compare. */
+  bigJump: { grade: GradeKey; times: number } | null;
+  /** gt-v7. How many grades this card's case rests on, after rejections.
+   *
+   *  Purely a count, with no threshold in it, and it covers the blind spot in
+   *  bigJump: a card whose only surviving price is its PSA 10 has nothing to
+   *  be compared against, so it cannot be flagged as a big jump however wrong
+   *  it is, and it sails to the top of the list looking as solid as a card
+   *  with a full curve underneath it. One is worth saying out loud. */
+  gradesWithPrice: number;
 };
 
 export function triage(
@@ -169,13 +397,28 @@ export function triage(
   let seen = 0;
   let stale = 0;
 
+  // gt-v7. Decided once, over all ten grades together, because the rules are
+  // about the shape of the curve and cannot be applied a grade at a time.
+  const suspect = suspectQuotes(card.grades);
+  const suspectReasons: SuspectReason[] = [];
+  let topRejected: number | null = null;
+
   for (const g of ALL_GRADES) {
     const q = card.grades[g] || { price: null, date: null };
-    const price = Number.isFinite(Number(q.price)) && Number(q.price) > 0 ? Number(q.price) : null;
+    const found = Number.isFinite(Number(q.price)) && Number(q.price) > 0 ? Number(q.price) : null;
+    const why = found !== null ? suspect[g] ?? null : null;
+    const price = why ? null : found;
     const net = netGain(card.rawComp, price, cost);
     const ageDays = saleAgeDays(q.date, now);
     const isStale = isStaleSale(q.date, now);
-    byGrade[g] = { price, net, ageDays, stale: isStale };
+    byGrade[g] = {
+      price, net, ageDays, stale: isStale,
+      suspect: why, rejected: why ? found : null, title: q.title ?? null,
+    };
+    if (why) {
+      if (!suspectReasons.includes(why)) suspectReasons.push(why);
+      if (found !== null && (topRejected === null || found > topRejected)) topRejected = found;
+    }
     if (price !== null) {
       seen++;
       if (isStale) stale++;
@@ -206,6 +449,7 @@ export function triage(
     name: card.name,
     setName: card.setName || "",
     rarity: card.rarity || "",
+    condition: card.condition || "Raw",
     rawComp: card.rawComp ?? null,
     cost,
     floorNet,
@@ -214,9 +458,66 @@ export function triage(
     byGrade,
     bestNet,
     bestGrade,
-    overInsured: overInsured(byGrade["10"].price, opts.maxInsured),
+    // gt-v7. The DEAREST surviving grade, not the 10.
+    //
+    // This read byGrade["10"] until the rejection rules went in, and the two
+    // together were a quiet regression: on the Charizard the $100,000 ten is
+    // rejected, so the ten is null, so the ceiling check passed - on a card
+    // whose PSA 9 last sold at $7,000, seven times the $1,000 tier limit. The
+    // question is whether any outcome this card could come back as is worth
+    // more than the tier will insure, and that is the top of what is left
+    // standing, whichever grade it sits at.
+    overInsured: ALL_GRADES.some((g) => overInsured(byGrade[g].price, opts.maxInsured)),
     allStale: seen > 0 && stale === seen,
+    suspectCount: suspectReasons.length ? ALL_GRADES.filter((g) => byGrade[g].suspect).length : 0,
+    suspectReasons,
+    topRejected,
+    bigJump: biggestJump(byGrade),
+    gradesWithPrice: ALL_GRADES.filter((g) => byGrade[g].price !== null).length,
   };
+}
+
+/** The largest ratio between a surviving price and the surviving price at the
+ *  next grade down, if it clears the flag. Rejected prices take no part: a
+ *  price nothing believes must not generate a warning either. */
+function biggestJump(
+  byGrade: TriageRow["byGrade"],
+): { grade: GradeKey; times: number } | null {
+  let out: { grade: GradeKey; times: number } | null = null;
+  let below: number | null = null;
+  for (const g of [...ALL_GRADES].reverse()) {
+    const p = byGrade[g].price;
+    if (p === null) continue;
+    if (below !== null && below > 0) {
+      const times = Math.round((p / below) * 10) / 10;
+      if (times >= JUMP_FLAG_MULTIPLE && (out === null || times > out.times)) out = { grade: g, times };
+    }
+    below = p;
+  }
+  return out;
+}
+
+/** gt-v8. Best first BY THE OUTCOMES TICKED, which is not the same ordering
+ *  as rankTriage and has to be used wherever the set net is the number on
+ *  screen.
+ *
+ *  Caught by running the real binder through it: ranked by bestNet, the NM
+ *  list opened with an Infernape at $2,785 above a Hitmonlee at $8,989,
+ *  because the Infernape's best grade was a 10 that the tick set excluded. A
+ *  table sorted by one number and displaying another is worse than either
+ *  number on its own - it quietly asserts an order the figures contradict. */
+export function rankBySet(rows: TriageRow[], grades: GradeKey[]): TriageRow[] {
+  const net = new Map(rows.map((r) => [r.id, setNet(r, grades)]));
+  return [...rows].sort((a, b) => {
+    const x = net.get(a.id) ?? null;
+    const y = net.get(b.id) ?? null;
+    // No evidence for the ticked grades sinks, rather than sorting as zero:
+    // "we have not looked" is not "not worth it".
+    if (x === null && y === null) return (b.rawComp || 0) - (a.rawComp || 0);
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return y - x;
+  });
 }
 
 /** Best first. Cards with no evidence sink to the bottom rather than sorting
@@ -228,6 +529,100 @@ export function rankTriage(rows: TriageRow[]): TriageRow[] {
     if (b.bestNet === null) return -1;
     return b.bestNet - a.bestNet;
   });
+}
+
+// gt-v8. Picking the outcomes you think are plausible, instead of a floor.
+//
+// The floor dropdown asked one question: "is this worth sending if it comes
+// back no better than a 9". That is the right question most of the time, and
+// it has a shape built into it - a floor of 9 always means the set {10, 9},
+// because "at least a 9" includes every grade above it.
+//
+// Gabe: "I only want to include the ones that make sense (if I want)." Which
+// is a different and better question, because the floor cannot express it.
+// Some of these cards have no 7 on record and never will. Some have a 10
+// whose only sale the sanity rules threw out. And on a decent NM card the
+// honest read is often "this 9s or it 10s", which is the set {10, 9} with 8
+// and below deliberately NOT included - not because they are impossible, but
+// because they are not the outcomes being bet on. A floor cannot say that: a
+// floor of 9 and the set {10,9} agree, but there is no floor that means
+// {10, 9} while excluding what a floor of 8 would drag in.
+//
+// So the set is the primitive and the floor becomes a preset over it. Every
+// floor G is exactly the set G..10, which is why old links keep working and
+// the Singles chip did not have to change.
+//
+// The rule inside is unchanged and is the part worth keeping: judge the card
+// on the WORST of the outcomes you ticked. Ticking three grades and being
+// shown the best of them would be picking the outcomes and then ignoring the
+// pick.
+
+/** The grades a floor means: that grade and everything above it. */
+export function gradeSetFromFloor(floor: GradeKey): GradeKey[] {
+  const i = ALL_GRADES.indexOf(floor);
+  return i < 0 ? [...ALL_GRADES] : ALL_GRADES.slice(0, i + 1);
+}
+
+/** Read a grade set off a query string, high to low, duplicates dropped.
+ *
+ *  Returns null rather than a default when nothing usable is in there, so the
+ *  caller decides what no answer means - an empty set and an absent one are
+ *  different things and only the caller knows which it is looking at. */
+export function parseGradeSet(raw: string | null | undefined): GradeKey[] | null {
+  const want = new Set(
+    String(raw ?? "")
+      .split(/[^0-9]+/)
+      .filter(Boolean),
+  );
+  const out = ALL_GRADES.filter((g) => want.has(g));
+  return out.length ? out : null;
+}
+
+/** The outcome that decides the card: the ticked grade with the WORST net.
+ *
+ *  Grades with no surviving price are skipped rather than counted as zero.
+ *  That is the same rule the floor used and it matters more here, because a
+ *  person ticking 10, 9 and 8 on a card that only ever sold as a 10 should be
+ *  told what the 10 makes, not be given nothing.
+ *
+ *  Null when not one ticked grade has a price. "We have no evidence for the
+ *  outcomes you asked about" is not "this card makes nothing". */
+export function worstOfSet(
+  row: Pick<TriageRow, "byGrade">,
+  grades: GradeKey[],
+): { grade: GradeKey; price: number; net: number } | null {
+  let out: { grade: GradeKey; price: number; net: number } | null = null;
+  // Walked high to low so a tie lands on the LOWER grade, matching triage():
+  // if the 9 and the 10 both net the same, the 9 is the honest answer because
+  // it is the easier outcome.
+  for (const g of grades.length ? grades : ALL_GRADES) {
+    const cell = row.byGrade[g];
+    if (!cell || cell.price === null || cell.net === null) continue;
+    if (out === null || cell.net <= out.net) out = { grade: g, price: cell.price, net: cell.net };
+  }
+  return out;
+}
+
+/** What the card makes at the worst outcome you ticked. */
+export function setNet(row: Pick<TriageRow, "byGrade">, grades: GradeKey[]): number | null {
+  return worstOfSet(row, grades)?.net ?? null;
+}
+
+/** Whether a grade is worth offering as a tick box on this card: there is a
+ *  sale on record for it and the sanity rules did not reject it. A grade that
+ *  fails this is shown greyed rather than hidden, because "no 7 has ever sold"
+ *  is information and a chip that silently vanishes is not. */
+export function gradeIsUsable(row: Pick<TriageRow, "byGrade">, grade: GradeKey): boolean {
+  return row.byGrade[grade]?.price !== null;
+}
+
+/** How many of the cards in hand have a usable price at each grade, so the
+ *  chips can say what ticking one would actually get you. */
+export function gradeCoverage(rows: Pick<TriageRow, "byGrade">[]): Record<GradeKey, number> {
+  const out = {} as Record<GradeKey, number>;
+  for (const g of ALL_GRADES) out[g] = 0;
+  for (const r of rows) for (const g of ALL_GRADES) if (gradeIsUsable(r, g)) out[g]++;
+  return out;
 }
 
 /** gt-v2. What to spend the next calls on.
@@ -254,6 +649,30 @@ export function rankTriage(rows: TriageRow[]): TriageRow[] {
  *  2, which is however many cards actually have a case, and that number is
  *  small enough not to need a gate at all. */
 export const COLD_RECHECK_DAYS = 120;
+
+/** gt-v7. How long a card with a live case waits before being looked up again.
+ *
+ *  This constant is the whole quota budget and the first version of this file
+ *  did not have it, which was a real bug rather than a tuning question. due()
+ *  read "band is not cold, so it is due", and a card that had just been
+ *  checked and HAD upside came back as due on the very next run. So the sweep
+ *  worked correctly through the never-checked backlog, and then, the moment
+ *  that backlog drained, settled into re-pricing the same several hundred
+ *  good cards every fifteen minutes forever.
+ *
+ *  The arithmetic on that is not subtle. A quarter-hourly cron is 96 runs a
+ *  day; at 120 cards a run that is 11,520 requests a day against a plan of
+ *  25,000 a MONTH. The feature would have gone dark about two days after it
+ *  started working, and the failure would have looked like the comps API being
+ *  broken rather than like this.
+ *
+ *  A week is the right answer for the recurring pass. These are graded sales,
+ *  usually one or two in a grade over months - the number does not move
+ *  between Tuesday and Wednesday, and a card worth sending off on a 90 day
+ *  turnaround is not a card whose decision turns on seven days of drift.
+ *  Seven hundred live cards on a weekly cycle is a hundred lookups a day,
+ *  which is twelve percent of the plan rather than forty-six times it. */
+export const LIVE_RECHECK_DAYS = 7;
 
 export type SweepCard = {
   comp: number | null;
@@ -286,9 +705,15 @@ export function sweepCandidates<T extends SweepCard>(
   const order: Record<SweepBand, number> = { new: 0, live: 1, cold: 2 };
   const due = (c: T) => {
     const band = sweepBand(c, nearMiss);
-    if (band !== "cold") return true;
+    // Never looked at: always due. This is the band that drains, and it is
+    // the only one with no waiting period, because a card nobody has priced
+    // is the one case where the answer is worth any amount of hurry.
+    if (band === "new") return true;
+    const wait = band === "live" ? LIVE_RECHECK_DAYS : COLD_RECHECK_DAYS;
     const age = saleAgeDays(String(c.checked || "").slice(0, 10), now);
-    return age === null || age >= COLD_RECHECK_DAYS;
+    // An unparseable timestamp counts as due rather than as fresh: a card
+    // whose last-checked date we cannot read is a card we do not know about.
+    return age === null || age >= wait;
   };
   return cards
     .filter(due)
@@ -398,7 +823,11 @@ export type SetUpside = {
   medianMultiple: number | null;
   /** Total dollars on the table if every clearing card were sent. */
   upside: number;
-  /** n is too small to read the share as a rate. */
+  /** How many of the cards in this row rest on a single grade, with no other
+   *  grade on record to sanity check the price against. */
+  oneGrade: number;
+  /** n is too small, OR most of the row's cards stand on one sale apiece.
+   *  Either way the share is not a rate you should buy against. */
   thin: boolean;
 };
 
@@ -409,12 +838,14 @@ const median = (xs: number[]): number | null => {
   return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 };
 
-export function rollupSetUpside(rows: TriageRow[], floor: GradeKey): SetUpside[] {
+export function rollupSetUpside(rows: TriageRow[], grades: GradeKey[]): SetUpside[] {
   const by = new Map<string, TriageRow[]>();
   for (const r of rows) {
-    // A card with no sale at this grade is not evidence either way and is
-    // left out of n entirely, rather than counted as a failure.
-    if (r.byGrade[floor]?.price == null) continue;
+    // gt-v8. A card with no sale at ANY of the ticked grades is not evidence
+    // either way and is left out of n entirely, rather than counted as a
+    // failure. Judged on the same worst-of-the-set the ranked list uses, so
+    // the two halves of the page cannot disagree about which cards clear.
+    if (worstOfSet(r, grades) === null) continue;
     const key = `${r.setName}|${r.rarity}`;
     const cur = by.get(key);
     if (cur) cur.push(r);
@@ -426,16 +857,19 @@ export function rollupSetUpside(rows: TriageRow[], floor: GradeKey): SetUpside[]
     let clearing = 0;
     let upside = 0;
     for (const r of group) {
-      const price = r.byGrade[floor].price as number;
+      const worst = worstOfSet(r, grades);
+      if (worst === null) continue;
       const raw = Number(r.rawComp);
-      if (Number.isFinite(raw) && raw > 0) mults.push(price / raw);
-      const fn = r.floorNet[floor];
-      if (fn !== null && fn > 0) {
+      // The multiple is read off the BINDING grade, not the best one: the
+      // return a set of outcomes gives you is the return of the worst of them.
+      if (Number.isFinite(raw) && raw > 0) mults.push(worst.price / raw);
+      if (worst.net > 0) {
         clearing++;
-        upside += fn;
+        upside += worst.net;
       }
     }
     const m = median(mults);
+    const oneGrade = group.filter((r) => r.gradesWithPrice === 1).length;
     out.push({
       key,
       setName: group[0].setName,
@@ -445,7 +879,16 @@ export function rollupSetUpside(rows: TriageRow[], floor: GradeKey): SetUpside[]
       share: group.length ? clearing / group.length : 0,
       medianMultiple: m === null ? null : Math.round(m * 10) / 10,
       upside: Math.round(upside * 100) / 100,
-      thin: group.length < MIN_SAMPLE,
+      oneGrade,
+      // gt-v8. A second way to be thin, found by reading the real output: XY
+      // Base Set commons came back top of the buy list at a 1,578x median on
+      // six cards and not marked thin, because six clears MIN_SAMPLE. Every
+      // one of those six was a $3 raw card with a single PSA 10 sale and no
+      // other grade beneath it to argue with. A row built mostly out of
+      // one-sale cards is not a buying signal however many cards are in it,
+      // and it belongs in the same bucket as a small n rather than above a
+      // row with forty cards and a full curve each.
+      thin: group.length < MIN_SAMPLE || oneGrade * 2 > group.length,
     });
   }
   // Best first, but a thin row never outranks a solid one: a 100% on three

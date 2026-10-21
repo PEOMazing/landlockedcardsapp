@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { atList, atUpdate, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
-import { gradedParams, latestByGrade } from "@/lib/gradedSales";
+import { allByGrade, gradedParams, latestByGrade, medianPrice } from "@/lib/gradedSales";
 import { isSlab } from "@/lib/slab";
-import { ALL_GRADES, SHIP_PER_CARD, TRIAGE_GRADES, gradingCost, groupByCard, netGain, sweepCandidates, sweepRunsNeeded, type GradeKey } from "@/lib/gradeTriage";
+import { ALL_GRADES, SHIP_PER_CARD, TRIAGE_GRADES, gradingCost, groupByCard, netGain, suspectQuotes, sweepBand, sweepCandidates, sweepRunsNeeded, type GradeKey, type SaleQuote } from "@/lib/gradeTriage";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -29,16 +29,28 @@ export const dynamic = "force-dynamic";
 //          plenty of headroom for the slab-comp route and anyone clicking
 //          around the app while the sweep is running.
 //
-// At 150 a run on the existing 15-minute cron the first pass finishes inside
-// three hours, and after that the backlog is whatever has gone stale, which
-// is a trickle.
-const BATCH = 150;
-const PACE_MS = 600;
+// gt-v6, measured rather than guessed. The first live run did 5 cards in 15.3
+// seconds, so the feed takes about 2.5s a call and the real pace is 20
+// requests a minute - six times under the 120 limit. Two consequences:
+//
+//   - PACE_MS was pure waste. The upstream latency already paces us far below
+//     the rate limit, so sleeping on top of it only burned the function's
+//     budget. Gone.
+//   - BATCH of 150 was impossible. At 2.5s each that is 375 seconds against a
+//     300-second ceiling, so the run would be killed about two thirds of the
+//     way through. Not data loss - each card is written as it goes and
+//     Graded Checked means the rest are simply first in the queue next time -
+//     but it burns a run and shows up as a function timeout.
+//
+// So the limit is a TIME budget, not a card count. The loop stops when the
+// next call might not finish, which is correct whatever the feed's latency
+// does later. BATCH stays as a ceiling for a manual run.
+const BATCH = 200;
+const TIME_BUDGET_MS = 240_000;
+const EXPECTED_CALL_MS = 4_000;
 
 const KEY = process.env.COMPS_API_KEY || "";
 const BASE = process.env.COMPS_API_BASE || "https://api.compsapi.com";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function authorised(req: Request): Promise<boolean> {
   const auth = req.headers.get("authorization");
@@ -63,6 +75,10 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const batch = Math.max(1, Math.min(BATCH, parseInt(url.searchParams.get("batch") || "") || BATCH));
+  // gt-v7. Ignore the waiting periods and re-look-up everything, oldest
+  // first. For after a change to what gets STORED, where the cards are not
+  // due by any sensible rule but the data on them is the old shape.
+  const force = url.searchParams.get("force") === "1";
 
   const settings = await getSettings().catch(() => null);
   const fee = Number((settings as any)?.grading_fee) || 59.99;
@@ -91,7 +107,7 @@ export async function GET(req: Request) {
 
   // gt-v4. Batch counts CARDS, not copies. Thirty copies of one Charizard are
   // one lookup, so a run of 150 can clear far more than 150 records.
-  const dueRecords = sweepCandidates(pool, Number.MAX_SAFE_INTEGER);
+  const dueRecords = force ? pool : sweepCandidates(pool, Number.MAX_SAFE_INTEGER);
   const grouped = groupByCard(dueRecords);
   const groups = [...grouped.values()].slice(0, batch);
   const pendingGroups = grouped.size;
@@ -102,7 +118,15 @@ export async function GET(req: Request) {
   const errors: string[] = [];
 
   let copies = 0;
+  const startedAt = Date.now();
+  let ranOutOfTime = false;
   for (const group of groups) {
+    // Stop while there is still room for one more call rather than being
+    // killed mid-write. Everything already written stays written.
+    if (Date.now() - startedAt > TIME_BUDGET_MS - EXPECTED_CALL_MS) {
+      ranOutOfTime = true;
+      break;
+    }
     // Any member describes the card; they differ only in condition and comp,
     // neither of which changes what a PSA 10 of it sold for.
     const f = group[0].fields;
@@ -144,10 +168,16 @@ export async function GET(req: Request) {
     }
 
     const byGrade = latestByGrade(data?.items || [], cardLike);
+    // gt-v7. Stored alongside the latest sale so the next read can tell one
+    // observation from nine. Nothing uses the median to decide yet - the
+    // ranking still runs off the latest sale, filtered - but it cannot start
+    // using it until it is being written, and writing it costs no extra call.
+    const everyGrade = allByGrade(data?.items || [], cardLike);
 
     // The prices belong to the CARD and are identical for every copy.
     const prices: Record<string, number | null> = {};
     const detail: Record<string, any> = { q: params.get("q"), cost };
+    const quotes: Partial<Record<GradeKey, SaleQuote>> = {};
     let any = false;
     for (const g of ALL_GRADES as GradeKey[]) {
       const row = (byGrade as any)[g] || null;
@@ -155,7 +185,29 @@ export async function GET(req: Request) {
       prices[g] = price;
       if (price !== null) {
         any = true;
-        detail[g] = { price, date: row.date || null, title: row.title || null, url: row.url || null };
+        const rows = everyGrade[g] || [];
+        detail[g] = {
+          price, date: row.date || null, title: row.title || null, url: row.url || null,
+          // how many sales this grade rests on, and their middle
+          n: rows.length,
+          median: medianPrice(rows),
+        };
+        quotes[g] = { price, date: row.date || null, title: row.title || null };
+      }
+    }
+
+    // gt-v7. The same rules the page reads with, applied before the column is
+    // written. Without this the stored Grade Best Net and the figure on screen
+    // disagree about every card whose best price was a lot or an asking price,
+    // and the one that drives the Airtable views and the sweep's own banding
+    // is the stored one - so a $100,000 Charizard would have stayed at the top
+    // of the refresh queue forever on the strength of a number nothing else
+    // believed.
+    const suspect = suspectQuotes(quotes);
+    for (const g of ALL_GRADES as GradeKey[]) {
+      if (suspect[g]) {
+        prices[g] = null;
+        if (detail[g]) detail[g].ignored = suspect[g];
       }
     }
     const detailJson = any ? JSON.stringify(detail) : "";
@@ -169,6 +221,8 @@ export async function GET(req: Request) {
       const rawComp = typeof rec.fields["Comp"] === "number" ? rec.fields["Comp"] : null;
       const write: Record<string, any> = { "Graded Checked": stamp, "Graded Detail": detailJson };
       let best: number | null = null;
+      // The three columns carry the price being USED, so a sort inside
+      // Airtable cannot surface a number the app has rejected.
       for (const g of TRIAGE_GRADES as GradeKey[]) write[`PSA ${g} Sale`] = prices[g] ?? null;
       for (const g of ALL_GRADES as GradeKey[]) {
         const net = netGain(rawComp, prices[g], cost);
@@ -185,19 +239,26 @@ export async function GET(req: Request) {
         errors.push(`${f["Card Name"]}: could not write`);
       }
     }
-
-    await sleep(PACE_MS);
   }
 
   const remaining = Math.max(0, pendingGroups - checked);
+  // Which bands the backlog is in, because a run that is all band 1 means the
+  // first pass is still going and one that is all band 2 means it is finished
+  // and this is the weekly refresh.
+  const bands = { new: 0, live: 0, cold: 0 };
+  for (const r of pool) bands[sweepBand(r, 25)]++;
   return NextResponse.json({
     configured: true,
+    forced: force,
+    bands,
     // cards looked up, and records written - the gap between them is the
     // saving from grouping copies.
     cardsChecked: checked,
     copiesWritten: copies,
     withSales,
     quotaHit,
+    ranOutOfTime,
+    elapsedSec: Math.round((Date.now() - startedAt) / 100) / 10,
     rawRecords: pool.length,
     distinctCardsDue: pendingGroups,
     remaining,

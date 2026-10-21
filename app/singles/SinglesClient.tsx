@@ -97,6 +97,10 @@ type SingleT = {
   rarity: string; variant: string; condition: string; compSales?: number | null;
   gradeBestNet?: number | null; gradeChecked?: string;
   gradeSales?: Record<string, number> | null;
+  /** gt-v7. How many of this card's graded prices were not believed and are
+   *  not in gradeSales. A card with any of these has a weaker case than its
+   *  figures suggest, and /grading lists what was dropped and why. */
+  gradeSuspect?: number;
   move?: { from: number; to: number; delta: number; pct: number; date: string } | null;
   comp: number | null; market?: number | null; marketBasis?: string; compSource: string; compDate: string; entryComp: number | null; printing: string;
   compDetail: { date: string; price: number; qty: number }[] | null; tcgProductId: number | null;
@@ -1166,6 +1170,12 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
   // Raw only, and that is not a scoping nicety: a slab already has a grade, so
   // "should this be graded" is a question it has answered. The chip simply
   // does not exist on the graded half of the page.
+  // Cards carrying at least one graded price the sweep rejected.
+  const gradeSuspectCount = useMemo(
+    () => (mode === "graded" ? 0 : singles.filter((s) => (s.gradeSuspect || 0) > 0).length),
+    [singles, mode],
+  );
+
   const gradeWorthCount = useMemo(
     () => mode === "graded" ? 0 : singles.filter((s) => {
       if (s.status !== "In Stock" || GRADED.includes(s.condition)) return false;
@@ -1808,6 +1818,21 @@ export default function SinglesClient({ isAdmin, isManager, mode = "raw" }: { is
                     <option key={g} value={g}>PSA {g}+</option>
                   ))}
                 </select>
+                {/* gt-v7. Said here rather than only on /grading, because this
+                    is where somebody decides from the number. Every graded
+                    figure behind this chip is ONE sale, and a few of them were
+                    asking prices or multi-slab lots that the sweep threw out.
+                    Knowing how many were thrown out is the difference between
+                    reading the count as a list and reading it as a shortlist. */}
+                {gradeSuspectCount > 0 && (
+                  <a
+                    href="/grading"
+                    className="text-warn text-xs underline whitespace-nowrap"
+                    title="Cards where a graded price was found and not believed - a lot sold as one card, a price above a better grade, or a round number far above the grade below. They are left out of the figures here. The grading page shows each one with the listing so you can settle it."
+                  >
+                    {gradeSuspectCount} price{gradeSuspectCount === 1 ? "" : "s"} ignored
+                  </a>
+                )}
               </span>
             )}
             {mode !== "graded" && restickerCount > 0 && (

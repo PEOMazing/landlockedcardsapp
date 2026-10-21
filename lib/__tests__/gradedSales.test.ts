@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
 import {
-  GRADE_LOOKUP_FLOOR, PSA_GRADES, cardFromParams, foldNumber, gradedParams,
+  ALL_PSA_GRADES, GRADE_LOOKUP_FLOOR, PSA_GRADES, allByGrade, cardFromParams, foldNumber, gradedParams,
+  medianPrice,
   gradedQuery, latestByGrade, printingKind, saleMatches, upside, wantsGradedSales,
   worthGradedLookup, type CardLike,
 } from "../gradedSales";
@@ -122,8 +123,24 @@ describe("deciding a sale is really this card", () => {
     assert.equal(saleMatches(sale({ card: { graded: true, grader: "CGC", grade: "10" } }), card()), false);
   });
 
-  it("refuses a grade outside the five", () => {
-    for (const g of ["5", "1", "9.5"]) {
+  it("accepts every grade PSA actually issues, not just the panel's five", () => {
+    // gs-v3, and this test used to assert the opposite. The panel shows five
+    // columns because nobody opening one card wants a column for the 2, and
+    // the matcher was checking incoming grades against that display list. So
+    // the grading sweep asked the feed for grades 1 to 10, paid for them, and
+    // dropped every 1 through 5 on the way in - which meant the floor-grade
+    // selector could never return anything below a 6 however long the sweep
+    // ran. A PSA 1 on a first-edition holo is a real three-figure card and the
+    // floor question is exactly "what if it comes back badly".
+    for (const g of ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"]) {
+      assert.equal(saleMatches(sale({ card: { graded: true, grader: "PSA", grade: g } }), card()), true, g);
+    }
+  });
+
+  it("still refuses a grade that is not a grade", () => {
+    // Half grades are a CGC and BGS convention; PSA does not issue them, so a
+    // title claiming one was misread and there is no column to put it in.
+    for (const g of ["9.5", "0", "11", "", "A"]) {
       assert.equal(saleMatches(sale({ card: { graded: true, grader: "PSA", grade: g } }), card()), false, g);
     }
   });
@@ -167,8 +184,11 @@ describe("one column per grade", () => {
   });
 
   it("has every grade as a key even on no sales at all", () => {
+    // All ten, not the panel's five. A caller rendering five reads five keys
+    // and ignores the rest; a caller that needs the 3 would otherwise get a
+    // sale written to a key nothing initialised.
     const rows = latestByGrade([], card());
-    assert.deepEqual(new Set(Object.keys(rows)), new Set(PSA_GRADES));
+    assert.deepEqual(new Set(Object.keys(rows)), new Set(ALL_PSA_GRADES));
     assert.equal(Object.values(rows).every((v) => v === null), true);
   });
 
@@ -178,8 +198,13 @@ describe("one column per grade", () => {
     // 6,7,8,9,10 - the columns backwards. PSA_GRADES is the order of record and
     // the UI iterates that, not the object.
     const rows = latestByGrade([], card());
-    assert.deepEqual(Object.keys(rows), ["6", "7", "8", "9", "10"], "this is JS, not a bug");
-    assert.deepEqual([...PSA_GRADES], ["10", "9", "8", "7", "6"], "and this is what to render");
+    assert.deepEqual(
+      Object.keys(rows),
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+      "this is JS, not a bug",
+    );
+    assert.deepEqual([...PSA_GRADES], ["10", "9", "8", "7", "6"], "and this is what the panel renders");
+    assert.deepEqual([...ALL_PSA_GRADES].slice(0, 3), ["10", "9", "8"], "and this is what the sweep walks");
   });
 
   it("drops the wrong card without dropping the right one", () => {
@@ -352,5 +377,54 @@ describe("which cards get the panel", () => {
     for (const c of ["PSA 10", "PSA 9", "CGC 10", "Other Graded"]) {
       assert.equal(wantsGradedSales({ condition: c }, isSlab), false, c);
     }
+  });
+});
+
+describe("every sale in a grade, not just the newest", () => {
+  const g = (grade: string, price: number, date: string) =>
+    sale({ price, last_sold: date, card: { graded: true, grader: "PSA", grade, card_number: "4/102" } });
+
+  it("keeps them all, newest first", () => {
+    const rows = allByGrade(
+      [g("10", 400, "2026-08-01"), g("10", 460, "2026-10-01"), g("9", 120, "2026-09-01")],
+      card(),
+    );
+    assert.deepEqual(rows["10"].map((r) => r.price), [460, 400]);
+    assert.deepEqual(rows["9"].map((r) => r.price), [120]);
+    assert.deepEqual(rows["8"], []);
+  });
+
+  it("runs the same matcher, so a lot or a wrong number never gets in", () => {
+    const rows = allByGrade(
+      [g("10", 400, "2026-10-01"), sale({ price: 9000, last_sold: "2026-10-02", card: { graded: true, grader: "PSA", grade: "10", card_number: "99/102" } })],
+      card(),
+    );
+    assert.deepEqual(rows["10"].map((r) => r.price), [400]);
+  });
+
+  it("has a key for every grade", () => {
+    assert.deepEqual(new Set(Object.keys(allByGrade([], card()))), new Set(ALL_PSA_GRADES));
+  });
+});
+
+describe("the middle sale", () => {
+  const row = (price: number) => ({ date: "2026-10-01", price, title: "", url: "", format: "", bestOffer: false });
+
+  it("is the middle one on an odd count", () => {
+    assert.equal(medianPrice([row(100), row(900), row(300)]), 300);
+  });
+
+  it("splits the two middles on an even count", () => {
+    assert.equal(medianPrice([row(100), row(200), row(300), row(500)]), 250);
+  });
+
+  it("is not dragged by one wild value, which is the entire point", () => {
+    // A mean of these is $20,320. The median is what somebody actually paid.
+    assert.equal(medianPrice([row(400), row(420), row(460), row(100000)]), 440);
+  });
+
+  it("is null on nothing, not zero", () => {
+    assert.equal(medianPrice([]), null);
+    assert.equal(medianPrice([row(0), row(-5)]), null);
   });
 });

@@ -24,6 +24,20 @@
  *  backwards. */
 export const PSA_GRADES = ["10", "9", "8", "7", "6"] as const;
 
+/** gs-v3. Every grade PSA issues, which is not the same list as the five the
+ *  per-card panel shows.
+ *
+ *  The panel's five are a display choice: nobody opening one card wants a
+ *  column for the 2. The grading sweep is not a display, and it asks the feed
+ *  for grade=1,...,10 because the floor-grade question - "is this worth
+ *  sending if it comes back BADLY" - cannot be answered without the bad
+ *  grades. saleMatches was still checking the incoming grade against the
+ *  panel's five, so every PSA 1 through 5 the sweep paid for was fetched and
+ *  then dropped on the way in, and the floor selector below 6 could never
+ *  return anything however long the sweep ran. This is the list to validate
+ *  against; PSA_GRADES stays the panel's column order. */
+export const ALL_PSA_GRADES = ["10", "9", "8", "7", "6", "5", "4", "3", "2", "1"] as const;
+
 export type SaleRow = {
   /** Sold date, YYYY-MM-DD. */
   date: string;
@@ -248,7 +262,7 @@ export function saleMatches(item: any, card: CardLike): boolean {
   const c = item?.card;
   if (!c || c.graded === false) return false;
   if (String(c.grader || "").toUpperCase() !== "PSA") return false;
-  if (!PSA_GRADES.includes(String(c.grade) as any)) return false;
+  if (!ALL_PSA_GRADES.includes(String(c.grade) as any)) return false;
   const want = foldNumber(card.number);
   const got = foldNumber(c.card_number);
   if (want && got && want !== got) return false;
@@ -287,7 +301,10 @@ const day = (s: unknown) => String(s ?? "").slice(0, 10);
  *  10 - and the 6 may be a single sale buried in the middle of it. */
 export function latestByGrade(items: any[], card: CardLike): GradeSales {
   const out: GradeSales = {};
-  for (const g of PSA_GRADES) out[g] = null;
+  // All ten, not the panel's five. A caller that only renders five reads five
+  // keys and ignores the rest; a caller that needs the 3 would otherwise get
+  // a sale it matched written to a key it never initialised.
+  for (const g of ALL_PSA_GRADES) out[g] = null;
   for (const item of Array.isArray(items) ? items : []) {
     if (!saleMatches(item, card)) continue;
     const g = String(item.card.grade);
@@ -303,6 +320,47 @@ export function latestByGrade(items: any[], card: CardLike): GradeSales {
     if (!cur || row.date > cur.date) out[g] = row;
   }
   return out;
+}
+
+/** gs-v3. Every surviving sale in each grade, newest first.
+ *
+ *  latestByGrade answers "what did one sell for", which is the right question
+ *  for a panel somebody reads with the listing title in front of them. It is
+ *  the wrong question for a list of 858 cards sorted by size, because sorting
+ *  by the biggest number sorts by the likeliest mistake. A count and a median
+ *  are what let a caller tell "one sale, $100,000" from "nine sales, median
+ *  $2,400", and those two should not be ranked next to each other.
+ *
+ *  The whole array is kept rather than just the two figures: a caller showing
+ *  its work needs the sales, and the cost of carrying them is nothing next to
+ *  the call that fetched them. */
+export function allByGrade(items: any[], card: CardLike): Record<string, SaleRow[]> {
+  const out: Record<string, SaleRow[]> = {};
+  for (const g of ALL_PSA_GRADES) out[g] = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!saleMatches(item, card)) continue;
+    out[String(item.card.grade)].push({
+      date: day(item.last_sold),
+      price: Math.round(Number(item.price) * 100) / 100,
+      title: String(item.title || ""),
+      url: String(item.url || ""),
+      format: String(item.format || ""),
+      bestOffer: !!item.best_offer,
+    });
+  }
+  for (const g of ALL_PSA_GRADES) out[g].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return out;
+}
+
+/** The middle sale, which is the figure to rank on when there is more than
+ *  one. A median rather than a mean because the thing being guarded against is
+ *  exactly one wild value, and a mean carries it straight through. */
+export function medianPrice(rows: SaleRow[]): number | null {
+  const xs = (rows || []).map((r) => Number(r.price)).filter((p) => Number.isFinite(p) && p > 0).sort((a, b) => a - b);
+  if (xs.length === 0) return null;
+  const m = Math.floor(xs.length / 2);
+  const v = xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2;
+  return Math.round(v * 100) / 100;
 }
 
 /** How many times the raw comp a grade last sold for. The reason the panel

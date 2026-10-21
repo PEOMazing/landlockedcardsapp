@@ -162,13 +162,23 @@ export default function ShowClient({ cards, failed }: { cards: ShowCard[]; faile
               </div>
             ) : (
               <div className="grid gap-2.5 sm:gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
-                {results.slice(0, shown).map((g, i) => (
+                {results.slice(0, shown).map((g, i) => {
+                  const graded = isGraded(g.first.cond);
+                  return (
                   <a
                     key={g.key}
                     href={`/label/${g.first.id}`}
-                    className="card overflow-hidden flex flex-col hover:border-foil/60 transition-colors"
+                    // A graded card is a different thing to a buyer, so the
+                    // tile says so before they read a word of it: a foil edge
+                    // on the whole tile, not just the badge in the corner. The
+                    // badge alone was easy to miss in a grid of eight across,
+                    // and it was invisible on exactly the cards that had no
+                    // art to put it on top of.
+                    className={`card overflow-hidden flex flex-col transition-colors ${
+                      graded ? "border-foil/55 hover:border-foil" : "hover:border-foil/60"
+                    }`}
                   >
-                    <div className="relative aspect-square bg-edge/40">
+                    <div className={`relative aspect-square ${graded ? "bg-foil/[0.07]" : "bg-edge/40"}`}>
                       {g.first.img ? (
                         // Plain img, lazy below the first rows, with its size
                         // fixed up front so the grid never jumps as art arrives.
@@ -188,9 +198,9 @@ export default function ShowClient({ cards, failed }: { cards: ShowCard[]; faile
                       {g.count > 1 && (
                         <span className="absolute top-1.5 right-1.5 rounded-md bg-black/80 px-1.5 py-0.5 t-meta font-bold num">{g.count} available</span>
                       )}
-                      {(isGraded(g.first.cond) || g.first.lang) && (
+                      {(graded || g.first.lang) && (
                         <span className="absolute top-1.5 left-1.5 flex gap-1">
-                          {isGraded(g.first.cond) && <span className="rounded-md bg-foil/90 px-1.5 py-0.5 t-meta font-bold text-black">{g.first.cond}</span>}
+                          {graded && <span className="rounded-md bg-foil px-1.5 py-0.5 t-meta font-bold text-black shadow">{g.first.cond}</span>}
                           {g.first.lang && <span className="rounded-md bg-black/75 px-1.5 py-0.5 t-meta font-bold">{g.first.lang === "Japanese" ? "JP" : g.first.lang}</span>}
                         </span>
                       )}
@@ -200,7 +210,7 @@ export default function ShowClient({ cards, failed }: { cards: ShowCard[]; faile
                       <div className="text-dim t-meta leading-tight truncate">
                         {g.first.set}{g.first.num ? ` #${g.first.num}` : ""}
                       </div>
-                      {!isGraded(g.first.cond) && g.first.cond && g.first.cond !== "NM" && (
+                      {!graded && g.first.cond && g.first.cond !== "NM" && (
                         <div className="text-dim t-meta">{g.first.cond}</div>
                       )}
                       <div className="mt-auto pt-1.5 flex items-end justify-between gap-2">
@@ -211,7 +221,8 @@ export default function ShowClient({ cards, failed }: { cards: ShowCard[]; faile
                       </div>
                     </div>
                   </a>
-                ))}
+                  );
+                })}
               </div>
             )}
             {more && <div ref={sentinel} className="h-10" />}

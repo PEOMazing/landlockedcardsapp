@@ -1,4 +1,5 @@
 import { AtRecord } from "./airtable";
+import { setNameCandidates } from "./setNames";
 import { getTcgcsvCard, parseCardId, resolveSingleToTcg } from "./tcgcsvCards";
 
 // Finding a picture for a card, kept deliberately separate from finding a
@@ -17,7 +18,15 @@ import { getTcgcsvCard, parseCardId, resolveSingleToTcg } from "./tcgcsvCards";
 
 /** What the scan page shows when there is genuinely no art to show. Not a
  *  found image - the caller keeps it out of the Image URL column. */
-export type CardImage = { url: string; source: "card-id" | "resolved" | "by-name" } | null;
+export type CardImage = {
+  url: string;
+  source: "card-id" | "resolved" | "by-name";
+  /** sn-v1. The set name that actually resolved, when it was not the one on
+   *  the record. Carried so a caller can say WHY a card finally got art, and
+   *  so the same correction can later be offered for the Set Name column -
+   *  which is the thing that would fix pricing too, not just the picture. */
+  viaSet?: string;
+} | null;
 
 /** Pull an image for a record without caring whether it can be priced. */
 export async function findCardImage(rec: AtRecord): Promise<CardImage> {
@@ -41,12 +50,33 @@ export async function findCardImage(rec: AtRecord): Promise<CardImage> {
     }
   }
 
-  // The strict resolver. When it succeeds it hands back the art directly.
-  try {
-    const hit = await resolveSingleToTcg({ setName, number, name, variant, rarity, language });
-    if (hit?.image) return { url: hit.image.replace("_200w", "_400w"), source: "resolved" };
-  } catch {
-    // same
+  // sn-v1. The set name as written is tried first and the alternatives only
+  // after, so nothing that already resolved can start resolving differently.
+  // For most of the binder this list is one entry long and this loop is the
+  // single call it always was.
+  //
+  // Each candidate still goes through the STRICT resolver, which has to match
+  // the card name and the collector number inside whatever set it finds. A
+  // wrong guess at a set name therefore returns nothing rather than returning
+  // somebody else's card, which is the only reason guessing is acceptable
+  // here. The alternative - searching by name and number with no set at all -
+  // was measured against the live mirror and returns confidently wrong art:
+  // see the note at the top of lib/setNames.
+  const candidates = setNameCandidates(setName, number);
+
+  for (const candidate of candidates) {
+    try {
+      const hit = await resolveSingleToTcg({ setName: candidate, number, name, variant, rarity, language });
+      if (hit?.image) {
+        return {
+          url: hit.image.replace("_200w", "_400w"),
+          source: "resolved",
+          ...(candidate !== setName ? { viaSet: candidate } : {}),
+        };
+      }
+    } catch {
+      // try the next candidate, then fall through to the loose paths
+    }
   }
 
   // Loosest path: the strict resolver refused, and the usual reason is that a
@@ -55,14 +85,25 @@ export async function findCardImage(rec: AtRecord): Promise<CardImage> {
   // different prices and the same picture, so for art the tie does not need
   // breaking. Dropping the number as well casts the net wider still, for the
   // promo and unnumbered sets where the number was never usable.
+  //
+  // Still inside a known set, in both loops. Ambiguity about WHICH PRINTING of
+  // a card is fine for a picture; ambiguity about which set is not.
   for (const number2 of [number, ""]) {
-    try {
-      const loose = await resolveSingleToTcg({
-        setName, number: number2, name, variant, rarity, language, allowAmbiguous: true,
-      });
-      if (loose?.image) return { url: loose.image.replace("_200w", "_400w"), source: "by-name" };
-    } catch {
-      // try the next widening, then give up
+    for (const candidate of candidates) {
+      try {
+        const loose = await resolveSingleToTcg({
+          setName: candidate, number: number2, name, variant, rarity, language, allowAmbiguous: true,
+        });
+        if (loose?.image) {
+          return {
+            url: loose.image.replace("_200w", "_400w"),
+            source: "by-name",
+            ...(candidate !== setName ? { viaSet: candidate } : {}),
+          };
+        }
+      } catch {
+        // try the next widening, then give up
+      }
     }
   }
 

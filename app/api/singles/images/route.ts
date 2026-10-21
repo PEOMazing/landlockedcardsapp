@@ -55,6 +55,12 @@ export async function POST(req: Request) {
   let repaired = 0;
   const stillBlank: string[] = [];
   const stillWrong: string[] = [];
+  // sn-v1. Cards that only found art once the set name was corrected. Reported
+  // because each one is a Set Name in the base that TCGplayer does not
+  // recognise, and that is the thing actually worth fixing: a set that cannot
+  // be resolved is a card that cannot be linked, priced or swept, and the
+  // missing picture was only the visible half of it.
+  const viaSet: { name: string; from: string; to: string }[] = [];
   const changed: { cardNo: string; name: string; from: string; to: string }[] = [];
 
   for (const { rec, job } of batch) {
@@ -73,6 +79,13 @@ export async function POST(req: Request) {
     if (usable && usable.url !== before) {
       try {
         await atUpdate(T.singles, rec.id, { "Image URL": usable.url });
+        if (usable.viaSet) {
+          viaSet.push({
+            name: String(rec.fields["Card Name"] || "?"),
+            from: String(rec.fields["Set Name"] || ""),
+            to: usable.viaSet,
+          });
+        }
         if (job === "repair") {
           repaired++;
           changed.push({
@@ -106,6 +119,7 @@ export async function POST(req: Request) {
     stillBlank: stillBlank.slice(0, 40),
     stillWrong: stillWrong.slice(0, 40),
     changed: changed.slice(0, 40),
+    viaSet: viaSet.slice(0, 40),
   });
 }
 
