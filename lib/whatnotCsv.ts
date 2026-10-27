@@ -475,9 +475,27 @@ export type StoreRow = {
  *  a wheel. Anything else paid - no prefix, a prefix only used once or twice
  *  ("Pokemon Keychain - KailieKreations"), or a pack count like "5x" - is a
  *  store sale. */
-export function isStoreSale(s: WhatnotSale, hasFormat: boolean, wheelPrefixes?: Set<string>): boolean {
+export function isStoreSale(
+  s: WhatnotSale,
+  hasFormat: boolean,
+  wheelPrefixes?: Set<string>,
+  onSet?: (title: string) => boolean,
+): boolean {
   if (s.giveaway || s.price <= 0 || isShippingLine(s.title)) return false;
   if (hasFormat) return /buy.?it.?now/i.test(s.format || "");
+  // ss-v1. If the show set has a line by this name, the order is a spin, and
+  // no amount of reading the title can say otherwise.
+  //
+  // Everything below this line is guesswork about the shape of a title, and
+  // it assumed wheel listings always carry the show's name: "BANGERS ALL
+  // NIGHT!! - 2-PACK BLISTER". A surprise set show does not title them that
+  // way. Its listings are the bare product name - "GEM VOLUME 6 PACK" - so
+  // they have no prefix, and "no prefix" fell straight through to "store
+  // sale". On the 2026-10-22 show that made 223 of 265 spins look like shelf
+  // sales, and the set recorded 42 hits out of 265.
+  //
+  // The set is sitting right there and is better evidence than any of it.
+  if (onSet?.(s.title)) return false;
   const pre = wheelPrefix(s.title);
   // A prefix the show reused order after order is the wheel, and that settles
   // it before anything is guessed from the words. It has to be asked first:
@@ -508,12 +526,15 @@ export function wheelPrefixesIn(sales: WhatnotSale[]): Set<string> {
   return new Set([...n].filter(([, c]) => c >= 3).map(([p]) => p));
 }
 
-export function storeRows(sales: WhatnotSale[]): { rows: StoreRow[]; guessed: boolean } {
+export function storeRows(
+  sales: WhatnotSale[],
+  onSet?: (title: string) => boolean,
+): { rows: StoreRow[]; guessed: boolean } {
   const hasFormat = sales.some((s) => s.format);
   const wheels = hasFormat ? undefined : wheelPrefixesIn(sales);
   const rows: StoreRow[] = [];
   for (const s of sales) {
-    if (!isStoreSale(s, hasFormat, wheels)) continue;
+    if (!isStoreSale(s, hasFormat, wheels, onSet)) continue;
     rows.push({
       key: s.orderId || `row${s.row}`,
       orderId: s.orderId || "",
@@ -662,7 +683,6 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[], decis
   const hasFormat = sales.some((s) => s.format);
   const wheels = hasFormat ? undefined : wheelPrefixesIn(sales);
   const g = splitGiveaways(sales);
-  const spins = g.paid.filter((s) => !isShippingLine(s.title) && !isStoreSale(s, hasFormat, wheels));
 
   // lines that can be hit, grouped by name: a product added twice is one pool
   const pool = setLines.filter((l) => !l.isStore && !l.isGiveaway);
@@ -709,14 +729,35 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[], decis
   }
   const asStore = decisions.asStore || {};
 
+  // ss-v1. Now that the set's titles are known, decide what is a spin. A paid
+  // order whose title names a line on this set is a spin, whatever shape the
+  // title has; only what is left over goes to the title guesswork. Done here
+  // rather than at the top because the answer needs byFold, and byFold needs
+  // the operator's own mappings folded in first.
+  // ss-v1. The whole title first, the part after the dash second.
+  //
+  // spinItem exists to drop the show name off "BANGERS ALL NIGHT!! - item",
+  // and it splits on the first " - ". Plenty of products have one in their own
+  // name: "Chasing Glory Booster Pack - Chinese" becomes "Chinese", which
+  // matches nothing and is also the name of a different set's packs. So when
+  // the full title names a line on this set, that is the answer, and stripping
+  // only happens when it does not.
+  const setFold = (title: string): string => {
+    const whole = foldTitle(title);
+    if (byFold.has(whole)) return whole;
+    return foldTitle(spinItem(title));
+  };
+  const onSet = (title: string) => byFold.has(setFold(title));
+  const spins = g.paid.filter((s) => !isShippingLine(s.title) && !isStoreSale(s, hasFormat, wheels, onSet));
+
   const sold = new Map<string, number>();
   const missing = new Map<string, { title: string; fold: string; sold: number; revenue: number }>();
   const store = new Map<string, SetPlan["toStore"][number]>();
   let count = 0;
   let gross = 0;
   for (const s of spins) {
-    const item = spinItem(s.title);
-    const fold = foldTitle(item);
+    const fold = setFold(s.title);
+    const item = fold === foldTitle(s.title) ? String(s.title || "").trim() : spinItem(s.title);
     // Sent to the shelf: not a spin at all, so it is kept out of both the
     // count and the gross before either is touched.
     if (asStore[fold]) {

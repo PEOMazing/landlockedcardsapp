@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { atGet, atList, atUpdate, isRecId, T } from "@/lib/airtable";
+import { atGet, atList, atUpdate, isRecId, T, atGetOrNull, type AtRecord } from "@/lib/airtable";
 import { getMe, ownsStream, canManageStream } from "@/lib/auth";
 import { getSettings } from "@/lib/settings";
 import { toLine, isHitLine, packingRate, streamPackingCost, packingFeeToStamp } from "@/lib/calc";
@@ -69,7 +69,19 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const me = await getMe();
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   if (!isRecId(params.id)) return NextResponse.json({ error: "bad id" }, { status: 400 });
-  const stream = await atGet(T.streams, params.id);
+  // rl-v1. Separate "no such stream" from "could not reach Airtable". This
+  // read used to be unguarded, so a 429 threw, the route 500ed, and the editor
+  // printed "Stream not found." over a stream that was sitting right there.
+  let stream: AtRecord | null;
+  try {
+    stream = await atGetOrNull(T.streams, params.id);
+  } catch {
+    return NextResponse.json(
+      { error: "Could not reach Airtable just now - too many changes at once. Try again in a few seconds." },
+      { status: 503 },
+    );
+  }
+  if (!stream) return NextResponse.json({ error: "no stream with that id" }, { status: 404 });
   if (!ownsStream(me, stream)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const isComplete = (stream.fields["Status"] || "Planned") === "Complete";

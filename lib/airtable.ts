@@ -98,6 +98,18 @@ export async function atGet(table: string, id: string): Promise<AtRecord> {
   return res.json();
 }
 
+// rl-v1. "Is this record gone?" and "did that request fail?" are different
+// questions and used to come back as the same thrown error, so a rate-limited
+// read of a stream was reported to the user as a stream that does not exist.
+// Null means Airtable answered and the record is not there. A throw means we
+// never got an answer worth trusting.
+export async function atGetOrNull(table: string, id: string): Promise<AtRecord | null> {
+  const res = await atFetch(`${API}/${encodeURIComponent(table)}/${id}`, { headers, cache: "no-store" }, `get ${table}/${id}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Airtable get ${table}/${id}: ${res.status}`);
+  return res.json();
+}
+
 export async function atCreate(table: string, fields: Record<string, any>): Promise<AtRecord> {
   const res = await atFetch(`${API}/${encodeURIComponent(table)}`, {
     method: "POST", headers, body: JSON.stringify({ fields, typecast: true }),
