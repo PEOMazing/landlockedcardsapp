@@ -413,6 +413,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   // pk-v5: assign the PACKER - managers only. Separate from manager of record
   // below, which is access and carries no pay.
+  let stampedFee: number | null = null;
   if (b.packerId !== undefined) {
     if (!me.isManager && !me.isAdmin) return NextResponse.json({ error: "only managers can assign packing" }, { status: 403 });
     if (b.packerId === null || b.packerId === "") {
@@ -434,6 +435,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         settingFee: settings.packing_fee,
       });
       if (fee !== null) fields["Packing Fee"] = fee;
+      // pk-v6. Hand the stamped fee back so the caller can say so. Assigning a
+      // packer is the write that prices the show, once and for good, and until
+      // now it happened in silence.
+      stampedFee = fee !== null ? fee : (Number(stream.fields["Packing Fee"]) || null);
     }
   }
   // manager of record - admin only, and deliberately pays nothing
@@ -504,7 +509,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     fields["Deleted At"] = null;
   }
   await atUpdate(T.streams, params.id, fields);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...(stampedFee !== null ? { packingFeeStamped: stampedFee } : {}) });
 }
 
 // Soft delete: the stream disappears from every list and pay calculation

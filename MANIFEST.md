@@ -42,32 +42,24 @@ nothing. It is what values a lot someone is offering you before any of it is
 inventory, and it labels each row exact, close or weak rather than quoting a
 price it is not sure of.
 
-## 2. The last 39 hits on the 10-22 show
+## 2. Assign a packer from the stream page
 
-The surprise-set fix took that show from 42 hits to 226 of 265. These are the
-39 that were still missing, and they are two separate matching bugs.
+"Packed by" now sits on the show itself, in the row of controls beside Save
+and mark complete, for managers as well as admins.
 
-**Keycap emoji leave their digit behind.** foldTitle drops everything that is
-not a letter or a digit, which handles the fire emoji for free. A keycap
-emoji is not so lucky: it is the ASCII digit, a variation selector and
-U+20E3, so the digit survives the strip. "3 0 30TH CELEBRATION ELITE TRAINER
-BOX" folded to "3030THCELEBRATION..." and matched nothing, which is why the
-six 30th Celebration listings failed while the fire-wrapped ones beside them
-were fine. Emoji now come off before the fold, keycaps first.
+It was technically possible here before, but only by clicking edit next to
+the title, which opens the title, the date and the streamer at the same time.
+So the one action that gets somebody paid was hidden inside an edit of three
+things nobody wanted to touch. The all-streams table had the mirror problem:
+its Packaging column looks like a read-only name until you enter edit mode.
 
-**The same words in a different order.** Whatnot had "CHINESE STELLAR CRYSTAL
-BOOSTER PACK", the set had "Stellar Crystal Booster Pack - Chinese". Same
-product, and a fold that concatenates in order can never see it. 33 spins on
-that one line. There is now a word-order fallback, tried only after the exact
-title and the after-the-dash form, and only where no two lines on the set
-share the same bag of words. If two do, it books nothing and asks: 33 hits on
-the wrong line is worse than 33 on no line, because nobody goes looking for a
-number that already looks right.
+Assigning the packer is the write that puts a show on the flat fee, stamped
+at the rate in Settings at that moment and never re-priced afterwards. That
+used to happen in silence; the save now says which fee it stamped, and the
+fee shows next to the picker from then on. Clearing the packer says plainly
+that nobody is owed packing on the show.
 
-Against the real export, with neither pasted titles nor learned aliases to
-help it: 260 of 265 matched, 0 to the shelf, 0 unrecognised.
-
-Changed: `lib/whatnotCsv.ts`, `lib/__tests__/surpriseSetHits.test.ts`.
+Changed: `app/streams/[id]/StreamEditor.tsx`, `app/api/streams/[id]/route.ts`.
 
 ## 4. Collectr importer fix
 

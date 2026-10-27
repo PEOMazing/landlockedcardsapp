@@ -1121,6 +1121,57 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
               Save and mark complete
             </button>
           )}
+          {/* pk-v6. Assigning the packer from the show itself.
+              It was already possible here, but only by clicking edit next to
+              the title, which also opens the title, the date and the streamer
+              - so the one action that gets somebody paid was hidden behind an
+              edit of three things nobody wanted to touch. The all-streams
+              table has the same problem in reverse: the Packaging column
+              looks like a read-only name until you are in edit mode.
+              Managers, not just admins, because the PATCH has always allowed
+              a manager to assign packing. */}
+          {canManage && (
+            <label
+              className="flex items-center gap-2 text-sm text-dim"
+              title="Who packed this show. Assigning somebody puts the show on the flat packing fee, stamped at the rate in Settings at that moment and never re-priced afterwards."
+            >
+              Packed by
+              <select
+                className="input !py-1 !w-40"
+                value={stream.packerRecId || ""}
+                disabled={busy}
+                onChange={async (e) => {
+                  setBusy(true);
+                  const r = await fetch(`/api/streams/${id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ packerId: e.target.value || null }),
+                  }).catch(() => null);
+                  setBusy(false);
+                  if (!r || !r.ok) { toast("Could not change who packed this show - it is unchanged", "bad"); return; }
+                  const d = await r.json().catch(() => ({}));
+                  // Say out loud when this is the write that priced the show,
+                  // because the fee is stamped once and a later change to the
+                  // rate in Settings will not revisit it.
+                  toast(
+                    e.target.value
+                      ? d.packingFeeStamped
+                        ? `Packer set, this show is now on the ${$(d.packingFeeStamped)} flat fee`
+                        : "Packer set"
+                      : "Packer cleared - nobody is owed packing on this show",
+                    "ok",
+                  );
+                  await load();
+                }}
+              >
+                <option value="">nobody</option>
+                {team.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {stream.packingFee ? <span className="num">{$(stream.packingFee)} fee</span> : null}
+            </label>
+          )}
           {isAdmin && (
             <>
               <label className="flex items-center gap-2 text-sm text-dim cursor-pointer select-none">
