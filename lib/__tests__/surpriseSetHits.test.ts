@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import { strict as assert } from "node:assert";
-import { isStoreSale, planSetFromShow, storeRows, type SetLine, type WhatnotSale } from "../whatnotCsv";
+import { foldTitle, isStoreSale, planSetFromShow, storeRows, type SetLine, type WhatnotSale } from "../whatnotCsv";
 
 // ss-v1. The 2026-10-22 surprise set show, from its real export.
 //
@@ -90,5 +90,58 @@ describe("a surprise set show, where every paid order is a spin", () => {
   it("giveaways are never shelf sales, set or no set", () => {
     const s = { ...sale("BOOKMARK ALL FUTURE STREAMS!! FREE POKEMON CARD(S)! #1", 0), giveaway: true } as WhatnotSale;
     assert.equal(isStoreSale(s, false, new Set(), () => false), false);
+  });
+});
+
+describe("titles that say the same thing a different way", () => {
+  const sale2 = (title: string, row: number): WhatnotSale =>
+    ({ row, title, description: "", qty: 1, price: 15.99, date: "", buyer: "", status: "", giveaway: false, showId: "s1", showTitle: "show", orderId: `o${row}`, format: "" }) as WhatnotSale;
+
+  it("a keycap emoji does not leave its digit behind", () => {
+    // 3️⃣ is the ASCII "3" plus a variation selector plus U+20E3, so a strip
+    // that keeps digits keeps the 3. Six listings on the 2026-10-22 set were
+    // lost to exactly this, and the 🔥-wrapped ones beside them were fine.
+    assert.equal(foldTitle("3️⃣0️⃣30TH CELEBRATION POSTER COLLECTION3️⃣0️⃣"), foldTitle("30th Celebration Poster Collection"));
+    assert.equal(foldTitle("🔥PITCH BLACK BOOSTER BUNDLE🔥"), foldTitle("Pitch Black Booster Bundle"));
+  });
+
+  it("books the emoji-wrapped listings as hits", () => {
+    const set = [line("30th Celebration Poster Collection", 1, 0), line("30th Celebration Elite Trainer Box", 2, 1)];
+    const plan = planSetFromShow(
+      [sale2("3️⃣0️⃣30TH CELEBRATION POSTER COLLECTION3️⃣0️⃣", 1), sale2("3️⃣0️⃣30TH CELEBRATION ELITE TRAINER BOX3️⃣0️⃣", 2)],
+      set,
+    );
+    assert.equal(plan.notOnSet.length, 0);
+    assert.equal(plan.lines.find((l) => l.lineId === "rec0")!.now, 1);
+    assert.equal(plan.lines.find((l) => l.lineId === "rec1")!.now, 1);
+  });
+
+  it("matches the same words in a different order", () => {
+    // "CHINESE STELLAR CRYSTAL BOOSTER PACK" on Whatnot, "Stellar Crystal
+    // Booster Pack - Chinese" on the set. 33 spins on one show.
+    const set = [line("Stellar Crystal Booster Pack - Chinese", 50, 0)];
+    const sales = Array.from({ length: 33 }, (_, i) => sale2("CHINESE STELLAR CRYSTAL BOOSTER PACK", i + 1));
+    const plan = planSetFromShow(sales, set);
+    assert.equal(plan.notOnSet.length, 0);
+    assert.equal(plan.lines[0].now, 33);
+  });
+
+  it("refuses to guess when two lines share the same bag of words", () => {
+    // Same words, two different products. Reordering must not pick one at
+    // random: 33 hits on the wrong line is worse than 33 hits on no line,
+    // because nobody goes looking for a number that already looks right.
+    const set = [
+      line("Chinese Stellar Crystal Booster Pack", 10, 0),
+      line("Stellar Crystal Booster Pack Chinese", 10, 1),
+    ];
+    const plan = planSetFromShow([sale2("STELLAR CHINESE CRYSTAL PACK BOOSTER", 1)], set);
+    assert.equal(plan.lines.every((l) => l.now === 0), true);
+  });
+
+  it("an exact title still beats a reordered one", () => {
+    const set = [line("Booster Pack Chinese", 5, 0), line("Chinese Booster Pack", 5, 1)];
+    const plan = planSetFromShow([sale2("CHINESE BOOSTER PACK", 1)], set);
+    assert.equal(plan.lines.find((l) => l.lineId === "rec1")!.now, 1);
+    assert.equal(plan.lines.find((l) => l.lineId === "rec0")!.now, 0);
   });
 });

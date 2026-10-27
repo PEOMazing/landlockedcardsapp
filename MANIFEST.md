@@ -1,6 +1,6 @@
 # LandLocked Cards - one upload, six things
 
-51 files. Everything in here was already tested together: 1,317 unit tests
+51 files. Everything in here was already tested together: 1,322 unit tests
 pass, TypeScript is clean. Nothing in here is live yet.
 
 ## How to put it live
@@ -42,33 +42,30 @@ nothing. It is what values a lot someone is offering you before any of it is
 inventory, and it labels each row exact, close or weak rather than quoting a
 price it is not sure of.
 
-## 2. Surprise set hits booked as store sales
+## 2. The last 39 hits on the 10-22 show
 
-This is the one underneath all the rest. On the 2026-10-22 show, 223 of 265
-paid orders were read as shelf sales. The set recorded 42 hits out of 265,
-and 134 of those "shelf sales" were then booked against a single Ultra
-Premium Collection at $225.24 of product cost each.
+The surprise-set fix took that show from 42 hits to 226 of 265. These are the
+39 that were still missing, and they are two separate matching bugs.
 
-The per-show export does not say which orders were Buy It Now, so store sales
-are guessed from the shape of the title. That guess assumed a wheel listing
-always carries the show's name in front of the item, "BANGERS ALL NIGHT!! -
-item", and treated anything with no prefix as a shelf sale. A surprise set
-show titles its listings with the bare product name. No prefix, so every spin
-on the show looked like a shelf sale.
+**Keycap emoji leave their digit behind.** foldTitle drops everything that is
+not a letter or a digit, which handles the fire emoji for free. A keycap
+emoji is not so lucky: it is the ASCII digit, a variation selector and
+U+20E3, so the digit survives the strip. "3 0 30TH CELEBRATION ELITE TRAINER
+BOX" folded to "3030THCELEBRATION..." and matched nothing, which is why the
+six 30th Celebration listings failed while the fire-wrapped ones beside them
+were fine. Emoji now come off before the fold, keycaps first.
 
-The show set answers this question and was never consulted. Now it is: a paid
-order whose title names a line on the set is a spin, whatever shape the title
-has, and only what is left over goes to the guesswork. The earnings report's
-own Buy It Now column still wins where Whatnot gives us one.
+**The same words in a different order.** Whatnot had "CHINESE STELLAR CRYSTAL
+BOOSTER PACK", the set had "Stellar Crystal Booster Pack - Chinese". Same
+product, and a fold that concatenates in order can never see it. 33 spins on
+that one line. There is now a word-order fallback, tried only after the exact
+title and the after-the-dash form, and only where no two lines on the set
+share the same bag of words. If two do, it books nothing and asks: 33 hits on
+the wrong line is worse than 33 on no line, because nobody goes looking for a
+number that already looks right.
 
-Second fix in the same place: a product whose own name contains " - " was
-being cut in half. The strip that removes a show prefix splits on the first
-" - ", so "Chasing Glory Booster Pack - Chinese" became "Chinese", which
-names nothing and belongs to a different set's packs. The full title is now
-tried against the set first and only stripped when it does not match.
-
-Checked against the real export: 0 orders to the shelf, 0 unrecognised, every
-hit landing on the line it belongs to.
+Against the real export, with neither pasted titles nor learned aliases to
+help it: 260 of 265 matched, 0 to the shelf, 0 unrecognised.
 
 Changed: `lib/whatnotCsv.ts`, `lib/__tests__/surpriseSetHits.test.ts`.
 

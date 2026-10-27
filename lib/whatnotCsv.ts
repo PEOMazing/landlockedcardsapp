@@ -596,7 +596,31 @@ export type SetLine = {
  *  "[Sealed] Brilliant Fantasy pack..", "[Sealed]. Brilliant Fantasy pack."
  *  and so on. Folded, all of those are one string again. Emoji wrappers fall
  *  out for free, since they are not letters or digits. */
-export const foldTitle = (s: string) => String(s || "").toUpperCase().replace(/[^A-Z0-9]+/g, "");
+// ss-v2. Emoji come off before folding, and the keycap ones come off first.
+//
+// foldTitle drops everything that is not a letter or a digit, which handles 🔥
+// and ⚡ for free. It does not handle 3️⃣, because a keycap emoji is literally
+// the ASCII digit "3" followed by a variation selector and U+20E3 - the digit
+// survives the strip. So "3️⃣0️⃣30TH CELEBRATION ELITE TRAINER BOX3️⃣0️⃣" folded
+// to "3030THCELEBRATIONELITETRAINERBOX30" and matched nothing, while the
+// 🔥-wrapped listings on the same show matched fine. Six listings on the
+// 2026-10-22 set, every one of them a 30th Celebration item, for exactly this
+// reason.
+const stripEmoji = (s: string) =>
+  String(s || "")
+    // keycaps first: they contain a digit that must not survive
+    .replace(/[0-9#*]\uFE0F?\u20E3/g, " ")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}]/gu, " ");
+
+export const foldTitle = (s: string) => stripEmoji(s).toUpperCase().replace(/[^A-Z0-9]+/g, "");
+
+/** The same words in any order. "CHINESE STELLAR CRYSTAL BOOSTER PACK" and
+ *  "Stellar Crystal Booster Pack - Chinese" are the same product written two
+ *  ways, and a fold that concatenates in order can never see it. Used only as
+ *  a fallback, and only where no two lines on the set share the same bag of
+ *  words, so it cannot quietly pick the wrong one. */
+export const foldWords = (s: string) =>
+  (stripEmoji(s).toUpperCase().match(/[A-Z0-9]+/g) || []).sort().join(" ");
 
 export type SetPlan = {
   spins: number; // paid wheel orders = spots sold
@@ -718,6 +742,25 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[], decis
     }
   }
 
+  // ss-v2. The same words in another order, as a last resort. Built from the
+  // same sources as byFold, and a key claimed by two different groups is
+  // poisoned rather than guessed at - better to ask than to put 33 hits on
+  // the wrong line.
+  const byWords = new Map<string, string | null>();
+  for (const pick of sources) {
+    for (const [k, ls] of groups) {
+      for (const l of ls) {
+        const got = pick(l);
+        for (const t of Array.isArray(got) ? got : [got]) {
+          const w = foldWords(t || "");
+          if (!w) continue;
+          if (!byWords.has(w)) byWords.set(w, k);
+          else if (byWords.get(w) !== k) byWords.set(w, null);
+        }
+      }
+    }
+  }
+
   // A decision made in the UI outranks everything above. mapTo names a line
   // id; the line may be one of several sharing a name, so it resolves to that
   // line's group and the hits spread over the pool as usual.
@@ -742,10 +785,26 @@ export function planSetFromShow(sales: WhatnotSale[], setLines: SetLine[], decis
   // matches nothing and is also the name of a different set's packs. So when
   // the full title names a line on this set, that is the answer, and stripping
   // only happens when it does not.
+  // Resolve a listing title to a key byFold knows, trying the cheapest and
+  // most certain thing first: the whole title, then the part after the show
+  // prefix, then the same words in any order.
+  const wordsKey = (t: string): string => {
+    const hit = byWords.get(foldWords(t));
+    return hit || "";
+  };
   const setFold = (title: string): string => {
     const whole = foldTitle(title);
     if (byFold.has(whole)) return whole;
-    return foldTitle(spinItem(title));
+    const item = foldTitle(spinItem(title));
+    if (byFold.has(item)) return item;
+    // byWords maps to a group key; byFold maps folds to the same group keys,
+    // so hand back a fold that resolves to that group.
+    for (const t of [title, spinItem(title)]) {
+      const group = wordsKey(t);
+      if (!group) continue;
+      for (const [f, g] of byFold) if (g === group) return f;
+    }
+    return item;
   };
   const onSet = (title: string) => byFold.has(setFold(title));
   const spins = g.paid.filter((s) => !isShippingLine(s.title) && !isStoreSale(s, hasFormat, wheels, onSet));
