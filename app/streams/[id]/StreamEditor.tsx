@@ -132,7 +132,19 @@ export default function StreamEditor({ id, isAdmin = false }: { id: string; isAd
   const load = useCallback(async () =>{
     const res = await fetch(`/api/streams/${id}`);
     if (!res.ok) {
-      setLoadErr(res.status === 403 ? "You do not have access to this stream." : "Stream not found.");
+      // rl-v1. Anything that was not a 403 used to read "Stream not found",
+      // which is what a rate-limited reload looked like after deleting a few
+      // lines: the stream was right there, the request just got a 429. Say
+      // which it was, because the two need opposite reactions.
+      setLoadErr(
+        res.status === 403
+          ? "You do not have access to this stream."
+          : res.status === 404
+            ? "Stream not found."
+            : res.status === 429
+              ? "Airtable is rate limiting us - too many changes at once. Give it a few seconds and reload."
+              : "Could not load this stream just now. Reload in a moment.",
+      );
       return;
     }
     const d = await res.json();

@@ -1,77 +1,116 @@
-# LandLocked Cards - merged upload, 2026-10-16
+# LandLocked Cards - one upload, five things
 
-47 files. Everything uncommitted against `da2877a`, in one upload. Supersedes
-landlocked-packer-v2.zip, landlocked-mcap-search.zip and landlocked-slab-tracker.zip.
+47 files. Everything in here was already tested together: 1,310 unit tests
+pass, TypeScript is clean. Nothing in here is live yet.
 
-Verified by checking out da2877a clean, overlaying these 47 files, and running
-the full build on the result: typecheck clean, 924 tests pass, production build
-clean, no module_not_found.
+## How to put it live
 
-## What is in it
+1. Unzip it. Keep the folder structure exactly as it is.
+2. Go to github.com/PEOMazing/landlockedcardsapp and use "Add file" ->
+   "Upload files". Drag the unzipped folders (app, components, lib) in.
+   GitHub keeps the paths and overwrites the files it already has.
+3. Commit straight to main. Vercel builds it in about two minutes.
 
-**Packer / manager / override split (pk-v5, pk-v6)**
-The three roles are three fields. Packing pay follows the packer and nobody
-else; manager of record buys access and no money. Previously no pay page read
-Packing Fee at all, so the flat fee had never paid anyone since it shipped.
-  lib/calc.ts, lib/packingFee.ts (re-export shim only, see below),
-  app/api/streams/route.ts, app/api/streams/[id]/route.ts, app/api/time/*,
-  app/api/streamers/[id]/route.ts, app/admin/payroll|analytics|insights|streams,
-  app/admin/page.tsx, app/streams/[id]/StreamEditor.tsx, app/dashboard,
-  app/vendor, components/Timeclock.tsx, lib/settings.ts
+## 1. Sealed product search (new)
 
-  NOTE: lib/packingFee.ts is deliberately a one-line re-export. Two production
-  deploys failed with module_not_found when it was a real module that did not
-  survive the upload. The rule it holds moved into lib/calc, which every caller
-  already imports.
+The app could price a sealed box only if you pasted its TCGplayer link. Name
+search did not work on sealed product at all - the card search throws away
+every product with no collector number, which is every box, tin, bundle and
+blister in the mirror. That is why most of the sealed inventory was never
+mapped: mapping meant leaving the app and finding the product by hand, for
+every row.
 
-**Add-a-card search reaches the junk drawer (mc-v1)**
-Miscellaneous Cards & Products, Blister/Deck Exclusives and League cards are
-searchable. They were excluded twice over - flagged supplemental and outside
-the newest-16 window - so stamped promos like Umbreon ex 060/131 could not be
-found. Query now matches set name too, and strips a trailing (MCAP).
-  lib/tcgcsvCards.ts
+- Inventory -> any product -> "map" now opens with a name search, prefilled
+  with the product's own name. Hit Search, pick the right one off the list,
+  save. The link box is still there for the ones no name search will get
+  right - club exclusives, repackaged bundles.
+- The search reaches the whole catalog, not just the newest sets. It scores
+  all 680 set names against what you typed, then only opens the files that
+  scored, so "Shining Fates Tin" works even though that set is years old.
+- English beats Japanese on a tie, since half the Japanese sets are named
+  after their English counterpart. Type "japanese" and that flips.
+- The box beats the bundle when you type box. That one matters: Surging
+  Sparks Booster Box and Booster Bundle share every word but one and differ
+  by about $350.
 
-**Slab comp engine (sl-v1 .. sl-v4)**
-Median of up to 5 eBay sales in 30 days, low outliers dropped, stale fallback
-disclosed. Own route, a bulk button on the graded view, and a Recomp button on
-the QR sticker page.
-  lib/slabComp.ts, app/api/singles/slab-comp/route.ts,
-  app/label/[id]/page.tsx, app/label/[id]/QuickSell.tsx,
-  app/singles/SinglesClient.tsx
+New: `lib/tcgMap.ts`, `components/TcgMapper.tsx`,
+`app/api/inventory/tcg-lookup/route.ts`, `app/api/admin/sealed-price/route.ts`,
+`lib/__tests__/sealedSearch.test.ts`.
 
-**Full grade ladder + Collectr grade parsing (sl-v3)**
-PSA 1-10, BGS, CGC, SGC. normalizeGrade reads "PSA 10.0 GEM - MT" and friends.
-Without this, 13 of 82 slabs in the export read as raw cards, got binder
-pockets, and would have been priced off NM market.
-  lib/slab.ts, lib/slots.ts, app/api/singles/route.ts
+`/api/admin/sealed-price` prices a list of names in one pass and writes
+nothing. It is what values a lot someone is offering you before any of it is
+inventory, and it labels each row exact, close or weak rather than quoting a
+price it is not sure of.
 
-**Language accuracy (sl-v2)**
-An English slab can no longer be priced off a Japanese sale. Asymmetric:
-unmarked reads as English, and a non-English card must prove itself. Fixes the
-same hole in the raw graded-sales panel.
-  lib/gradedSales.ts, lib/slabComp.ts
+## 2. The 10-22 show: duplicate store lines, and why they would not delete
 
-**Slabs in surprise sets, uncapped (sl-v2)**
-Slabs are ordinary candidates and exempt from maxItemPct. The swap-down pass
-cannot evict them, so the rest of the wheel trades down around a big one.
-  lib/quickSet.ts, app/api/quick-set/route.ts
+134 shelf sales of 134 different listings were booked against one Mega
+Charizard X ex Ultra Premium Collection at $225.24 of product cost each, which
+is about $30,000 of imaginary cost on a show that took $3,492.94.
 
-**Import provenance (im-v1)**
-A comp seeded by an import is its own basis, not an "estimate". A market price
-for the right printing and condition is not the same claim as NM market times
-a condition guess.
-  lib/comp.ts, lib/pricingHealth.ts
+They were deleting. I checked three of the line ids out of the deletion log
+against the base and all three were gone. Four separate bugs were conspiring
+to make it look otherwise:
 
-**Graded upside panel (gs-v1)**
-What a raw card last sold for at each PSA grade, so "is this worth sending off"
-has an answer.
-  lib/gradedSales.ts, components/GradedSales.tsx, components/GradeStrip.tsx,
-  app/api/singles/graded-sales/route.ts, app/scan/ScanClient.tsx
+- **Airtable's rate limit was invisible.** 5 requests per second per base, and
+  nothing in the client noticed a 429 - every helper threw on any non-ok
+  response. One line removal is about six calls, so three deletions in a
+  second is already over. Some deletes threw, and so did the page's own
+  reload. Every Airtable call now retries 429s and 5xx with backoff, honouring
+  Retry-After.
+- **A rate-limited reload said "Stream not found".** Anything that was not a
+  403 reported as a missing stream, which is what you saw after deleting a
+  few lines, and it is the opposite of the truth. It now distinguishes 404
+  from 429 from everything else.
+- **No dedupe key.** Store lines dedupe on the Whatnot order id and these had
+  none, so the guard could never see them and every re-upload booked the set
+  again. A repeat is now recognised by product, units and price when there is
+  no order id. It counts rather than sets, so two buyers each taking one pack
+  at $15.99 are still two sales and a third still books.
+- **The request could not finish.** 134 bookings runs past a minute and the
+  platform kills the function mid-loop: rows written, no answer, and the
+  obvious next move is to upload again. It now stops at 45 seconds, says how
+  many are left, and is safe to resume.
 
-## Still needed outside this upload
+Plus the cleanup itself. Store sales on a show now shows a red panel when it
+finds a mis-booking, saying how many lines, what product cost they are adding,
+and how much stock comes back. One button removes them in a single batch
+request - about fourteen requests for 134 lines instead of eight hundred
+calls - which is why it will work where deleting them one at a time did not.
+It only ever removes store lines with no order id that share a product with
+more than 25 others, so it cannot reach a real hand-entered sale.
 
-- Airtable Condition select: add PSA 7, 6, 5, 4, 3, 2, 1, CGC 9, BGS 9
-- Airtable Language select: add German
-- COMPS_API_KEY set in Vercel, or every eBay pull reports itself switched off
-- Slab No (fldD2PVvrxOU5soY2) exists but is not backfilled yet
-- No slab rotation: nothing reprices the 83 slabs unless someone clicks
+The deletion tripwire is retired. It did its job, and it was adding an
+Airtable write to every deletion on a path already over the rate limit.
+
+Changed: `lib/airtable.ts`, `lib/storeSales.ts`,
+`app/api/lines/store/bulk/route.ts`, `app/api/lines/[id]/route.ts`,
+`app/api/streams/[id]/store-duplicates/route.ts`,
+`app/streams/[id]/StreamEditor.tsx`, `components/StoreSales.tsx`,
+`components/StoreDuplicates.tsx`, `lib/__tests__/storeDedupe.test.ts`.
+
+## 3. Collectr importer fix
+
+Japanese cards were being set aside as non-Pokemon rows and dropped. Rows
+with a card-shaped condition but no card number were read as sealed. Both
+fixed, and every imported row now gets linked to its TCGplayer product
+instead of only the ones that happened to match.
+
+## 4. Paste-a-link page for unlinkable cards
+
+`/singles/link` lists every in-stock card with no Card ID and lets you paste
+its TCGplayer link. It writes the Card ID, the art, the variant and the
+rarity if that was blank. It deliberately never touches the comp, the set,
+the number or the name, so a wrong paste cannot rewrite the card.
+
+## 5. Market-first comps, still switched off
+
+The comp engine ratchets one way: a single hot last sale lifts a comp and
+nothing ever brings it back down. This replaces that with TCG market as the
+basis, with last sales only overriding it when there are at least three of
+them and they disagree by more than 25%.
+
+It ships OFF. The setting `comp_basis_market` defaults to 0, so deploying
+this changes no price. Before flipping it on, run
+`/api/admin/comp-basis-preview` - it writes nothing and reports what would
+move, by how much, and how many labels would need reprinting.

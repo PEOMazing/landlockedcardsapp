@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/components/Toaster";
+import StoreDuplicates from "@/components/StoreDuplicates";
 import { readWhatnotCsv, showsIn, storeRows, pickShow, matchProduct, packMultiplier, shelfUnits, localDate, type Product, type StoreRow } from "@/lib/whatnotCsv";
 import { CATEGORIES, categoryForName } from "@/lib/categories";
 
@@ -240,6 +241,8 @@ export default function StoreSales({
         <h2 className="label">Store sales</h2>
         <span className="text-dim text-xs">Buy It Now and anything else bought off the shelf. Kept off the show set, so spin stats stay clean.</span>
       </div>
+
+      {canManage && <StoreDuplicates streamId={streamId} onChange={onChange} />}
 
       {pendingLines.length > 0 && (
         <div className="rounded-lg border border-warn/60 bg-warn/10 p-3 text-sm flex items-start justify-between gap-3 flex-wrap">

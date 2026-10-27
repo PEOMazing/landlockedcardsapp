@@ -36,7 +36,10 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
       const c = classifyCollectrCsv(String(reader.result || ""));
       if (Object.keys(c.portfolios).length === 0) { setErr("No importable rows found - upload a Collectr or TCGplayer CSV export"); return; }
       setParsed({ portfolios: c.portfolios, skipped: c.skipped + c.nonPokemon });
-      if (c.nonPokemon > 0) setSummary(`${c.nonPokemon} non-Pokemon rows set aside - One Piece support is coming`);
+      // Japanese Pokemon used to land here, which read as "we do not support
+      // this game" about cards the app handles perfectly well. Only a genuinely
+      // different game reaches this now.
+      if (c.nonPokemon > 0) setSummary(`${c.nonPokemon} rows from another game set aside - One Piece support is coming`);
       const init: Record<string, boolean> = {};
       for (const k of Object.keys(c.portfolios)) init[k] = true;
       setChecked(init);
@@ -54,7 +57,7 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
     }
     if (sealed.length + singles.length === 0) { setErr("Nothing selected"); return; }
     setErr("");
-    let sc = 0, sm = 0, sg = 0, sk = 0;
+    let sc = 0, sm = 0, sg = 0, sk = 0, sl = 0, lateLink = false;
     const CHUNK = 60;
     const total = Math.ceil(sealed.length / CHUNK) + Math.ceil(singles.length / CHUNK);
     let done = 0;
@@ -67,13 +70,24 @@ export default function CollectrImport({ onDone }: { onDone: () => void }) {
       if (!r.ok) throw new Error((await r.json()).error || "Import failed");
       const d = await r.json();
       sc += d.sealedCreated; sm += d.sealedMerged; sg += d.singlesCreated; sk += d.sealedSkipped || 0;
+      sl += d.singlesLinked || 0;
+      if (d.linkRanOutOfTime) lateLink = true;
       done++;
       setProgress(`Importing... ${done}/${total}`);
     };
     try {
       for (let i = 0; i < sealed.length; i += CHUNK) await send({ sealed: sealed.slice(i, i + CHUNK) });
       for (let i = 0; i < singles.length; i += CHUNK) await send({ singles: singles.slice(i, i + CHUNK) });
-      setSummary(`Done: ${sg} cards imported${sc + sm > 0 ? `, ${sc} sealed created, ${sm} sealed merged` : ""}${sk > 0 ? `. ${sk} sealed products set aside - collector sealed tracking is coming` : ""}.`);
+      // cl-v2. The linked count is said out loud because it is the difference
+      // between a card that reprices itself and a card frozen at whatever the
+      // export said. An unlinked card still imported fine, so this is
+      // information rather than an error.
+      setSummary(
+        `Done: ${sg} cards imported${sg > 0 ? `, ${sl} linked to TCGplayer` : ""}` +
+        `${sc + sm > 0 ? `, ${sc} sealed created, ${sm} sealed merged` : ""}` +
+        `${sg > sl ? `. ${sg - sl} did not link, so they will not reprice on their own${lateLink ? " (the lookup ran out of time, so try the unlinked ones again)" : ""}` : ""}` +
+        `${sk > 0 ? `. ${sk} sealed products set aside - collector sealed tracking is coming` : ""}.`,
+      );
       setParsed(null);
       setProgress("");
       onDone();

@@ -181,26 +181,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   const g = await guard(params.id);
   if ("err" in g) return g.err;
-  // TRIPWIRE (temporary): record every line deletion with its caller so the
-  // phantom mass-delete can be traced. Remove once the culprit is found.
-  //
-  // Recorded as a trace rather than an alert. Removing a line is what editing
-  // a show set IS, so as an alert this put a banner on top of every page for
-  // every team member on every edit, with a separate "done" to click on each.
-  // The forensics are still worth having and still land in the Alerts table;
-  // they just do not interrupt the person doing the work being traced.
-  try {
-    const { recordTrace } = await import("@/lib/alerts");
-    await recordTrace(`TRIPWIRE: line deleted - ${g.line.fields["Line"] || params.id}`, {
-      lineId: params.id,
-      line: g.line.fields["Line"] || "",
-      streamId: g.line.fields["Stream Rec Id"] || "",
-      user: g.me?.streamer?.fields?.["Name"] || g.me?.streamer?.id || "unknown",
-      referer: req.headers.get("referer") || "",
-      userAgent: (req.headers.get("user-agent") || "").slice(0, 120),
-      at: new Date().toISOString(),
-    });
-  } catch {}
+  // rl-v1. The tripwire that used to log every line deletion here is gone.
+  // It did its job: the "phantom mass-delete" was this route being called
+  // correctly, over and over, because the show report kept re-booking the same
+  // shelf sales. What it also did was add an Airtable write to every single
+  // deletion, which is the last thing a path already over the rate limit
+  // needed, and it left 598 rows in Alerts for one show.
   const returned = !!g.stream.fields["Items Returned"];
   // What comes back is what is physically still here, which is never the hit
   // units: those were ripped on stream and mailed to whoever won them.

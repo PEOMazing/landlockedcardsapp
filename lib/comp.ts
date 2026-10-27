@@ -8,6 +8,7 @@ import {
   subTypeForVariant,
 } from "./tcgcsvCards";
 import { getCard } from "./pokemon";
+import { getSettings } from "./settings";
 import { Floor, conditionFloor } from "./tcgListings";
 import { FRESH_DAYS, dropWashSales, medianOf, round2, roundUpDollar, windowCutoff } from "./salesWindow";
 
@@ -249,6 +250,130 @@ const OUTLIER_MULT = 3;
 // worth a wrong answer in either direction.
 const OUTLIER_MIN_GAP = 5;
 
+// cb-v1. Market first, with sales kept as a check on it rather than the thing
+// that sets the price.
+//
+// Gabe, after a 40-card lot sold at a card show: "I'd like it generally to use
+// tcg market unless there is big outliers of last sales."
+//
+// What prompted it. On that lot, 17 of 40 comps had come from a newer sale
+// that beat the 30-day median, because of the asymmetric lift above. Each of
+// those decisions is defensible on its own card and the aggregate was not:
+// Arctibax comped at $18 against a $17 median and a $6.30 lowest ask,
+// Houndoom at $54 off a 30-day range of $22.88 to $61.99. The lift can only
+// ever push a price UP, so across a binder it is a one-way ratchet, and the
+// pay dashboard's "profit over market" is computed against these numbers -
+// so a comp that leans high makes every streamer's profit look smaller.
+//
+// The new order:
+//
+//   market   TCGplayer's own Market Price for the printing we hold, times the
+//            condition multiplier. This is the default and it is what most
+//            cards will now get.
+//   sales    Only when enough clean sales AGREE with each other and together
+//            sit well away from market. That is the case where market is
+//            stale on a card that has genuinely moved, and it is the one
+//            thing market alone cannot see.
+//
+// The outlier problem solves itself in this shape. A single wild sale can no
+// longer set a price, because nothing below OVERRIDE_MIN_SALES can outvote
+// market at all, and what gets used when they do is their MEDIAN. No lift, no
+// last-sale rule, no asymmetry: the override is symmetric and will mark a card
+// down as readily as up.
+//
+// What this gives up, stated plainly. TCGplayer's market price is an NM-basis
+// figure per printing, so a played copy is market times a flat multiplier -
+// an estimate, where the old path had a measured median of sales in that
+// exact condition. 781 of the raw binder is NM so most cards are unaffected,
+// and for the rest an estimate that does not ratchet beats a measurement that
+// does. The sales override still fires on played cards, so a played copy with
+// real sales behind it still gets priced off them.
+
+/** How many clean sales have to agree before they can outvote market. Three is
+ *  the same bar MIN_CONFIDENT_SALES already uses for calling a comp thin, so
+ *  the two ideas of "enough evidence" stay the same number. */
+export const OVERRIDE_MIN_SALES = 3;
+
+/** And how far from market they have to sit. Below this the sales and market
+ *  are telling the same story with ordinary noise between them, and market is
+ *  the steadier of the two. */
+export const OVERRIDE_GAP_FRACTION = 0.25;
+
+/** With a dollar floor as well, so a common at $0.40 whose sales median is
+ *  $0.55 does not flip basis on 15 cents. At that size the fraction is
+ *  meaningless and neither number is worth being precise about. */
+export const OVERRIDE_MIN_GAP = 2;
+
+export type CompBasis = "market" | "sales";
+
+export type MarketPick = {
+  price: number;
+  basis: CompBasis;
+  /** TCGplayer market for this printing, before the condition multiplier. */
+  marketPrice: number;
+  /** That figure after the multiplier - what market alone would price at. */
+  conditioned: number;
+  mult: number;
+  /** Median of the clean sales in the window, 0 when there are none. */
+  soldMedian: number;
+  freshCount: number;
+};
+
+/** The comp under the market-first rule, or null when there is no market price
+ *  to work from and the caller should fall back to the sales-first chain. */
+export function pickMarketComp(
+  marketPrice: number,
+  cond: string,
+  sold: { price: number; detail: { date: string; price: number }[] } | null,
+  now: Date = new Date(),
+): MarketPick | null {
+  const m = Number(marketPrice);
+  if (!Number.isFinite(m) || m <= 0) return null;
+  const mult = CONDITION_MULT[String(cond || "Raw")];
+  if (mult === undefined) return null;
+
+  const { price: conditioned } = conditionEstimate(m, cond);
+
+  // The same cleaning the sales-first path does, so the two cannot disagree
+  // about which sales are real: wash sales out, then the 30-day window.
+  const clean = dropWashSales(sold?.detail || []);
+  const cutoff = windowCutoff(now);
+  const recent = clean.filter((d) => String(d.date) >= cutoff);
+  const soldMedian = recent.length ? round2(medianOf(recent.map((d) => Number(d.price)))) : 0;
+
+  const base: Omit<MarketPick, "price" | "basis"> = {
+    marketPrice: round2(m), conditioned, mult, soldMedian, freshCount: recent.length,
+  };
+
+  const gap = Math.abs(soldMedian - conditioned);
+  const outvotes =
+    recent.length >= OVERRIDE_MIN_SALES &&
+    soldMedian > 0 &&
+    gap >= Math.max(OVERRIDE_MIN_GAP, conditioned * OVERRIDE_GAP_FRACTION);
+
+  return outvotes
+    ? { ...base, price: soldMedian, basis: "sales" }
+    : { ...base, price: conditioned, basis: "market" };
+}
+
+/** What a market-basis comp says about itself. The printing and the condition
+ *  are both named because the first is measured and the second is a multiplier
+ *  applied to an NM number, and a reader deserves to know which half is which. */
+export function marketCompSource(printing: string, cond: string, mult: number): string {
+  const tail = mult < 1 ? ` x ${cond} ${Math.round(mult * 100)}% ${EST_MARKER}` : "";
+  return `TCGplayer market (${printing || "printing"}${mult < 1 ? "" : `, ${cond}`})${tail}`;
+}
+
+/** And what it says when the sales outvoted market. Names what market claimed
+ *  as well, because this is the branch that deliberately disagrees with the
+ *  default and the reader should be able to see both numbers without digging. */
+export function salesOverMarketSource(
+  cond: string, count: number, market: number, printing = "",
+): string {
+  const vs = market > 0 ? `, market said ${money(market)}` : "";
+  return `TCGplayer ${SOLDS_MARKER} (${condLabel(cond, printing)}, median of ${count} in last ${FRESH_DAYS}d${vs})`;
+}
+
 export type SoldPick = {
   price: number;
   /** no sale inside the window, so the listing floor answered instead */
@@ -454,7 +579,29 @@ async function ensureCardId(rec: AtRecord): Promise<{ cardId: string; linked: bo
   return found ? { cardId: found.cardId, linked: true } : null;
 }
 
+/** cb-v1. Whether the market-first basis is switched on, read from Settings.
+ *
+ *  One helper rather than the same line in four call sites: the rolling
+ *  reprice, the manual re-comp, the bulk comps pass and to-stream all have to
+ *  agree, or a card gets one price from the background job and a different
+ *  one the moment somebody opens it. */
+export async function marketBasisOn(): Promise<boolean> {
+  try {
+    const s = await getSettings();
+    return Number((s as any).comp_basis_market) === 1;
+  } catch {
+    // A settings read that fails must not silently change how cards are
+    // priced, so the answer is the old behaviour.
+    return false;
+  }
+}
+
 export type RecompOpts = {
+  /** cb-v1. Price off TCGplayer market with sales as a check, instead of the
+   *  sales-first chain. Passed in by the caller, which reads the setting, so
+   *  this module stays free of a settings fetch and the preview endpoint can
+   *  run BOTH bases over the same card without touching the setting. */
+  marketBasis?: boolean;
   /** Skip the listings cache. For the moments a price is acted on - a sticker
    *  scanned at the table, a card going onto a stream - where "live" has to
    *  actually mean live. The background rotation leaves this off. */
@@ -506,6 +653,23 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
     String(rec.fields["Rarity"] || "")
   );
 
+  // cb-v1. Market has to mean the market for the printing we actually hold.
+  //
+  // getTcgcsvCard resolves per printing only when the card id carries one,
+  // and most ids in this base do not: toCard builds "tcg:product:group" with
+  // no subtype, so card.market has been whichever printing happened to come
+  // first in the price file. That was survivable while market was a
+  // last-resort fallback behind two better sources. It is not survivable now
+  // that it is the default, because on a card with a Reverse printing the two
+  // numbers are nothing alike and the wrong one would go straight onto a
+  // sticker. Re-asking with the printing attached costs nothing: the group is
+  // already in the cache from the fetch above.
+  const pricedCard =
+    opts.marketBasis && parsed && !parsed.sub
+      ? await getTcgcsvCard(makeCardId(parsed.productId, parsed.groupId, printing)).catch(() => null)
+      : null;
+  const marketCard = pricedCard || card;
+
   // Both condition-specific lookups run together: the floor is wanted for
   // display whether or not it ends up being the comp.
   const [sold, floor] = await Promise.all([
@@ -525,7 +689,36 @@ export async function recompSingle(rec: AtRecord, opts: RecompOpts = {}): Promis
 
   let estimated = false;
   let floorLift = 0;
-  if (sold) {
+
+  // cb-v1. Market first, when the setting says so.
+  //
+  // Placed ahead of the sales chain rather than inside it, because the two
+  // answer the question in opposite orders and interleaving them would make
+  // neither readable. If there is no market price to work from, this falls
+  // through to exactly the chain that ran before.
+  const marketPick = opts.marketBasis
+    ? pickMarketComp(marketCard && marketCard.market !== null ? marketCard.market : 0, cond, sold)
+    : null;
+
+  if (marketPick) {
+    fields["Comp"] = marketPick.price;
+    if (marketPick.basis === "sales") {
+      fields["Comp Source"] = salesOverMarketSource(
+        cond, marketPick.freshCount, marketPick.conditioned, printing,
+      );
+      fields["Comp Sales"] = marketPick.freshCount;
+    } else {
+      fields["Comp Source"] = marketCompSource(printing, cond, marketPick.mult);
+      // Zero on purpose, the same as the listing branch: the number did not
+      // come from sales, and Comp Sales is what the thin-data warning reads.
+      fields["Comp Sales"] = 0;
+      // A played copy priced off an NM market figure times a flat multiplier
+      // IS an estimate, and the amber warning should say so. An NM copy is
+      // not - that is TCGplayer's own number for the printing we hold.
+      estimated = marketPick.mult < 1;
+    }
+    fields["Comp Detail"] = sold ? JSON.stringify(sold.detail) : "";
+  } else if (sold) {
     const pick = pickSoldPrice(sold.price, sold.detail, floor);
     fields["Comp"] = pick.price;
     // How much real evidence is under this number.

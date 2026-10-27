@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { T, atGet, atUpdate, isRecId } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
-import { recompSingle } from "@/lib/comp";
+import { recompSingle, marketBasisOn } from "@/lib/comp";
 
 export const maxDuration = 300;
 
@@ -33,6 +33,8 @@ export async function POST(req: Request) {
   const review: { id: string; name: string; condition: string; before: number | null; after: number }[] = [];
   let linked = 0;
   let estimated = 0;
+  // cb-v1. One read for the whole batch.
+  const marketBasis = await marketBasisOn();
 
   // Sequential on purpose. The sales feed is somebody else's API and we are a
   // guest on it; hammering it in parallel is how a free data source stops
@@ -40,7 +42,7 @@ export async function POST(req: Request) {
   for (const id of ids) {
     try {
       const rec = await atGet(T.singles, id);
-      const r = await recompSingle(rec);
+      const r = await recompSingle(rec, { marketBasis });
       if (!r.ok || !r.fields) {
         skipped.push({ id, reason: r.reason || "no price" });
         continue;

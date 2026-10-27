@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe } from "@/lib/auth";
-import { recompSingle } from "@/lib/comp";
+import { recompSingle, marketBasisOn } from "@/lib/comp";
 import { toSingle } from "@/lib/singles";
 
 // Refresh one card's comp. All the judgement lives in lib/comp.ts so this and
@@ -17,7 +17,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   // never serves a cached floor. The batch routes are where the cache earns
   // its keep.
   const rec = await atGet(T.singles, params.id);
-  const r = await recompSingle(rec, { live: true });
+  const r = await recompSingle(rec, { live: true, marketBasis: await marketBasisOn() });
   if (!r.ok || !r.fields) return NextResponse.json({ error: r.reason || "comp refresh failed" }, { status: 400 });
 
   const updated = await atUpdate(T.singles, params.id, r.fields);

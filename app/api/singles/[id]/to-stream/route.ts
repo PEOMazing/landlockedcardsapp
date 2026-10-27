@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { atCreate, atGet, atUpdate, isRecId, T } from "@/lib/airtable";
 import { getMe, ownsStream } from "@/lib/auth";
 import { formatCardNo } from "@/lib/cardNo";
-import { isRawCondition, recompSingle } from "@/lib/comp";
+import { isRawCondition, recompSingle, marketBasisOn } from "@/lib/comp";
 import { claimForStream, unavailableReason, undoClaim } from "@/lib/streamSingles";
 
 // How recently a comp has to have been checked for the add to trust it.
@@ -49,7 +49,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     let repriced = false;
     if (!fresh && isRawCondition(String(single.fields["Condition"] || "Raw"))) {
       try {
-        const r = await recompSingle(single, { live: true });
+        const r = await recompSingle(single, { live: true, marketBasis: await marketBasisOn() });
         if (r.ok && r.fields) { single = await atUpdate(T.singles, params.id, r.fields); repriced = true; }
       } catch {
         // stored comp it is - a pricing hiccup must not stop a card going live

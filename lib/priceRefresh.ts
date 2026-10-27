@@ -1,6 +1,6 @@
 import { atCreate, atList, atUpdate, T, AtRecord } from "./airtable";
 import { recordAlert } from "./alerts";
-import { RAW_CONDITIONS, isRawCondition, recompSingle } from "./comp";
+import { RAW_CONDITIONS, isRawCondition, recompSingle, marketBasisOn } from "./comp";
 import { MappedTarget, isTcgUrl, priceMappedProducts } from "./tcgMap";
 import { Move, logMoves } from "./priceLog";
 import { renameFields } from "./productNames";
@@ -269,6 +269,10 @@ export async function refreshSingleComps(cap = 50): Promise<{ updated: number; c
     return { updated: 0, checked: 0, linked: 0, logged: 0 };
   }
 
+  // cb-v1. Read once for the batch, not per card: the setting cannot change
+  // mid-run and a fetch per card would be nine hundred pointless reads.
+  const marketBasis = await marketBasisOn();
+
   let updated = 0, checked = 0, linked = 0;
   // Collected rather than written card by card, so the whole batch costs one
   // read of today's log instead of one per card.
@@ -280,7 +284,7 @@ export async function refreshSingleComps(cap = 50): Promise<{ updated: number; c
     if (!isRawCondition(String(rec.fields["Condition"] || "Raw"))) continue;
     checked++;
     try {
-      const r = await recompSingle(rec);
+      const r = await recompSingle(rec, { marketBasis });
       if (!r.ok || !r.fields) continue;
       await atUpdate(T.singles, rec.id, r.fields);
       // The comp the card is leaving behind is only knowable here, before the

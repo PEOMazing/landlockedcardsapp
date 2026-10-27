@@ -15,6 +15,13 @@ export type Settings = {
    *  cannot go on this submission at all, which is a different answer from
    *  "not worth it". */
   grading_max_insured: number;
+  /** cb-v1. Where a comp comes from. 1 means market first with sales kept as
+   *  a check on it; 0 means the original sales-first chain.
+   *
+   *  A number because Settings is a flat numeric table. Defaults to 0 so
+   *  deploying this changes nothing: the switch is thrown deliberately, after
+   *  the preview has been read. */
+  comp_basis_market: number;
 };
 
 const DEFAULTS: Settings = {
@@ -37,6 +44,7 @@ const DEFAULTS: Settings = {
   // flat rate, separate from pack givvies.
   singles_giveaway_cost: 1,
   commission_pct: 0.2,
+  comp_basis_market: 0,
   grading_fee: 59.99,
   grading_max_insured: 1000,
 };

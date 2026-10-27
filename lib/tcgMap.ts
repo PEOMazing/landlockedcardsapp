@@ -268,3 +268,243 @@ export function mappingFrom(fields: Record<string, any>): MappedTarget | null {
   }
   return null;
 }
+
+// ---------------- sealed product name search ----------------
+//
+// sl-v1. Until now sealed product could only be matched by pasting a
+// TCGplayer link, because the only name search in the app is
+// searchTcgcsvCards, and that one throws away every product with no collector
+// number or rarity - which is every sealed item in the mirror. So a box of
+// Prismatic Evolutions was findable by link and unfindable by name, even
+// though it sits in the same group file as the cards, two fields away.
+//
+// The hard part is not the filter, it is reach. The mirror has roughly 220
+// English and 460 Japanese groups and no search endpoint, so a name search
+// over all of them would be about 1,350 file reads. The card search dodges
+// that by only ever looking at the newest sixteen English sets, which is why
+// it cannot find a Shining Fates tin.
+//
+// Sealed names carry their own set, though. People do not type "Elite Trainer
+// Box", they type "Prismatic Evolutions Elite Trainer Box" - the set is in the
+// product name because that is how the product is named. So score the 680
+// group NAMES (one cheap, cached read per catalog) against the query, load
+// only the groups that scored, and fall back to the newest sets when nothing
+// scored at all. That reaches the whole catalog for the price of a couple of
+// dozen file reads, and the 12h group cache means the second search is free.
+
+// Words that are noise in a query but common in no haystack. Typing "pokemon"
+// in front of a box name should not be able to return nothing, which is what
+// happens when every token is required and one of them appears nowhere.
+const SEALED_FILLER = new Set(["pokemon", "pokémon", "tcg", "the", "a", "an", "pack", "sealed"]);
+
+const normSealed = (s: string) =>
+  String(s || "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/['‘’]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+// "pack" is filler for matching but kept in the raw list, because a sealed
+// search for "booster pack" should still prefer a product called one.
+export function sealedTokens(q: string): { all: string[]; need: string[] } {
+  const all = normSealed(q).split(" ").filter(Boolean);
+  const need = all.filter((t) => !SEALED_FILLER.has(t));
+  return { all, need: need.length > 0 ? need : all };
+}
+
+const extValue = (p: any, key: string): string => {
+  const e = (p?.extendedData || []).find((x: any) => x.name === key);
+  return e ? String(e.value) : "";
+};
+
+// A product with no collector number and no rarity is sealed. That is the
+// exact complement of the card test in tcgcsvCards, on purpose: one rule,
+// two callers, no product that is both or neither.
+export function isSealedProduct(p: any): boolean {
+  const name = String(p?.name || "");
+  if (!name) return false;
+  if (extValue(p, "Number") || extValue(p, "Rarity")) return false;
+  if (/^code card/i.test(name)) return false;
+  return true;
+}
+
+// How well a group name answers the query. Scored on the group name alone,
+// since the point is to decide which files are worth reading before any
+// product in them has been seen.
+export function groupNameScore(group: TcgGroup, need: string[]): number {
+  const hay = normSealed(group.name);
+  const words = new Set(hay.split(" ").filter(Boolean));
+  const abbr = normSealed(group.abbreviation || "");
+  let score = 0;
+  for (const t of need) {
+    if (words.has(t)) score += 2;
+    else if (hay.includes(t)) score += 1;
+    else if (abbr && abbr === t) score += 2;
+  }
+  return score;
+}
+
+export const SEALED_GROUP_BUDGET = 24;
+
+// TCGplayer's junk drawers, always read whatever the query says.
+//
+// Found against a real collection: a "Costco Prismatic Evolutions 8-Pack Mini
+// Tins" names its set in its own name, so scoring sends the search straight to
+// SV: Prismatic Evolutions, where the product is not. Retailer exclusives,
+// repackaged blisters and promo bundles live in these groups instead, filed by
+// what they are rather than what is inside them. Two of the biggest line items
+// in that collection, about $1,600 of it, were in here.
+//
+// Three groups, six file reads, cached for twelve hours. The card search pays
+// the same toll for the same reason.
+const SEALED_ALWAYS = [/^miscellaneous cards/, /^blister exclusives$/, /^deck exclusives$/];
+
+// Which group files to open, in order. Groups whose names the query named come
+// first; the newest English sets backfill, so a bare "elite trainer box" still
+// returns this year's boxes rather than nothing.
+export function rankSealedGroups(
+  groups: { group: TcgGroup; categoryId: number }[],
+  need: string[],
+  budget = SEALED_GROUP_BUDGET,
+): { group: TcgGroup; categoryId: number }[] {
+  const jpWanted = need.some((t) => t === "japanese" || t === "japan" || t === "jp");
+  const scored = groups
+    .map((g) => ({ ...g, score: groupNameScore(g.group, need) }))
+    // A Japanese group needs more than one weak hit to earn a read, unless the
+    // query asked for Japanese. "Base Set (Japanese)" should not outrank
+    // "Base Set" for someone holding an English box.
+    .filter((g) => g.score > 0 && (jpWanted || g.categoryId === 3 || g.score >= 4))
+    // English ahead of Japanese on an equal score, always. Half the Japanese
+    // groups are named after their English counterpart with "(Japanese)" on
+    // the end, so they tie on every token and then win on being newer, which
+    // would have quietly sent an English Base Set box to the Japanese set.
+    // When the query does say Japanese, the word itself is in the group name
+    // and carries that group clear on score, so this never gets in the way.
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        Number(b.categoryId === 3) - Number(a.categoryId === 3) ||
+        (b.group.groupId || 0) - (a.group.groupId || 0),
+    );
+
+  const always = groups.filter(
+    (g) => g.categoryId === 3 && SEALED_ALWAYS.some((re) => re.test(normSealed(g.group.name))),
+  );
+
+  const out: { group: TcgGroup; categoryId: number }[] = [];
+  const taken = new Set<number>();
+  // The named set goes first, since that is usually the right answer, but the
+  // junk drawers keep their places in the budget rather than being crowded out
+  // by a query that happened to name a set with many near-matches.
+  const scoredRoom = Math.max(1, budget - always.length);
+  for (const g of scored) {
+    if (out.length >= scoredRoom) break;
+    if (taken.has(g.group.groupId)) continue;
+    taken.add(g.group.groupId);
+    out.push({ group: g.group, categoryId: g.categoryId });
+  }
+  for (const g of always) {
+    if (out.length >= budget) break;
+    if (taken.has(g.group.groupId)) continue;
+    taken.add(g.group.groupId);
+    out.push(g);
+  }
+  const newest = groups
+    .filter((g) => g.categoryId === 3 && !taken.has(g.group.groupId))
+    .sort((a, b) => (b.group.groupId || 0) - (a.group.groupId || 0));
+  for (const g of newest) {
+    if (out.length >= budget) break;
+    taken.add(g.group.groupId);
+    out.push(g);
+  }
+  return out;
+}
+
+// TCGplayer's own slug shape, rebuilt from the two names: category prefix,
+// then the group, then the product. Built from the RAW group name, before the
+// "SV: " style prefix is stripped for display, because that prefix is part of
+// the real slug and parseTcgUrl has to be able to read the set back out of it.
+export function sealedUrlSlug(rawGroupName: string, productName: string, categoryId: number): string {
+  const prefix = TCG_CATEGORIES.find((c) => c.id === categoryId)?.urlPrefix || "pokemon-";
+  return `${prefix}${slugifyGroup(rawGroupName)}-${slugifyGroup(productName)}`;
+}
+
+export type SealedHit = TcgMatch & { nameScore: number };
+
+// Products inside one already-loaded group that answer the query. Every needed
+// token has to appear in the product name or its set name, the same rule the
+// card search uses, so "prismatic evolutions etb" works and so does "etb"
+// typed while looking at the Prismatic Evolutions row.
+export function sealedMatches(
+  prods: any[],
+  market: Map<number, number>,
+  group: TcgGroup,
+  categoryId: number,
+  tokens: { all: string[]; need: string[] },
+): SealedHit[] {
+  const setHay = normSealed(group.name);
+  const out: SealedHit[] = [];
+  for (const p of prods) {
+    if (!isSealedProduct(p)) continue;
+    const nameHay = normSealed(p.name);
+    const hay = `${nameHay} ${setHay}`;
+    if (!tokens.need.every((t) => hay.includes(t))) continue;
+    // Relevance is how much of the query landed in the product's own name
+    // rather than in the set name. "Surging Sparks Booster Box" beats
+    // "Surging Sparks Booster Bundle" for a box, and both beat a sleeve pack
+    // that only matched on the set.
+    const nameScore = tokens.all.reduce((n, t) => n + (nameHay.includes(t) ? 1 : 0), 0);
+    out.push({
+      ...toMatch(p, group, categoryId, market.get(p.productId), sealedUrlSlug(group.name, p.name, categoryId)),
+      nameScore,
+    });
+  }
+  return out;
+}
+
+// Closest first: everything the query asked for by name, then priced before
+// unpriced, then the shortest name, which is the one with nothing extra
+// bolted on. A tie on all three keeps the mirror's own order.
+export function sortSealedHits(hits: SealedHit[]): SealedHit[] {
+  return [...hits].sort(
+    (a, b) =>
+      b.nameScore - a.nameScore ||
+      Number(b.market !== null) - Number(a.market !== null) ||
+      a.productName.length - b.productName.length,
+  );
+}
+
+export type SealedSearch = { hits: SealedHit[]; groupsRead: number; truncated: boolean };
+
+export async function searchTcgSealed(q: string, budget = SEALED_GROUP_BUDGET): Promise<SealedSearch> {
+  const tokens = sealedTokens(q);
+  if (tokens.need.length === 0) return { hits: [], groupsRead: 0, truncated: false };
+
+  const pool: { group: TcgGroup; categoryId: number }[] = [];
+  for (const c of TCG_CATEGORIES) {
+    const gs = await categoryGroups(c.id).catch(() => [] as TcgGroup[]);
+    for (const g of gs) pool.push({ group: g, categoryId: c.id });
+  }
+  if (pool.length === 0) throw new Error("tcgcsv groups unavailable");
+
+  const picked = rankSealedGroups(pool, tokens.need, budget);
+  const hits: SealedHit[] = [];
+  let groupsRead = 0;
+  for (let i = 0; i < picked.length; i += 6) {
+    const chunk = picked.slice(i, i + 6);
+    const loaded = await Promise.all(
+      chunk.map((g) => groupData(g.categoryId, g.group.groupId).then((d) => ({ ...g, d }))),
+    );
+    for (const { group, categoryId, d } of loaded) {
+      if (!d) continue;
+      groupsRead++;
+      hits.push(...sealedMatches(d.prods, d.market, group, categoryId, tokens));
+    }
+    // Stop early once there is plenty: the groups are already in relevance
+    // order, so later files are the long shots.
+    if (hits.length >= 60) break;
+  }
+  const sorted = sortSealedHits(hits);
+  return { hits: sorted.slice(0, 20), groupsRead, truncated: sorted.length > 20 };
+}
